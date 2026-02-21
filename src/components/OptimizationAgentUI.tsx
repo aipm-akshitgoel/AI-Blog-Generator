@@ -8,11 +8,22 @@ interface OptimizationAgentProps {
     onComplete?: (optimized: OptimizedContent) => void;
 }
 
+function deriveInsights(scores: { overall: number; contentStructure: number; readability: number }): string[] {
+    const tips: string[] = [];
+    if (scores.readability < 90) tips.push("Improve readability: use shorter sentences, simpler words, and more subheadings.");
+    if (scores.contentStructure < 90) tips.push("Improve structure: add clearer H2/H3 hierarchy and balance section lengths.");
+    if (scores.overall < 90) tips.push("Review keyword placement in title, intro, and headings for better SEO.");
+    if (tips.length === 0) tips.push("All metrics look good. You can still use 'Edit content' to make manual tweaks.");
+    return tips;
+}
+
 export function OptimizationAgentUI({ post, onComplete }: OptimizationAgentProps) {
     const [optimizedData, setOptimizedData] = useState<OptimizedContent | null>(null);
     const [loading, setLoading] = useState(true);
     const [isRefining, setIsRefining] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editedContent, setEditedContent] = useState("");
 
     useEffect(() => {
         const fetchOptimization = async () => {
@@ -224,43 +235,84 @@ export function OptimizationAgentUI({ post, onComplete }: OptimizationAgentProps
                         </div>
                     </div>
 
-                    {/* Actionable Insights & Auto-Fix */}
-                    {optimizedData.seoScores.actionableInsights && optimizedData.seoScores.actionableInsights.length > 0 && (
-                        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-                            <div className="flex items-center gap-2 mb-4 text-amber-800">
-                                <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <h3 className="font-bold">Actionable Insights for Low Scores</h3>
-                            </div>
-                            <ul className="list-disc list-inside space-y-2 text-sm text-amber-900 mb-5">
-                                {optimizedData.seoScores.actionableInsights.map((insight, i) => (
-                                    <li key={i}>{insight}</li>
-                                ))}
-                            </ul>
-                            <button
-                                onClick={handleRefine}
-                                disabled={loading}
-                                className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-50 shadow-md shadow-amber-600/20"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                                </svg>
-                                {loading ? "Refining..." : "Auto-Fix Issues"}
-                            </button>
+                    {/* Insights & Action Items - always visible */}
+                    <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+                        <div className="flex items-center gap-2 mb-4 text-amber-800">
+                            <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <h3 className="font-bold">
+                                {optimizedData.seoScores.actionableInsights?.length ? "Actionable Insights" : "Insights & Tips"}
+                            </h3>
                         </div>
-                    )}
+                        <ul className="list-disc list-inside space-y-2 text-sm text-amber-900 mb-5">
+                            {(optimizedData.seoScores.actionableInsights?.length
+                                ? optimizedData.seoScores.actionableInsights
+                                : deriveInsights(optimizedData.seoScores)
+                            ).map((insight, i) => (
+                                <li key={i}>{insight}</li>
+                            ))}
+                        </ul>
+                        <div className="flex flex-wrap gap-3">
+                            {optimizedData.seoScores.actionableInsights?.length ? (
+                                <button
+                                    onClick={handleRefine}
+                                    disabled={loading}
+                                    className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-50 shadow-md shadow-amber-600/20"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                                    </svg>
+                                    {loading ? "Refining..." : "Auto-Fix Issues"}
+                                </button>
+                            ) : null}
+                            <span className="text-sm text-amber-700">Use &quot;Edit content&quot; below to make manual corrections.</span>
+                        </div>
+                    </div>
                 </div>
             )}
 
-            {/* Removed SEO Metadata block - Meta SEO Agent will handle this later */}
+            {/* Inline Editor for manual corrections */}
+            {isEditing && (
+                <div className="mb-8 rounded-xl border border-amber-900/50 bg-amber-950/10 p-4 animate-in fade-in duration-300">
+                    <div className="mb-3 flex items-center justify-between">
+                        <h3 className="text-sm font-medium text-amber-500">Edit content (Markdown)</h3>
+                        <button
+                            type="button"
+                            onClick={() => { setEditedContent(optimizedData.contentMarkdown); setIsEditing(false); }}
+                            className="text-xs text-neutral-500 hover:text-neutral-300"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                    <textarea
+                        value={editedContent}
+                        onChange={(e) => setEditedContent(e.target.value)}
+                        className="w-full h-64 rounded-lg bg-neutral-950 border border-neutral-800 p-4 text-sm text-neutral-300 font-mono focus:border-amber-700 focus:ring-1 focus:ring-amber-700 outline-none resize-y"
+                    />
+                    <div className="mt-3 flex justify-end gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setOptimizedData((prev) => prev ? { ...prev, contentMarkdown: editedContent } : prev);
+                                setIsEditing(false);
+                            }}
+                            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
+                        >
+                            Save & Apply
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Optimized Article Body */}
-            <div className="mb-8 rounded-lg border border-neutral-800 bg-neutral-950 p-6 md:p-8 overflow-y-auto max-h-[600px]">
-                <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-indigo-400">
-                    <ReactMarkdown>{optimizedData.contentMarkdown}</ReactMarkdown>
-                </article>
-            </div>
+            {!isEditing && (
+                <div className="mb-8 rounded-lg border border-neutral-800 bg-neutral-950 p-6 md:p-8 overflow-y-auto max-h-[600px]">
+                    <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-indigo-400">
+                        <ReactMarkdown>{optimizedData.contentMarkdown}</ReactMarkdown>
+                    </article>
+                </div>
+            )}
 
             {/* Internal Links List (optional) */}
             {optimizedData.internalLinks && optimizedData.internalLinks.length > 0 && (
@@ -278,13 +330,22 @@ export function OptimizationAgentUI({ post, onComplete }: OptimizationAgentProps
                 </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex justify-end gap-3 pt-4 border-t border-neutral-800">
+            {/* Action Buttons - Edit + Continue */}
+            <div className="flex flex-wrap justify-between items-center gap-3 pt-4 border-t border-neutral-800">
+                {!isEditing && (
+                    <button
+                        type="button"
+                        onClick={() => { setEditedContent(optimizedData.contentMarkdown); setIsEditing(true); }}
+                        className="rounded-lg border border-neutral-600 px-4 py-2 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
+                    >
+                        Edit content
+                    </button>
+                )}
                 <button
                     onClick={() => {
                         if (onComplete) onComplete(optimizedData);
                     }}
-                    className="rounded-lg border border-indigo-700 bg-neutral-900 px-5 py-2.5 font-medium text-indigo-300 transition-colors hover:bg-neutral-800 hover:text-white"
+                    className="rounded-lg bg-indigo-600 px-5 py-2.5 font-medium text-white hover:bg-indigo-500 ml-auto transition-colors hover:bg-neutral-800 hover:text-white"
                 >
                     Continue
                 </button>

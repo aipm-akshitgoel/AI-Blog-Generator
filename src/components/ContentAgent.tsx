@@ -17,6 +17,8 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
     const [loading, setLoading] = useState(true);
     const [loadingStep, setLoadingStep] = useState(0);
     const [error, setError] = useState<string | null>(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editedMarkdown, setEditedMarkdown] = useState("");
 
     useEffect(() => {
         generateContent();
@@ -122,28 +124,76 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
 
                 {/* Removed early SEO Metadata Box - Handled by Meta SEO Agent later */}
 
-                {/* Blog Post Content Body */}
-                <div className="mb-8 rounded-lg border border-neutral-800 bg-neutral-950 p-6 md:p-8 overflow-y-auto max-h-[600px]">
-                    <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-indigo-400">
-                        <ReactMarkdown>{post.contentMarkdown}</ReactMarkdown>
-
-                        {/* Render FAQs */}
-                        <div className="mt-8 pt-8 border-t border-neutral-800">
-                            <h2 className="text-neutral-100">Frequently Asked Questions</h2>
-                            <div className="space-y-4 mt-4">
-                                {post.faqs.map((faq, i) => (
-                                    <div key={i}>
-                                        <h3 className="text-neutral-200 mt-0">{faq.question}</h3>
-                                        <p className="text-neutral-400">{faq.answer}</p>
-                                    </div>
-                                ))}
-                            </div>
+                {/* Edit Mode */}
+                {isEditing && (
+                    <div className="mb-8 rounded-xl border border-amber-900/50 bg-amber-950/10 p-4 animate-in fade-in duration-300">
+                        <div className="mb-3 flex items-center justify-between">
+                            <h3 className="text-sm font-medium text-amber-500">Edit content (Markdown)</h3>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setEditedMarkdown(post.contentMarkdown);
+                                    setIsEditing(false);
+                                }}
+                                className="text-xs text-neutral-500 hover:text-neutral-300"
+                            >
+                                Cancel
+                            </button>
                         </div>
-                    </article>
-                </div>
+                        <textarea
+                            value={editedMarkdown}
+                            onChange={(e) => setEditedMarkdown(e.target.value)}
+                            className="w-full h-64 rounded-lg bg-neutral-950 border border-neutral-800 p-4 text-sm text-neutral-300 font-mono focus:border-amber-700 focus:ring-1 focus:ring-amber-700 outline-none resize-y"
+                        />
+                        <div className="mt-3 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPost((p) => p ? { ...p, contentMarkdown: editedMarkdown } : p);
+                                    setIsEditing(false);
+                                }}
+                                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
+                            >
+                                Save edits
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Blog Post Content Body (read-only preview when not editing) */}
+                {!isEditing && (
+                    <div className="mb-8 rounded-lg border border-neutral-800 bg-neutral-950 p-6 md:p-8 overflow-y-auto max-h-[600px]">
+                        <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-indigo-400">
+                            <ReactMarkdown>{post.contentMarkdown}</ReactMarkdown>
+
+                            {/* Render FAQs */}
+                            <div className="mt-8 pt-8 border-t border-neutral-800">
+                                <h2 className="text-neutral-100">Frequently Asked Questions</h2>
+                                <div className="space-y-4 mt-4">
+                                    {post.faqs.map((faq, i) => (
+                                        <div key={i}>
+                                            <h3 className="text-neutral-200 mt-0">{faq.question}</h3>
+                                            <p className="text-neutral-400">{faq.answer}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+                )}
 
                 {/* Call to action */}
-                <div className="flex justify-end gap-3 pt-4 border-t border-neutral-800">
+                <div className="flex flex-wrap justify-between items-center gap-3 pt-4 border-t border-neutral-800">
+                    {!isEditing && (
+                        <button
+                            type="button"
+                            onClick={() => { setEditedMarkdown(post.contentMarkdown); setIsEditing(true); }}
+                            className="rounded-lg border border-neutral-600 px-4 py-2 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
+                        >
+                            Edit content
+                        </button>
+                    )}
+                    <div className="flex gap-3 ml-auto">
                     <button
                         onClick={() => onComplete(post)}
                         className="rounded-lg border border-indigo-700 bg-neutral-900 px-5 py-2.5 font-medium text-indigo-300 transition-colors hover:bg-neutral-800 hover:text-white"
@@ -151,11 +201,12 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
                         Save to Drafts
                     </button>
                     <button
-                        onClick={() => onComplete(post)}
-                        className="rounded-lg bg-indigo-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-indigo-500 shadow-lg shadow-indigo-900/20"
-                    >
-                        Continue to Optimization
-                    </button>
+                            onClick={() => onComplete(post)}
+                            className="rounded-lg bg-indigo-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-indigo-500 shadow-lg shadow-indigo-900/20"
+                        >
+                            Continue to Optimization
+                        </button>
+                    </div>
                 </div>
             </div>
         );
