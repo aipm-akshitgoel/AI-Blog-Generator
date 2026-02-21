@@ -1,13 +1,10 @@
 import GeminiChat from "@/components/GeminiChat";
+import { supabase } from "@/lib/supabaseClient";
 
 async function fetchTasks() {
-  const res = await fetch("/api/supabase-example", {
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    return { error: "Supabase not yet configured or API error" };
-  }
-  return res.json();
+  const { data, error } = await supabase.from("tasks").select("*").limit(5);
+  if (error) return { error: error.message };
+  return { ok: true, tasks: data ?? [] };
 }
 
 export default async function Home() {
