@@ -22,7 +22,13 @@ export default async function Home() {
         </p>
       </div>
 
-      <div className="flex gap-4">
+      <div className="flex flex-wrap justify-center gap-4">
+        <a
+          href="/setup"
+          className="rounded-lg bg-amber-600 px-4 py-2 font-medium text-white hover:bg-amber-500"
+        >
+          Business setup (AI Blog Generator)
+        </a>
         <a
           href="/api/health"
           className="px-4 py-2 rounded-lg bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 hover:opacity-90"
