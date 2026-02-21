@@ -1,7 +1,7 @@
 import GeminiChat from "@/components/GeminiChat";
 
 async function fetchTasks() {
-  const res = await fetch("http://localhost:3000/api/supabase-example", {
+  const res = await fetch("/api/supabase-example", {
     cache: "no-store",
   });
   if (!res.ok) {
