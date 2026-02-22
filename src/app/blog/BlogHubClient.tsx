@@ -47,7 +47,7 @@ export default function BlogHubClient({ blogs, categories, activeCategory }: Pro
             <section className="bg-neutral-900 text-white py-16 md:py-24">
                 <div className="max-w-6xl mx-auto px-4 text-center">
                     <h1 className="text-4xl md:text-6xl font-serif tracking-tight mb-6">Explore the Future</h1>
-                    <p className="text-lg text-neutral-400 max-w-2xl mx-auto mb-10">
+                    <p className="text-lg text-neutral-300 max-w-2xl mx-auto mb-10">
                         Discover insights and deep dives published seamlessly using our AI engine.
                     </p>
                     <div className="flex flex-wrap justify-center gap-3">
@@ -107,7 +107,7 @@ export default function BlogHubClient({ blogs, categories, activeCategory }: Pro
                                         <h3 className="text-lg font-bold text-neutral-900 mb-2 leading-tight group-hover:text-indigo-600 transition-colors">
                                             {blog.title}
                                         </h3>
-                                        <p className="text-xs text-neutral-500 font-medium">
+                                        <p className="text-xs text-neutral-400 font-medium">
                                             {formatDistanceToNow(new Date(blog.createdAt), { addSuffix: true })}
                                         </p>
                                     </div>
@@ -158,7 +158,7 @@ export default function BlogHubClient({ blogs, categories, activeCategory }: Pro
                                         <div className="flex items-center gap-3 text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-4">
                                             <span>{blog.category || 'Blog'}</span>
                                             <span className="w-1 h-1 rounded-full bg-neutral-300" />
-                                            <span className="text-neutral-400">{formatDistanceToNow(new Date(blog.createdAt), { addSuffix: true })}</span>
+                                            <span className="text-neutral-300">{formatDistanceToNow(new Date(blog.createdAt), { addSuffix: true })}</span>
                                         </div>
                                         <h3 className="text-2xl font-bold text-neutral-900 mb-4 leading-tight group-hover:text-indigo-600 transition-colors">
                                             {blog.title}

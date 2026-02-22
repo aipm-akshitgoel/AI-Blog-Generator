@@ -255,7 +255,7 @@ function SetupPageInner() {
   // ── Loading skeleton ──────────────────────────────────────────────────────
   if (isInitialLoading) {
     return (
-      <main className="min-h-screen p-6 md:p-10">
+      <main className="min-h-screen bg-neutral-950 p-6 md:p-10">
         <div className="mx-auto max-w-2xl animate-pulse space-y-4">
           <div className="h-8 w-48 bg-neutral-900 rounded" />
           <div className="h-40 bg-neutral-900 rounded-xl border border-neutral-800" />
@@ -271,7 +271,7 @@ function SetupPageInner() {
     // ── Strategy saved confirmation ────────────────────────────────────────
     if (strategySaved && strategySession) {
       return (
-        <main className="min-h-screen p-6 md:p-10 flex items-center justify-center">
+        <main className="min-h-screen bg-neutral-950 p-6 md:p-10 flex items-center justify-center">
           <div className="mx-auto max-w-lg text-center animate-in fade-in zoom-in-95 duration-500">
             <div className="w-20 h-20 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-emerald-900/30">
               <svg className="w-10 h-10 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -347,7 +347,7 @@ function SetupPageInner() {
   // Guard: no account set up yet
   if (!context || !strategySession) {
     return (
-      <main className="min-h-screen p-6 md:p-10 flex items-center justify-center">
+      <main className="min-h-screen bg-neutral-950 p-6 md:p-10 flex items-center justify-center">
         <div className="text-center">
           <p className="text-neutral-400 mb-6">You need to set up your business profile and strategy first.</p>
           <a href="/setup" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-black text-white hover:bg-emerald-500 uppercase tracking-widest transition-all">
@@ -360,7 +360,7 @@ function SetupPageInner() {
   }
 
   return (
-    <main className="min-h-screen p-6 md:p-10">
+    <main className="min-h-screen bg-neutral-950 p-4 md:p-10">
       <div className="mx-auto max-w-2xl">
         <div className="mb-8 flex items-center justify-between">
           <div>
