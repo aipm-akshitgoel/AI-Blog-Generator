@@ -23,7 +23,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     const blogs = await getBlogsByUserId(userId);
     const hasBlogs = blogs && blogs.length > 0;
 
-    const contexts = await listBusinessContexts();
+    const contexts = await listBusinessContexts(userId);
     const businessContext = contexts?.[0] ?? null;
     const anyIntegrationConnected = !!(
         businessContext?.integrations?.gscPropertyUrl ||

@@ -18,9 +18,13 @@ export function BusinessContextSetup({ onComplete }: { onComplete?: (context: Bu
   const [saving, setSaving] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   };
 
   useEffect(() => {
@@ -215,7 +219,7 @@ export function BusinessContextSetup({ onComplete }: { onComplete?: (context: Bu
   // 3. Chat Interface for Gathering Data
   return (
     <div className="flex h-[600px] flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50 shadow-xl">
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, i) => (
           <div
             key={i}
