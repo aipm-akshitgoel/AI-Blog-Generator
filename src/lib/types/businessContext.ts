@@ -10,14 +10,27 @@ export interface BusinessContextLocation {
   country?: string;
 }
 
+/** Third-party integration credentials (all optional — collected in setup) */
+export interface IntegrationCredentials {
+  /** Google Search Console property URL e.g. "https://www.yoursalon.com/" */
+  gscPropertyUrl?: string;
+  /** Google Analytics 4 Measurement ID e.g. "G-XXXXXXXXXX" */
+  ga4MeasurementId?: string;
+  /** CRM webhook URL or MCP endpoint for lead syncing */
+  crmWebhookUrl?: string;
+}
+
 export interface BusinessContext {
   id?: string;
   businessName: string;
+  domain?: string;
   businessType: BusinessType;
   location: BusinessContextLocation;
   services: string[];
   targetAudience: string;
   positioning: string;
+  internalLinks?: { href: string; anchorText: string; target: "blog" | "service" | "page" }[];
+  integrations?: IntegrationCredentials;
   confirmedAt?: string; // ISO timestamp when user confirmed
   createdAt?: string;
   updatedAt?: string;

@@ -17,4 +17,30 @@
 body {
   color: var(--foreground);
   background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Hide global scrollbar but maintain scrollability */
+::-webkit-scrollbar {
+  display: none;
+}
+
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* Force hide Clerk branding footers and development watermark safely */
+.cl-footer,
+.cl-footerAction,
+.cl-internal-b3al4j,
+.cl-userButtonPopoverFooter {
+  display: none !important;
+}
+
+/* Slow down Clerk's loading spinners to make them less annoying */
+.cl-socialButtonsBlockButton svg,
+.cl-formButtonPrimary svg,
+.cl-spinner {
+  animation-duration: 1.5s !important;
 }

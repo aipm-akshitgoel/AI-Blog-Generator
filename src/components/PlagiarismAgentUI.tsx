@@ -1,6 +1,8 @@
+"use client";
 import { useState, useEffect } from "react";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { PlagiarismReport } from "@/lib/types/plagiarism";
+import { HelpTip } from "./HelpTip";
 
 interface PlagiarismAgentProps {
     optimized: OptimizedContent;
@@ -87,14 +89,20 @@ export function PlagiarismAgentUI({ optimized, onComplete }: PlagiarismAgentProp
                     </svg>
                 </div>
                 <div>
-                    <h2 className="text-xl font-semibold text-neutral-100">Plagiarism & Safety Agent</h2>
-                    <p className="text-xs text-neutral-400">Similarity Detection & Content Originality</p>
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-semibold text-neutral-100">Plagiarism &amp; Safety Agent</h2>
+                        <HelpTip text="Scans your article against billions of web pages to check it's unique. Google penalises copied content, so originality is critical for ranking." />
+                    </div>
+                    <p className="text-xs text-neutral-400">Similarity Detection &amp; Content Originality</p>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-6 flex flex-col justify-center items-center">
-                    <span className="text-sm font-semibold text-neutral-500 mb-2">Overall Match</span>
+                    <div className="flex items-center gap-1.5 mb-2">
+                        <span className="text-sm font-semibold text-neutral-500">Overall Match</span>
+                        <HelpTip text="The percentage of your text that matches content found elsewhere online. Below 15% is ideal. Higher numbers suggest some phrases should be reworded." />
+                    </div>
                     <div className="text-4xl font-bold text-neutral-100">{report.overallSimilarity}%</div>
                     {report.isSafe ? (
                         <span className="mt-2 text-xs font-semibold text-green-400 bg-green-400/10 px-2 py-1 rounded">SAFE</span>

@@ -17,7 +17,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { blogPost, isRefining } = body as { blogPost?: BlogPost, isRefining?: boolean };
+    const { blogPost, businessContext, isRefining } = body as { blogPost?: BlogPost, businessContext?: any, isRefining?: boolean };
     if (!blogPost) {
         return NextResponse.json({ error: "Missing blogPost" }, { status: 400 });
     }
@@ -29,7 +29,8 @@ export async function POST(req: Request) {
             systemInstruction: `You are an expert content optimizer for beauty & wellness blogs. Take the provided blog post JSON and:
 - Improve flow and readability (use clear headings, concise paragraphs).
 - Ensure balanced sections (no overly long or short parts).
-- Add internal links where appropriate. Use markdown link syntax with anchor text that is SEO‑safe.
+- CRITICAL — INTERNAL LINKS: You MUST weave at least 2-3 internal links directly into the body of contentMarkdown using markdown link syntax. Example: [Book a consultation](/services). ONLY use links from this approved list: ${JSON.stringify(businessContext?.internalLinks || [])}. Do not place links in headings. Place them naturally within paragraphs so they read well.
+- ZERO-GPT HUMANIZE: Ensure the text reads as 100% human-written to pass plagiarism/AI checkers. You must strictly ABANDON all em-dashes (—). DO NOT use fluff words like "elevate", "delve", "moreover", or "in today's landscape". Use varied sentence length.
 - Provide detailed SEO scores inside the 'seoScores' object. Provide numerical percent scores out of 100 for 'overall', 'contentStructure', and 'readability'. Provide an array of 'targetKeywords'. Also provide an array of 'actionableInsights' containing 2-3 specific, actionable tips to fix any scores below 90. Note: if all scores are >= 90, leave actionableInsights empty.
 - Return ONLY a JSON object matching the OptimizedContent schema.
 Do NOT include any explanatory text.

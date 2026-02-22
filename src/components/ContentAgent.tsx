@@ -17,8 +17,6 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
     const [loading, setLoading] = useState(true);
     const [loadingStep, setLoadingStep] = useState(0);
     const [error, setError] = useState<string | null>(null);
-    const [isEditing, setIsEditing] = useState(false);
-    const [editedMarkdown, setEditedMarkdown] = useState("");
 
     useEffect(() => {
         generateContent();
@@ -57,7 +55,7 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
     if (loading) {
         return (
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-8 shadow-xl text-center">
-                <div className="mb-6 inline-flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-indigo-900/20 text-indigo-500">
+                <div className="mb-6 inline-flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-emerald-900/20 text-emerald-500">
                     <svg className="w-8 h-8 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -67,14 +65,14 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
                     {loadingStep === 1 && "Drafting SEO Outline..."}
                     {loadingStep === 2 && "Weaving in local relevance signals..."}
                     {loadingStep === 3 && "Writing long-form content & optimizing headers..."}
-                    {loadingStep === 4 && "Formatting FAQs and Meta descriptions..."}
+                    {loadingStep === 4 && "Formatting FAQs and wrapping up the draft..."}
                     {loadingStep === 0 && "Finalizing..."}
                 </h3>
-                <p className="mt-2 text-sm text-neutral-500">Autonomous content generation requires zero user input.</p>
+                <p className="mt-2 text-sm text-neutral-500">Intelligent content generation is drafting your post.</p>
 
                 <div className="mt-8 h-1.5 w-full bg-neutral-800 overflow-hidden rounded-full">
                     <div
-                        className="h-full bg-indigo-500 transition-all duration-1000 ease-out"
+                        className="h-full bg-emerald-500 transition-all duration-1000 ease-out"
                         style={{ width: `${(loadingStep / 4) * 100}%` }}
                     />
                 </div>
@@ -111,100 +109,53 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
         return (
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-6 shadow-xl animate-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center gap-3 mb-6 border-b border-neutral-800 pb-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-900/30 text-indigo-400 border border-indigo-800/50">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-900/30 text-emerald-400 border border-emerald-800/50">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                             <path fillRule="evenodd" d="M4.804 21.644A6.707 6.707 0 006 21.75a6.721 6.721 0 003.583-1.029c.774.182 1.584.279 2.417.279 5.322 0 9.75-3.97 9.75-9 0-5.03-4.428-9-9.75-9s-9.75 3.97-9.75 9c0 2.409 1.025 4.587 2.674 6.192.232.226.277.428.254.543-.11.554-.334 1.258-.694 2.19-.089.231-.225.598-.41.97l-.017.032c-.066.12-.132.241-.197.362a.75.75 0 00.933 1.054 13.924 13.924 0 003.111-1.706zM9.75 9.75a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5zm0 3a.75.75 0 000 1.5h4.5a.75.75 0 000-1.5h-4.5z" clipRule="evenodd" />
                         </svg>
                     </div>
                     <div>
                         <h2 className="text-xl font-semibold text-neutral-100">Content Generation Agent</h2>
-                        <p className="text-xs text-neutral-400">Autonomous SEO Article Draft</p>
+                        <p className="text-xs text-neutral-400">Intelligent SEO Article Draft</p>
                     </div>
                 </div>
 
                 {/* Removed early SEO Metadata Box - Handled by Meta SEO Agent later */}
 
-                {/* Edit Mode */}
-                {isEditing && (
-                    <div className="mb-8 rounded-xl border border-amber-900/50 bg-amber-950/10 p-4 animate-in fade-in duration-300">
-                        <div className="mb-3 flex items-center justify-between">
-                            <h3 className="text-sm font-medium text-amber-500">Edit content (Markdown)</h3>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setEditedMarkdown(post.contentMarkdown);
-                                    setIsEditing(false);
-                                }}
-                                className="text-xs text-neutral-500 hover:text-neutral-300"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                        <textarea
-                            value={editedMarkdown}
-                            onChange={(e) => setEditedMarkdown(e.target.value)}
-                            className="w-full h-64 rounded-lg bg-neutral-950 border border-neutral-800 p-4 text-sm text-neutral-300 font-mono focus:border-amber-700 focus:ring-1 focus:ring-amber-700 outline-none resize-y"
-                        />
-                        <div className="mt-3 flex justify-end">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setPost((p) => p ? { ...p, contentMarkdown: editedMarkdown } : p);
-                                    setIsEditing(false);
-                                }}
-                                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-500"
-                            >
-                                Save edits
-                            </button>
-                        </div>
-                    </div>
-                )}
+                {/* Blog Post Content Body (read-only preview) */}
+                <div className="mb-8 rounded-lg border border-neutral-800 bg-neutral-950 p-6 md:p-8 overflow-y-auto max-h-[600px]">
+                    <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-emerald-400">
+                        <ReactMarkdown>{post.contentMarkdown}</ReactMarkdown>
 
-                {/* Blog Post Content Body (read-only preview when not editing) */}
-                {!isEditing && (
-                    <div className="mb-8 rounded-lg border border-neutral-800 bg-neutral-950 p-6 md:p-8 overflow-y-auto max-h-[600px]">
-                        <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-indigo-400">
-                            <ReactMarkdown>{post.contentMarkdown}</ReactMarkdown>
-
-                            {/* Render FAQs */}
-                            <div className="mt-8 pt-8 border-t border-neutral-800">
-                                <h2 className="text-neutral-100">Frequently Asked Questions</h2>
-                                <div className="space-y-4 mt-4">
-                                    {post.faqs.map((faq, i) => (
-                                        <div key={i}>
-                                            <h3 className="text-neutral-200 mt-0">{faq.question}</h3>
-                                            <p className="text-neutral-400">{faq.answer}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                        {/* Render FAQs */}
+                        <div className="mt-8 pt-8 border-t border-neutral-800">
+                            <h2 className="text-neutral-100">Frequently Asked Questions</h2>
+                            <div className="space-y-4 mt-4">
+                                {post.faqs.map((faq, i) => (
+                                    <div key={i}>
+                                        <h3 className="text-neutral-200 mt-0">{faq.question}</h3>
+                                        <p className="text-neutral-400">{faq.answer}</p>
+                                    </div>
+                                ))}
                             </div>
-                        </article>
-                    </div>
-                )}
+                        </div>
+                    </article>
+                </div>
 
                 {/* Call to action */}
-                <div className="flex flex-wrap justify-between items-center gap-3 pt-4 border-t border-neutral-800">
-                    {!isEditing && (
+                <div className="flex flex-wrap justify-end items-center gap-3 pt-4 border-t border-neutral-800">
+                    <div className="flex flex-wrap gap-3 ml-auto">
                         <button
-                            type="button"
-                            onClick={() => { setEditedMarkdown(post.contentMarkdown); setIsEditing(true); }}
-                            className="rounded-lg border border-neutral-600 px-4 py-2 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
+                            onClick={generateContent}
+                            className="rounded-lg border border-neutral-700 bg-transparent px-5 py-2.5 font-medium text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white"
                         >
-                            Edit content
+                            Regenerate Draft
                         </button>
-                    )}
-                    <div className="flex gap-3 ml-auto">
-                    <button
-                        onClick={() => onComplete(post)}
-                        className="rounded-lg border border-indigo-700 bg-neutral-900 px-5 py-2.5 font-medium text-indigo-300 transition-colors hover:bg-neutral-800 hover:text-white"
-                    >
-                        Save to Drafts
-                    </button>
-                    <button
+                        <button
                             onClick={() => onComplete(post)}
-                            className="rounded-lg bg-indigo-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-indigo-500 shadow-lg shadow-indigo-900/20"
+                            className="rounded-lg bg-emerald-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
                         >
-                            Continue to Optimization
+                            Proceed to Formatting &amp; Optimization
                         </button>
                     </div>
                 </div>

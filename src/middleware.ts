@@ -2,9 +2,18 @@
  * Clerk middleware (Next.js requires this file to be named middleware.ts).
  * Uses clerkMiddleware() from @clerk/nextjs/server per official App Router quickstart.
  */
-import { clerkMiddleware } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-export default clerkMiddleware();
+const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/setup(.*)"]);
+
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) {
+    const { userId, redirectToSignIn } = await auth();
+    if (!userId) {
+      return redirectToSignIn();
+    }
+  }
+});
 
 export const config = {
   matcher: [

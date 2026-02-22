@@ -158,7 +158,7 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify }: Strate
 
                 {/* Topic Options Section */}
                 <div className="mb-8">
-                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-500">Topic Prototypes</h3>
+                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-500">Topics</h3>
                     <div className="space-y-3">
                         {strategy.topicOptions.map((topic, i) => (
                             <div key={i} className={`relative rounded-lg border p-4 ${topic.cannibalizationRisk ? 'border-amber-900/50 bg-amber-950/10' : 'border-neutral-800 bg-neutral-950/50'}`}>
@@ -186,8 +186,8 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify }: Strate
                 <div className="flex justify-end gap-3 pt-4 border-t border-neutral-800">
                     <button
                         onClick={() => {
-                            setStrategy(null);
                             onModify();
+                            generateStrategy();
                         }}
                         className="rounded-lg border border-neutral-700 bg-neutral-900 px-5 py-2.5 font-medium text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white"
                     >
@@ -195,7 +195,7 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify }: Strate
                     </button>
                     <button
                         onClick={() => onApprove({
-                            businessContextId: businessContext.businessName, // Mock ID mapping
+                            businessContextId: businessContext.id ?? String(businessContext.businessName),
                             keywordStrategy: strategy.keywordStrategy,
                             topicOptions: strategy.topicOptions,
                             status: "approved"

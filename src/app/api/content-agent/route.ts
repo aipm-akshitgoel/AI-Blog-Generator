@@ -19,6 +19,7 @@ REQUIREMENTS:
 3. **Tone**: Use the exact "Positioning" tone provided in the Business Context.
 4. **FAQs**: Include exactly 3 Frequently Asked Questions (with answers) at the end of the post formatted as H2/H3.
 5. **No Fluff**: Make it punchy, practical, and highly optimized for read time.
+6. **ZeroGPT / Humanization**: The text must read as 100% human-written. Do NOT use em-dashes (—) under any circumstances. Avoid common AI fluff phrases like "delve into", "elevate", "in today's landscape", "moreover", or "in conclusion". Use varied sentence lengths.
 
 CRITICAL INSTRUCTIONS:
 - You must ONLY output a valid JSON object matching the schema below. 
@@ -82,7 +83,12 @@ export async function POST(req: Request) {
         return NextResponse.json({ data: postData });
     } catch (err) {
         const message = err instanceof Error ? err.message : "Content Agent generation failed";
-        console.error("Content Agent Error:", message);
-        return NextResponse.json({ error: message }, { status: 500 });
+        console.error("Content Agent Error:", err);
+        const hint = message.toLowerCase().includes("rate") || message.toLowerCase().includes("429")
+            ? " Rate limit hit — wait 1 min and retry."
+            : message.toLowerCase().includes("json") || message.toLowerCase().includes("parse")
+                ? " LLM returned invalid JSON — retry."
+                : "";
+        return NextResponse.json({ error: message + hint }, { status: 500 });
     }
 }

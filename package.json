@@ -10,12 +10,17 @@
   },
   "dependencies": {
     "@clerk/nextjs": "^6.0.0",
+    "@google/genai": "^1.42.0",
     "@google/generative-ai": "^0.21.0",
     "@supabase/supabase-js": "^2.49.1",
+    "@tailwindcss/typography": "^0.5.19",
+    "@uiw/react-md-editor": "^4.0.11",
+    "date-fns": "^4.1.0",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "rehype-sanitize": "^6.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

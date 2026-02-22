@@ -24,3 +24,12 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+
+# Local dev / mock DB
+data/
+clerk-nextjs/
+
+# Test files
+test-*.mjs
+test-*.js
+scripts/

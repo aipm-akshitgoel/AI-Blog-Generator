@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { HelpTip } from "./HelpTip";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import type { MetaOption } from "@/lib/types/meta";
@@ -15,6 +16,8 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
     const [schemaData, setSchemaData] = useState<SchemaData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editedSchema, setEditedSchema] = useState<string>("");
 
     useEffect(() => {
         const fetchSchema = async () => {
@@ -33,6 +36,11 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
 
                 const data = await res.json();
                 setSchemaData(data.schemaData);
+                try {
+                    setEditedSchema(JSON.stringify(JSON.parse(data.schemaData.jsonLd), null, 2));
+                } catch {
+                    setEditedSchema(data.schemaData.jsonLd);
+                }
             } catch (err) {
                 setError(err instanceof Error ? err.message : "An error occurred.");
             } finally {
@@ -46,7 +54,7 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
     if (loading) {
         return (
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-8 shadow-xl text-center">
-                <div className="mb-6 inline-flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-fuchsia-900/20 text-fuchsia-500">
+                <div className="mb-6 inline-flex h-16 w-16 animate-pulse items-center justify-center rounded-full bg-emerald-900/20 text-emerald-500">
                     <svg className="w-8 h-8 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -81,14 +89,20 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-6 shadow-xl animate-in slide-in-from-bottom-4 duration-500">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-neutral-800 pb-4">
                 <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-fuchsia-900/30 text-fuchsia-400 border border-fuchsia-800/50">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-900/30 text-emerald-400 border border-emerald-800/50">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                             <path fillRule="evenodd" d="M14.447 3.026a.75.75 0 01.527.921l-4.5 16.5a.75.75 0 01-1.448-.394l4.5-16.5a.75.75 0 01.921-.527zM16.72 6.22a.75.75 0 011.06 0l5.25 5.25a.75.75 0 010 1.06l-5.25 5.25a.75.75 0 11-1.06-1.06L21.44 12l-4.72-4.72a.75.75 0 010-1.06zm-9.44 0a.75.75 0 010 1.06L2.56 12l4.72 4.72a.75.75 0 01-1.06 1.06L.97 12.53a.75.75 0 010-1.06l5.25-5.25a.75.75 0 011.06 0z" clipRule="evenodd" />
                         </svg>
                     </div>
                     <div>
-                        <h2 className="text-xl font-semibold text-neutral-100">Schema & Technical SEO</h2>
-                        <p className="text-xs text-neutral-400">JSON-LD structured data for rich snippets</p>
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-xl font-semibold text-neutral-100">Schema &amp; Technical SEO</h2>
+                            <HelpTip text="Invisible code that helps Google understand your business. Unlocks rich results like FAQ dropdowns and star ratings in search." />
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <p className="text-xs text-neutral-400">JSON-LD structured data for rich snippets</p>
+                            <HelpTip side="right" text="JSON-LD is a hidden data format baked into the page — users never see it, but search engines use it to display enhanced listings." />
+                        </div>
                     </div>
                 </div>
 
@@ -102,23 +116,43 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
                 )}
             </div>
 
+            <div className="flex items-center justify-between mb-4">
+                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Extracted Schema JSON-LD</label>
+                <button
+                    onClick={() => setIsEditing(!isEditing)}
+                    className={`text-[10px] font-bold uppercase tracking-widest transition-colors ${isEditing ? 'text-emerald-500' : 'text-neutral-500 hover:text-white'}`}
+                >
+                    {isEditing ? "Save Edit" : "Manual Edit"}
+                </button>
+            </div>
+
             <div className="relative rounded-lg bg-[#0d1117] border border-neutral-800 p-4 overflow-hidden mb-6">
-                <div className="absolute top-0 right-0 p-2 opacity-50 select-none">
-                    <span className="text-xs font-mono text-neutral-500 uppercase">{schemaData.type}</span>
-                </div>
-                <pre className="text-xs text-neutral-300 font-mono overflow-auto max-h-[400px]">
-                    <code>
-                        {/* We parse and re-stringify to ensure pretty printing just in case */}
-                        {JSON.stringify(JSON.parse(schemaData.jsonLd), null, 2)}
-                    </code>
-                </pre>
+                {!isEditing && (
+                    <div className="absolute top-0 right-0 p-2 opacity-50 select-none">
+                        <span className="text-xs font-mono text-neutral-500 uppercase">{schemaData.type}</span>
+                    </div>
+                )}
+                {isEditing ? (
+                    <textarea
+                        value={editedSchema}
+                        onChange={(e) => setEditedSchema(e.target.value)}
+                        className="w-full h-[400px] bg-transparent text-xs text-neutral-300 font-mono outline-none resize-y"
+                        spellCheck={false}
+                    />
+                ) : (
+                    <pre className="text-xs text-neutral-300 font-mono overflow-auto max-h-[400px]">
+                        <code>
+                            {editedSchema}
+                        </code>
+                    </pre>
+                )}
             </div>
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-3 pt-4 border-t border-neutral-800">
                 <button
-                    onClick={() => onComplete(schemaData)}
-                    className="rounded-lg bg-indigo-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-indigo-500 shadow-lg shadow-indigo-900/20"
+                    onClick={() => onComplete({ ...schemaData, jsonLd: editedSchema })}
+                    className="rounded-lg bg-emerald-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
                 >
                     Deploy Article & Schema
                 </button>

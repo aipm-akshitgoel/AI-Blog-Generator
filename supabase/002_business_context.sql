@@ -16,5 +16,5 @@ create table if not exists business_context (
   updated_at timestamptz not null default now()
 );
 
--- Optional: link to Clerk user when you add auth to setup
--- alter table business_context add column if not exists user_id text;
+-- Link to Clerk user for per-user data scoping
+alter table business_context add column if not exists user_id text;
