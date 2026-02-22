@@ -69,7 +69,7 @@ export async function POST(req: Request) {
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-1.5-flash",
+            model: "gemini-2.5-flash",
             systemInstruction: `You are an AI specialized in capturing local SEO context. Your goal is to gather all necessary information from the user to build a complete "BusinessContext" for local SEO optimization.
 
 You need to collect the following information:
