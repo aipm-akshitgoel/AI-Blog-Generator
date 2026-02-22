@@ -23,7 +23,11 @@ export default function BlogHubClient({ blogs, categories, activeCategory }: Pro
     // Split blogs for the "All Posts" view
     const isAllPosts = !activeCategory;
     const popularBlogs = isAllPosts ? blogs.slice(0, 3) : [];
-    const latestBlogs = isAllPosts ? blogs.slice(3) : blogs;
+    // Latest Posts: all blogs sorted newest-first (full list, not truncated)
+    const latestBlogs = isAllPosts
+        ? [...blogs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        : blogs;
+
 
     return (
         <main className="min-h-screen bg-neutral-50 selection:bg-indigo-200">
