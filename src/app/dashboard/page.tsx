@@ -39,7 +39,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 pb-6 border-b border-neutral-800">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Your Content Hub</h1>
-                        <p className="text-neutral-400">Manage, analyze, and publish your AI-generated blog posts.</p>
+                        <div className="flex items-center gap-4">
+                            <p className="text-neutral-400">Manage, analyze, and publish your AI-generated blog posts.</p>
+                            <a
+                                href="mailto:support@bloggieai.com"
+                                className="flex md:hidden items-center gap-1 text-[10px] font-bold text-emerald-500/80 bg-emerald-500/5 px-2 py-1 rounded border border-emerald-500/10 uppercase tracking-widest"
+                            >
+                                Support
+                            </a>
+                        </div>
                     </div>
                     <div className="mt-4 md:mt-0">
                         <Link
