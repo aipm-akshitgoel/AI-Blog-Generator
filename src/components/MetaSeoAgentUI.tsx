@@ -9,13 +9,16 @@ interface MetaSeoAgentProps {
 }
 
 const CATEGORIES = [
-    "Hair Care",
-    "Beauty Tips",
-    "Salon Business",
-    "Skincare",
-    "Luxury Lifestyle",
-    "Wellness",
-    "Industry Trends"
+    "Tips",
+    "Guide",
+    "Trends",
+    "How-To",
+    "Case Study",
+    "Opinion",
+    "News",
+    "Checklist",
+    "Listicle",
+    "Review"
 ];
 
 export function MetaSeoAgentUI({ optimized, onComplete }: MetaSeoAgentProps) {
@@ -47,8 +50,15 @@ export function MetaSeoAgentUI({ optimized, onComplete }: MetaSeoAgentProps) {
             const data = await res.json();
             setPayload(data.payload);
             setSelectedIdx(0);
-            setEditedTitle(data.payload.options[0].title);
-            setEditedDesc(data.payload.options[0].description);
+
+            const firstOption = data.payload.options[0];
+            setEditedTitle(firstOption.title);
+            setEditedDesc(firstOption.description);
+
+            // Set category based on AI suggestion if it's in our valid list
+            if (firstOption.category && CATEGORIES.includes(firstOption.category)) {
+                setSelectedCategory(firstOption.category);
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : "An error occurred.");
         } finally {
@@ -62,8 +72,14 @@ export function MetaSeoAgentUI({ optimized, onComplete }: MetaSeoAgentProps) {
 
     const handleSelectOption = (idx: number) => {
         setSelectedIdx(idx);
-        setEditedTitle(payload?.options[idx].title || "");
-        setEditedDesc(payload?.options[idx].description || "");
+        const opt = payload?.options[idx];
+        setEditedTitle(opt?.title || "");
+        setEditedDesc(opt?.description || "");
+
+        // Update category if this option has a specific one recommended
+        if (opt?.category && CATEGORIES.includes(opt.category)) {
+            setSelectedCategory(opt.category);
+        }
     };
 
     const handleApply = () => {
