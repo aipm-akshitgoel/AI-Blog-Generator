@@ -22,7 +22,7 @@ export async function POST(req: Request) {
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-pro",
+            model: "gemini-1.5-flash",
             systemInstruction: `You are an expert art director. Given a blog post and business context, generate a 2-3 word highly specific visual search query that perfectly encapsulates the mood of the article. Do NOT include words like "photo", "image", or "banner". Just the subject matter.
 Return ONLY valid JSON: { "searchQuery": "...", "altText": "..." }`,
             generationConfig: {

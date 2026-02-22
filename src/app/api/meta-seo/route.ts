@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-pro",
+            model: "gemini-1.5-flash",
             systemInstruction: `You are an expert SEO specialist. Generate 3 compelling Meta Title and Meta Description options for the provided blog post.
 
 STRICT CHARACTER LIMITS — THIS IS THE MOST IMPORTANT RULE:
