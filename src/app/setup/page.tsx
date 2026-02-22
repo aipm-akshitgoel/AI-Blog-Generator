@@ -68,6 +68,7 @@ function SetupPageInner() {
 
   // ── Auto-publish fast-lane ────────────────────────────────────────────────
   const [autoProgress, setAutoProgress] = useState<{ step: number; label: string } | null>(null);
+  const [batchDone, setBatchDone] = useState(false);
 
   const AUTO_STEPS = [
     "Writing your blog post...",
@@ -148,11 +149,13 @@ function SetupPageInner() {
       for (let i = 0; i < topicList.length; i++) {
         await runOneTopic(topicList[i], i + 1);
       }
-      setAutoProgress(null);
-      // Go to dashboard so user can review & publish each draft
+      // Show a "done" state in the overlay while router navigates — prevents flash
+      setBatchDone(true);
+      setAutoProgress({ step: AUTO_STEPS.length - 1, label: `All ${count} drafts saved! Redirecting to dashboard…` });
       router.push(`/dashboard?drafts=${count}`);
     } catch (err: any) {
       setAutoProgress(null);
+      setBatchDone(false);
       alert(`Auto-generate failed: ${err.message}`);
     }
   };
@@ -372,19 +375,25 @@ function SetupPageInner() {
             <div className="fixed inset-0 z-50 bg-neutral-950/90 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-300">
               <div className="max-w-md w-full mx-4 bg-neutral-900 border border-neutral-800 rounded-2xl p-8 shadow-2xl">
                 <div className="flex items-center justify-center mb-6">
-                  <div className="w-14 h-14 rounded-full border-2 border-emerald-500/20 bg-emerald-900/20 flex items-center justify-center">
-                    <svg className="w-7 h-7 text-emerald-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
+                  <div className={`w-14 h-14 rounded-full border-2 flex items-center justify-center ${batchDone ? "border-emerald-500 bg-emerald-900/20" : "border-emerald-500/20 bg-emerald-900/20"}`}>
+                    {batchDone ? (
+                      <svg className="w-7 h-7 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-7 h-7 text-emerald-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    )}
                   </div>
                 </div>
-                <h2 className="text-xl font-black text-white text-center uppercase tracking-tight mb-2">Auto-Publishing...</h2>
+                <h2 className="text-xl font-black text-white text-center uppercase tracking-tight mb-2">{batchDone ? "All Done!" : "Auto-Publishing..."}</h2>
                 <p className="text-emerald-400 text-sm text-center mb-8 font-medium">{autoProgress.label}</p>
                 <div className="space-y-3">
                   {AUTO_STEPS.map((label, i) => {
-                    const isDone = i < autoProgress.step;
-                    const isActive = i === autoProgress.step;
+                    const isDone = batchDone || i < autoProgress.step;
+                    const isActive = !batchDone && i === autoProgress.step;
                     return (
                       <div key={i} className={`flex items-center gap-3 text-sm transition-all duration-300 ${isDone ? "text-emerald-400" : isActive ? "text-white scale-105 origin-left" : "text-neutral-600"
                         }`}>
