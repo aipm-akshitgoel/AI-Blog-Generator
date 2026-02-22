@@ -53,7 +53,17 @@ BAD examples (NOT acceptable — too long):
 - Title (68 chars): "How to Choose a Luxury Home Builder in Singapore: A Complete Guide"
 - Description (165 chars): "Building a luxury home in Singapore? Our 10-point checklist helps you vet builders on credentials, portfolios, and quality. Find the right partner for your dream home."
 
-OUTPUT ONLY a valid JSON object: { "options": [{ "title": "...", "description": "...", "explanation": "..." }] }
+CATEGORY ASSIGNMENT:
+Also assign a single content-type category label based on the blog post's format and purpose.
+Choose ONLY from this list: Tips, Guide, Trends, How-To, Case Study, Opinion, News, Checklist, Listicle, Review
+- Use "Tips" for advice-based posts
+- Use "Guide" or "How-To" for instructional posts
+- Use "Checklist" for step-by-step or point-based posts
+- Use "Listicle" for numbered list posts
+- Use "Trends" for industry trend posts
+- Do NOT use the business's industry (e.g. never use "hair", "salon", "construction" as category)
+
+OUTPUT ONLY a valid JSON object: { "options": [{ "title": "...", "description": "...", "explanation": "...", "category": "..." }] }
 No markdown, no extra text, no code fences.`,
             generationConfig: {
                 responseMimeType: "application/json",
