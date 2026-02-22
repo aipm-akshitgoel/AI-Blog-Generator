@@ -7,7 +7,7 @@ export function BusinessContextSetup({ onComplete }: { onComplete?: (context: Bu
   const [messages, setMessages] = useState<{ role: "user" | "model"; content: string }[]>([
     {
       role: "model",
-      content: "Hi! Let's get your business profile set up. To start, what is your business website URL?",
+      content: "Hi! Let's get your business profile set up. To start, what is the name of your business?",
     },
   ]);
   const [input, setInput] = useState("");
@@ -150,6 +150,12 @@ export function BusinessContextSetup({ onComplete }: { onComplete?: (context: Bu
             <span className="block text-xs font-medium text-neutral-500 uppercase tracking-wider">Business Name</span>
             <p className="mt-1 font-medium text-neutral-100 text-base">{draftContext.businessName}</p>
           </div>
+          {draftContext.domain && (
+            <div>
+              <span className="block text-xs font-medium text-neutral-500 uppercase tracking-wider">Website URL</span>
+              <p className="mt-1 font-mono text-amber-500">{draftContext.domain}</p>
+            </div>
+          )}
           <div>
             <span className="block text-xs font-medium text-neutral-500 uppercase tracking-wider">Type</span>
             <p className="mt-1 capitalize">{draftContext.businessType}</p>
