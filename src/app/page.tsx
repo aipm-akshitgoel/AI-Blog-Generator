@@ -27,7 +27,7 @@ export default async function Home() {
           </span>
         </h1>
         <p className="text-lg md:text-xl text-neutral-400 mb-10 leading-relaxed max-w-2xl mx-auto">
-          Connect your business, pick a topic, and watch as 9 specialized AI Agents research, write, optimize, format, and publish high-converting articles directly to your domain.
+          Pick a topic. 9 AI agents do the rest — write, optimize, and publish.
         </p>
 
         <HomepageCTA />
