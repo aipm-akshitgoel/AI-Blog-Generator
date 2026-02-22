@@ -120,9 +120,21 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
                 <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Extracted Schema JSON-LD</label>
                 <button
                     onClick={() => setIsEditing(!isEditing)}
-                    className={`text-[10px] font-bold uppercase tracking-widest transition-colors ${isEditing ? 'text-emerald-500' : 'text-neutral-500 hover:text-white'}`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${isEditing
+                        ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg shadow-emerald-900/30'
+                        : 'bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-emerald-500 hover:text-emerald-400'}`}
                 >
-                    {isEditing ? "Save Edit" : "Manual Edit"}
+                    {isEditing ? (
+                        <>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                            Save Edit
+                        </>
+                    ) : (
+                        <>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                            Manual Edit
+                        </>
+                    )}
                 </button>
             </div>
 

@@ -7,7 +7,7 @@ export function BusinessContextSetup({ onComplete }: { onComplete?: (context: Bu
   const [messages, setMessages] = useState<{ role: "user" | "model"; content: string }[]>([
     {
       role: "model",
-      content: "Hi! Let's get your business profile set up. To start, what is the name of your business?",
+      content: "Hi! Let's get your business profile set up. To start, what is your business website URL?",
     },
   ]);
   const [input, setInput] = useState("");

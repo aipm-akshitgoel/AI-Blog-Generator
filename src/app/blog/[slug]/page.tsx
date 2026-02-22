@@ -18,6 +18,12 @@ function stripLLMCTA(markdown: string): string {
         .trim();
 }
 
+/** Removes the first line if it's an H1 heading (# Title) to prevent
+ *  it duplicating the explicit <h1> rendered above the banner image. */
+function stripLeadingH1(markdown: string): string {
+    return markdown.replace(/^#\s+[^\n]*\n?/, "").trimStart();
+}
+
 /**
  * Extracts only the Article/BlogPosting node from a combined JSON-LD @graph.
  * Org-level schemas (HairSalon, WebSite, Organization) should live in the
@@ -102,7 +108,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                             prose-h2:text-4xl prose-h3:text-2xl
                             prose-a:text-neutral-900 prose-a:underline prose-a:decoration-1 prose-a:underline-offset-4 hover:prose-a:decoration-4
                             prose-img:rounded-none">
-                            <ReactMarkdown>{stripLLMCTA(content.contentMarkdown)}</ReactMarkdown>
+                            <ReactMarkdown>{stripLeadingH1(stripLLMCTA(content.contentMarkdown))}</ReactMarkdown>
 
                             {content.faqs && content.faqs.length > 0 && (
                                 <div className="mt-16">
@@ -159,7 +165,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                     <div className="prose prose-lg md:prose-xl prose-neutral max-w-none 
                         prose-headings:font-bold prose-headings:tracking-tight prose-a:text-emerald-600 prose-a:no-underline hover:prose-a:underline
                         prose-img:rounded-2xl prose-img:shadow-lg prose-pre:bg-neutral-900 prose-pre:text-neutral-100">
-                        <ReactMarkdown>{content.contentMarkdown}</ReactMarkdown>
+                        <ReactMarkdown>{stripLeadingH1(content.contentMarkdown)}</ReactMarkdown>
 
                         {content.faqs && content.faqs.length > 0 && (
                             <div className="mt-16 bg-neutral-100 rounded-3xl p-8 md:p-12 not-prose">
