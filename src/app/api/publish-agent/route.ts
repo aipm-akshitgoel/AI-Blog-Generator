@@ -7,7 +7,7 @@ import type { PublishPayload } from "@/lib/types/publish";
 import type { MetaOption } from "@/lib/types/meta";
 import type { SchemaData } from "@/lib/types/schema";
 import { auth } from "@clerk/nextjs/server";
-import { saveBlog, type SavedBlog } from "@/lib/mockDb";
+import { saveBlog, type SavedBlog } from "@/lib/blogDb";
 
 export async function POST(req: Request) {
     try {

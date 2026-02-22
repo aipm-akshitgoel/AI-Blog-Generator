@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getBlogBySlug } from "@/lib/mockDb";
+import { getBlogBySlug } from "@/lib/blogDb";
 import ReactMarkdown from "react-markdown";
 import Link from "next/link";
 import Script from "next/script";

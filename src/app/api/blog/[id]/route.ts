@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { getBlogById, saveBlog, deleteBlog } from "@/lib/mockDb";
+import { getBlogById, saveBlog, deleteBlog } from "@/lib/blogDb";
 import { NextResponse } from "next/server";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { SavedBlog } from "@/lib/mockDb";
+import type { SavedBlog } from "@/lib/blogDb";
 import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { useRouter } from "next/navigation";

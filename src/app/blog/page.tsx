@@ -1,4 +1,4 @@
-import { getAllBlogs } from '@/lib/mockDb';
+import { getAllBlogs } from '@/lib/blogDb';
 import BlogHubClient from './BlogHubClient';
 
 export const dynamic = 'force-dynamic';

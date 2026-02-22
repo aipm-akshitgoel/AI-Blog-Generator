@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { deleteBlog } from "@/lib/mockDb";
+import { deleteBlog } from "@/lib/blogDb";
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {

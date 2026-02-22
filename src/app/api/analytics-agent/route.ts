@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { getBlogById } from "@/lib/mockDb";
+import { getBlogById } from "@/lib/blogDb";
 
 /**
  * POST /api/analytics-agent

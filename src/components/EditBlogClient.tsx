@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SavedBlog } from "@/lib/mockDb";
+import { SavedBlog } from "@/lib/blogDb";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useRouter } from "next/navigation";
 import Link from "next/link";

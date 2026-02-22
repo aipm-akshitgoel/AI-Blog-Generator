@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { getBlogsByUserId } from "@/lib/mockDb";
+import { getBlogsByUserId } from "@/lib/blogDb";
 import { DashboardClient } from "@/components/DashboardClient";
 import { IntegrationsPanel } from "@/components/IntegrationsPanel";
 import { BlogHubSettings } from "@/components/BlogHubSettings";

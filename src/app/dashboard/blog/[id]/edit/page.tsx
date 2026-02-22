@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { getBlogById } from "@/lib/mockDb";
+import { getBlogById } from "@/lib/blogDb";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { EditBlogClient } from "@/components/EditBlogClient";

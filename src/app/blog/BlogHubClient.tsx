@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatDistanceToNow } from 'date-fns';
-import type { SavedBlog } from '@/lib/mockDb';
+import type { SavedBlog } from '@/lib/blogDb';
 
 interface Props {
     blogs: SavedBlog[];
