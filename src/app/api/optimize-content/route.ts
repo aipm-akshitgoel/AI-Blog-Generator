@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-pro",
+            model: "gemini-1.5-pro",
             systemInstruction: `You are an expert content optimizer for beauty & wellness blogs. Take the provided blog post JSON and:
 - Improve flow and readability (use clear headings, concise paragraphs).
 - Ensure balanced sections (no overly long or short parts).
@@ -37,6 +37,7 @@ Do NOT include any explanatory text.
 `,
             generationConfig: {
                 responseMimeType: "application/json",
+                maxOutputTokens: 8192,
             }
         });
 

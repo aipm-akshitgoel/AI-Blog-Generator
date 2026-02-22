@@ -6,6 +6,7 @@ import { BlogHubSettings } from "@/components/BlogHubSettings";
 import { StrategyManagement } from "@/components/StrategyManagement";
 import { DomainSetupPanel } from "@/components/DomainSetupPanel";
 import { PaymentsPanel } from "@/components/PaymentsPanel";
+import { SupportPanel } from "@/components/SupportPanel";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { listBusinessContexts } from "@/lib/businessContextDb";
@@ -110,6 +111,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                         <BlogHubSettings />
                         <IntegrationsPanel businessContext={businessContext} />
                         <PaymentsPanel />
+                        <SupportPanel />
                     </div>
                 )}
             </div>

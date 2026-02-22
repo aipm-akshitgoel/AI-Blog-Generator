@@ -23,7 +23,7 @@ REQUIREMENTS:
 
 CRITICAL INSTRUCTIONS:
 - You must ONLY output a valid JSON object matching the schema below. 
-- The contentMarkdown field must contain the full markdown string of the post. It should use \\n for new lines. Escape any internal quotes properly.
+- The contentMarkdown field must contain the full markdown string of the post.
 - Do NOT output any markdown code blocks (like \`\`\`json).
 - Do NOT output any conversational text.
 - JUST JSON.
@@ -62,10 +62,11 @@ export async function POST(req: Request) {
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-pro",
+            model: "gemini-1.5-pro",
             systemInstruction: SYSTEM_PROMPT,
             generationConfig: {
                 responseMimeType: "application/json",
+                maxOutputTokens: 8192,
             }
         });
 
