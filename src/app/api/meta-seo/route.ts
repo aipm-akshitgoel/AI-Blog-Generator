@@ -5,6 +5,17 @@ import type { MetaSeoPayload } from "@/lib/types/meta";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
+const TITLE_LIMIT = 60;
+const DESC_LIMIT = 160;
+
+/** Hard truncate at word boundary without exceeding limit */
+function hardTruncate(text: string, limit: number): string {
+    if (text.length <= limit) return text;
+    const trimmed = text.slice(0, limit);
+    const lastSpace = trimmed.lastIndexOf(" ");
+    return (lastSpace > limit * 0.7 ? trimmed.slice(0, lastSpace) : trimmed).trimEnd();
+}
+
 export async function POST(req: Request) {
     if (!apiKey) {
         return NextResponse.json({ error: "GEMINI_API_KEY is not set" }, { status: 500 });
@@ -27,10 +38,23 @@ export async function POST(req: Request) {
         const model = genAI.getGenerativeModel({
             model: "gemini-2.5-pro",
             systemInstruction: `You are an expert SEO specialist. Generate 3 compelling Meta Title and Meta Description options for the provided blog post.
-Requirements:
-1. Titles must be under 60 characters.
-2. Descriptions must be under 160 characters.
-3. Provide a 'plain-English tooltip' (explanation) for why each option works well for the target audience. Output ONLY a valid JSON object matching the MetaSeoPayload schema: { options: [{ title, description, explanation }] }. No markdown formatting or extra text.`,
+
+STRICT CHARACTER LIMITS — THIS IS THE MOST IMPORTANT RULE:
+- Meta Title: MAXIMUM 60 characters (count every character including spaces). NEVER exceed 60.
+- Meta Description: MAXIMUM 155 characters (count every character including spaces). NEVER exceed 155.
+
+Before outputting, COUNT the characters in each title and description. If it exceeds the limit, SHORTEN it until it fits.
+
+GOOD examples (acceptable):
+- Title (52 chars): "Luxury Home Builders in Singapore: Top 10 Tips"
+- Description (148 chars): "Looking for a trusted luxury home builder in Singapore? Our expert guide covers credentials, portfolios, and pricing to help you choose wisely."
+
+BAD examples (NOT acceptable — too long):
+- Title (68 chars): "How to Choose a Luxury Home Builder in Singapore: A Complete Guide"
+- Description (165 chars): "Building a luxury home in Singapore? Our 10-point checklist helps you vet builders on credentials, portfolios, and quality. Find the right partner for your dream home."
+
+OUTPUT ONLY a valid JSON object: { "options": [{ "title": "...", "description": "...", "explanation": "..." }] }
+No markdown, no extra text, no code fences.`,
             generationConfig: {
                 responseMimeType: "application/json",
             },
@@ -42,6 +66,15 @@ Requirements:
         const text = result.response.text().trim();
         const clean = text.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "").trim();
         const payload: MetaSeoPayload = JSON.parse(clean);
+
+        // ── Server-side safety net: hard truncate every option regardless of LLM output ──
+        if (payload?.options) {
+            payload.options = payload.options.map((opt) => ({
+                ...opt,
+                title: hardTruncate(opt.title ?? "", TITLE_LIMIT),
+                description: hardTruncate(opt.description ?? "", DESC_LIMIT),
+            }));
+        }
 
         return NextResponse.json({ payload }, { status: 200 });
     } catch (err) {
