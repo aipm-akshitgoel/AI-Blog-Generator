@@ -218,7 +218,7 @@ export function BusinessContextSetup({ onComplete }: { onComplete?: (context: Bu
 
   // 3. Chat Interface for Gathering Data
   return (
-    <div className="flex h-[600px] flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50 shadow-xl">
+    <div className="flex flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50 shadow-xl" style={{ height: 'min(600px, calc(100svh - 220px))' }}>
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, i) => (
           <div

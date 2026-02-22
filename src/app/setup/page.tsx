@@ -306,11 +306,11 @@ function SetupPageInner() {
 
     // ── Account setup pipeline ─────────────────────────────────────────────
     return (
-      <main className="min-h-screen p-6 md:p-10">
+      <main className="min-h-screen bg-neutral-950 p-4 md:p-10">
         <div className="mx-auto max-w-2xl">
-          <div className="mb-8">
-            <h1 className="text-2xl font-black text-neutral-100 uppercase tracking-tighter">Account Setup</h1>
-            <p className="text-neutral-500 text-sm mt-1">Configure your business profile and generate your SEO strategy.</p>
+          <div className="mb-6">
+            <h1 className="text-2xl font-black text-white uppercase tracking-tighter">Account Setup</h1>
+            <p className="text-neutral-400 text-sm mt-1">Configure your business profile and generate your SEO strategy.</p>
           </div>
           <div className="space-y-6">
             {!context && (
