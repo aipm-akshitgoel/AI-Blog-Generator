@@ -92,9 +92,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                             /* First-blog CTA */
                             <div className="rounded-3xl border border-dashed border-emerald-500/20 bg-emerald-500/[0.02] p-16 text-center">
                                 <div className="w-16 h-16 bg-neutral-900 border border-neutral-800 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl">
-                                    <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 4v16m8-8H4" />
-                                    </svg>
                                 </div>
                                 <h3 className="text-2xl font-black text-white mb-3 uppercase tracking-tighter">Create Your First Blog Post</h3>
                                 <p className="text-neutral-400 mb-2 max-w-md mx-auto leading-relaxed">
@@ -105,9 +102,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                                     href="/setup?mode=blog"
                                     className="inline-flex items-center gap-3 rounded-2xl bg-emerald-600 px-10 py-5 text-sm font-black text-white transition-all hover:bg-emerald-500 shadow-2xl shadow-emerald-900/40 hover:-translate-y-1 active:scale-95 uppercase tracking-widest border border-emerald-400/20"
                                 >
-                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-                                    </svg>
                                     Start Writing
                                 </Link>
                             </div>
