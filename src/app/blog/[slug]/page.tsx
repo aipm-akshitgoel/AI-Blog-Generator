@@ -13,8 +13,8 @@ export const dynamic = 'force-dynamic';
  */
 function stripLLMCTA(markdown: string): string {
     return markdown
-        // Remove any trailing paragraph/heading that smells like a CTA
-        .replace(/\n{1,}(?:##?\s*)?(?:Ready to|Book (?:an? )?(?:appointment|now|today)|Schedule|Click here|Call us|Contact us)[\s\S]*$/i, "")
+        // Only strip the CTA if it appears at the very end of the document
+        .replace(/(?:\n{1,}(?:##?\s*)?(?:Ready to|Book (?:an? )?(?:appointment|now|today)|Schedule|Click here|Call us|Contact us)[^\n]*)$/i, "")
         .trim();
 }
 
