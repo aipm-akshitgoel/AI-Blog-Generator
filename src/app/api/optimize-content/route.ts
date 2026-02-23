@@ -34,6 +34,7 @@ export async function POST(req: Request) {
 - Provide detailed SEO scores inside the 'seoScores' object. Provide numerical percent scores out of 100 for 'overall', 'contentStructure', and 'readability'. Provide an array of 'targetKeywords'. Also provide an array of 'actionableInsights' containing 2-3 specific, actionable tips to fix any scores below 90. Note: if all scores are >= 90, leave actionableInsights empty.
 - JSON ESCAPING: You MUST escape all newlines within string values as \\n. NEVER output raw, unescaped newlines or tabs inside the JSON string values.
 - JSON ESCAPING: You MUST escape all double quotes inside string values as \\".
+- JSON ESCAPING: Do NOT escape single quotes ('). Do NOT use \\'.
 - Return ONLY a JSON object matching the OptimizedContent schema.
 Do NOT include any explanatory text.
 `,

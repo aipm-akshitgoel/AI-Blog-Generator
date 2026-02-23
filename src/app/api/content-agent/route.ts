@@ -26,6 +26,7 @@ CRITICAL INSTRUCTIONS:
 - The contentMarkdown field must contain the full markdown string of the post.
 - JSON ESCAPING: You MUST escape all newlines within string values as \\n. NEVER output raw, unescaped newlines or tabs inside the JSON string values.
 - JSON ESCAPING: You MUST escape all double quotes inside string values as \\".
+- JSON ESCAPING: Do NOT escape single quotes ('). Do NOT use \\'.
 - Do NOT output any markdown code blocks (like \`\`\`json).
 - Do NOT output any conversational text.
 - JUST JSON.
