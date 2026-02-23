@@ -96,7 +96,6 @@ export function EditBlogClient({ blog }: { blog: SavedBlog }) {
             router.refresh();
         } catch (e: any) {
             alert(e.message);
-        } finally {
             setIsSaving(false);
         }
     };
