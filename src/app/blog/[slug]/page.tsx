@@ -83,11 +83,6 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                                 <h1 className="text-5xl md:text-6xl lg:text-7xl font-serif tracking-tight text-neutral-900 mb-8 leading-[1.05]">
                                     {blog.title}
                                 </h1>
-                                {blog.payload.meta?.description && (
-                                    <p className="text-xl text-neutral-500 leading-relaxed border-l-2 border-neutral-300 pl-6 italic font-serif">
-                                        {blog.payload.meta.description}
-                                    </p>
-                                )}
                             </header>
                         </div>
 
@@ -142,11 +137,6 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                         <h1 className="text-4xl md:text-5xl font-black tracking-tight text-neutral-900 mb-6 leading-tight">
                             {blog.title}
                         </h1>
-                        {blog.payload.meta?.description && (
-                            <p className="text-xl text-neutral-600 max-w-2xl mx-auto leading-relaxed">
-                                {blog.payload.meta.description}
-                            </p>
-                        )}
                     </header>
 
                     {/* Banner Image */}
