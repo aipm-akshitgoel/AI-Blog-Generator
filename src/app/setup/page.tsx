@@ -388,7 +388,7 @@ function SetupPageInner() {
                     )}
                   </div>
                 </div>
-                <h2 className="text-xl font-black text-white text-center uppercase tracking-tight mb-2">{batchDone ? "All Done!" : "Auto-Publishing..."}</h2>
+                <h2 className="text-xl font-black text-white text-center uppercase tracking-tight mb-2">{batchDone ? "All Done!" : "Generating Drafts..."}</h2>
                 <p className="text-emerald-400 text-sm text-center mb-8 font-medium">{autoProgress.label}</p>
                 <div className="space-y-3">
                   {AUTO_STEPS.map((label, i) => {
