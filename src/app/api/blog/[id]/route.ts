@@ -75,12 +75,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 let graph: any[] = Array.isArray(existing['@graph']) ? existing['@graph'] : [];
 
                 if (body.articleSchemaJson !== undefined) {
-                    const articleNode = JSON.parse(body.articleSchemaJson);
-                    graph = [...graph.filter((n: any) => !articleTypes.has(n['@type'])), articleNode];
+                    const articleNodeStr = body.articleSchemaJson.trim() || '{}';
+                    const articleNode = JSON.parse(articleNodeStr);
+                    if (Object.keys(articleNode).length > 0) {
+                        graph = [...graph.filter((n: any) => !articleTypes.has(n['@type'])), articleNode];
+                    } else {
+                        graph = graph.filter((n: any) => !articleTypes.has(n['@type']));
+                    }
                 }
                 if (body.orgSchemaJson !== undefined) {
-                    const orgNodes = JSON.parse(body.orgSchemaJson); // may be array or object
-                    const orgArr = Array.isArray(orgNodes) ? orgNodes : [orgNodes];
+                    const orgNodeStr = body.orgSchemaJson.trim() || '[]';
+                    const orgNodes = JSON.parse(orgNodeStr); // may be array or object
+                    const orgArr = Array.isArray(orgNodes) ? orgNodes : Object.keys(orgNodes).length > 0 ? [orgNodes] : [];
                     graph = [...graph.filter((n: any) => articleTypes.has(n['@type'])), ...orgArr];
                 }
 

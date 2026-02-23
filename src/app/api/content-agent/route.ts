@@ -83,6 +83,11 @@ export async function POST(req: Request) {
         // Parse the JSON post
         const postData = JSON.parse(cleanText);
 
+        // Fix for Gemini over-escaping newlines into literal "\n" strings
+        if (postData.contentMarkdown) {
+            postData.contentMarkdown = postData.contentMarkdown.replace(/\\n/g, '\n');
+        }
+
         return NextResponse.json({ data: postData });
     } catch (err) {
         const message = err instanceof Error ? err.message : "Content Agent generation failed";

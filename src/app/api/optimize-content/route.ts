@@ -52,6 +52,11 @@ Do NOT include any explanatory text.
         const clean = text.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "").trim();
         const optimized: OptimizedContent = JSON.parse(clean);
 
+        // Fix for Gemini over-escaping newlines into literal "\n" strings
+        if (optimized.contentMarkdown) {
+            optimized.contentMarkdown = optimized.contentMarkdown.replace(/\\n/g, '\n');
+        }
+
         // Attach a mock plagiarism report directly to the optimized payload
         optimized.plagiarismReport = {
             isSafe: true,
