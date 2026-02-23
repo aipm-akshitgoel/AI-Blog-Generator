@@ -35,6 +35,7 @@ export async function POST(req: Request) {
 - JSON ESCAPING: You MUST escape all newlines within string values as \\n. NEVER output raw, unescaped newlines or tabs inside the JSON string values.
 - JSON ESCAPING: You MUST escape all double quotes inside string values as \\".
 - JSON ESCAPING: Do NOT escape single quotes ('). Do NOT use \\'.
+- Do NOT include the H1 title in the contentMarkdown. Start directly with the intro paragraph or H2.
 - Return ONLY a JSON object matching the OptimizedContent schema.
 Do NOT include any explanatory text.
 `,
@@ -56,6 +57,7 @@ Do NOT include any explanatory text.
         // Fix for Gemini over-escaping newlines into literal "\n" strings
         if (optimized.contentMarkdown) {
             optimized.contentMarkdown = optimized.contentMarkdown.replace(/\\n/g, '\n');
+            optimized.contentMarkdown = optimized.contentMarkdown.replace(/^#\s+[^\n]*\n+/i, '').trimStart();
         }
 
         // Attach a mock plagiarism report directly to the optimized payload

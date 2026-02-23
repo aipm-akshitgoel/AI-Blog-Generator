@@ -27,6 +27,7 @@ CRITICAL INSTRUCTIONS:
 - JSON ESCAPING: You MUST escape all newlines within string values as \\n. NEVER output raw, unescaped newlines or tabs inside the JSON string values.
 - JSON ESCAPING: You MUST escape all double quotes inside string values as \\".
 - JSON ESCAPING: Do NOT escape single quotes ('). Do NOT use \\'.
+- Do NOT include the H1 title in the contentMarkdown. Start directly with the intro paragraph or H2.
 - Do NOT output any markdown code blocks (like \`\`\`json).
 - Do NOT output any conversational text.
 - JUST JSON.
@@ -35,7 +36,7 @@ CRITICAL INSTRUCTIONS:
   "title": "The exact SEO Title",
   "slug": "url-friendly-slug-with-dashes",
   "metaDescription": "A punchy, 150-character meta description.",
-  "contentMarkdown": "# Your Main Title\\n\\nIntro paragraph...\\n\\n## First Heading\\n...",
+  "contentMarkdown": "Intro paragraph...\\n\\n## First Heading\\n...",
   "faqs": [
     { "question": "...", "answer": "..." },
     { "question": "...", "answer": "..." },
@@ -87,6 +88,7 @@ export async function POST(req: Request) {
         // Fix for Gemini over-escaping newlines into literal "\n" strings
         if (postData.contentMarkdown) {
             postData.contentMarkdown = postData.contentMarkdown.replace(/\\n/g, '\n');
+            postData.contentMarkdown = postData.contentMarkdown.replace(/^#\s+[^\n]*\n+/i, '').trimStart();
         }
 
         return NextResponse.json({ data: postData });
