@@ -394,7 +394,18 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                                     {loading ? "Refining..." : "Auto-Fix Issues"}
                                 </button>
                             ) : null}
-                            <span className="text-sm text-amber-700">Use &quot;Edit content&quot; below to make manual corrections.</span>
+                            {!isEditing && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setEditedContent(optimizedData.contentMarkdown); setIsEditing(true); }}
+                                    className="inline-flex items-center gap-2 rounded-lg border-2 border-amber-600 bg-amber-500/10 px-5 py-2.5 text-sm font-bold text-amber-800 transition-colors hover:bg-amber-500/20 shadow-sm"
+                                >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                    </svg>
+                                    Edit Content
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -402,43 +413,54 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
 
             {/* Inline Editor for manual corrections */}
             {isEditing && (
-                <div className="mb-8 rounded-xl border border-amber-900/50 bg-amber-950/10 p-4 animate-in fade-in duration-300">
-                    <div className="mb-4 flex flex-col gap-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-800 pb-4">
-                            <h3 className="text-sm font-bold text-amber-500 uppercase tracking-widest">Enhanced Editor</h3>
+                <div className="fixed inset-0 z-[100] flex flex-col bg-neutral-950 p-4 md:p-8 animate-in fade-in duration-300">
+                    <div className="mx-auto flex h-full w-full max-w-5xl flex-col rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden">
+                        <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950/50 px-6 py-4">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-black text-white uppercase tracking-tighter">Edit Content</h3>
+                                    <p className="text-xs text-neutral-400">Make manual adjustments before publishing.</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => { setEditedContent(optimizedData.contentMarkdown); setIsEditing(false); }}
+                                    className="rounded-lg px-4 py-2 text-sm font-bold text-neutral-400 transition-colors hover:text-white"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setOptimizedData((prev) => prev ? { ...prev, contentMarkdown: editedContent, seoScores: liveScores } : prev);
+                                        setIsEditing(false);
+                                    }}
+                                    className="rounded-lg bg-emerald-600 px-6 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-900/20 transition-all hover:bg-emerald-500 active:scale-95"
+                                >
+                                    Save Changes
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
-                    <RichTextEditor
-                        value={editedContent}
-                        onChange={setEditedContent}
-                        internalLinks={businessContext.internalLinks}
-                    />
-                    <div className="mt-4 flex flex-col md:flex-row justify-between items-center gap-4">
-                        <div className="flex items-center gap-2 text-xs text-neutral-500 bg-neutral-900/50 px-3 py-1.5 rounded-full border border-neutral-800">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>Live preview is automatically updated as you type.</span>
+                        <div className="flex-1 overflow-hidden p-6">
+                            <RichTextEditor
+                                value={editedContent}
+                                onChange={setEditedContent}
+                                internalLinks={businessContext.internalLinks}
+                            />
                         </div>
-                        <div className="flex gap-3">
-                            <button
-                                type="button"
-                                onClick={() => { setEditedContent(optimizedData.contentMarkdown); setIsEditing(false); }}
-                                className="px-6 py-2.5 text-sm font-bold text-neutral-400 hover:text-white transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setOptimizedData((prev) => prev ? { ...prev, contentMarkdown: editedContent, seoScores: liveScores } : prev);
-                                    setIsEditing(false);
-                                }}
-                                className="rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-8 py-2.5 text-sm font-bold text-white shadow-xl shadow-emerald-900/20 hover:scale-[1.02] active:scale-95 transition-all"
-                            >
-                                Save
-                            </button>
+
+                        <div className="border-t border-neutral-800 bg-neutral-950/50 px-6 py-3">
+                            <div className="flex items-center gap-2 text-xs text-neutral-400">
+                                <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                SEO Analyzer scores update live as you type.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -446,22 +468,26 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
 
             {/* Optimized Article Body */}
             {!isEditing && (
-                <div className="mb-8 rounded-lg border border-neutral-800 bg-neutral-950 p-6 md:p-8 overflow-y-auto max-h-[600px]">
-                    <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-emerald-400">
-                        <ReactMarkdown
-                            components={{
-                                strong: ({ node, children, ...props }) => {
-                                    const text = String(children);
-                                    if (text.startsWith("🚩")) {
-                                        return <strong className="bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded border border-red-500/30" {...props}>{children}</strong>;
+                <div className="relative mb-8 rounded-lg border border-neutral-800 bg-neutral-950 overflow-hidden">
+                    <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-neutral-950 to-transparent z-10 pointer-events-none" />
+                    <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-neutral-950 to-transparent z-10 pointer-events-none" />
+                    <div className="p-6 md:p-8 overflow-y-auto max-h-[500px] custom-scrollbar relative z-0">
+                        <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-emerald-400">
+                            <ReactMarkdown
+                                components={{
+                                    strong: ({ node, children, ...props }) => {
+                                        const text = String(children);
+                                        if (text.startsWith("🚩")) {
+                                            return <strong className="bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded border border-red-500/30" {...props}>{children}</strong>;
+                                        }
+                                        return <strong {...props}>{children}</strong>;
                                     }
-                                    return <strong {...props}>{children}</strong>;
-                                }
-                            }}
-                        >
-                            {highlightedMarkdown}
-                        </ReactMarkdown>
-                    </article>
+                                }}
+                            >
+                                {highlightedMarkdown}
+                            </ReactMarkdown>
+                        </article>
+                    </div>
                 </div>
             )}
 
@@ -481,17 +507,8 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                 </div>
             )}
 
-            {/* Action Buttons - Edit + Continue */}
-            <div className="flex flex-wrap justify-between items-center gap-3 pt-4 border-t border-neutral-800">
-                {!isEditing && (
-                    <button
-                        type="button"
-                        onClick={() => { setEditedContent(optimizedData.contentMarkdown); setIsEditing(true); }}
-                        className="rounded-lg border border-neutral-600 px-4 py-2 text-sm font-medium text-neutral-300 hover:bg-neutral-800"
-                    >
-                        Open Rich Text Editor
-                    </button>
-                )}
+            {/* Action Buttons - Continue */}
+            <div className="flex flex-wrap justify-end items-center gap-3 pt-4 border-t border-neutral-800">
                 <button
                     onClick={() => {
                         if (onComplete) onComplete(optimizedData);

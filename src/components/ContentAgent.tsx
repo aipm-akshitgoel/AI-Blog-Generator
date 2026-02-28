@@ -123,23 +123,27 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
                 {/* Removed early SEO Metadata Box - Handled by Meta SEO Agent later */}
 
                 {/* Blog Post Content Body (read-only preview) */}
-                <div className="mb-8 rounded-lg border border-neutral-800 bg-neutral-950 p-6 md:p-8 overflow-y-auto max-h-[600px]">
-                    <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-emerald-400">
-                        <ReactMarkdown>{post.contentMarkdown}</ReactMarkdown>
+                <div className="relative mb-8 rounded-lg border border-neutral-800 bg-neutral-950 overflow-hidden">
+                    <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-neutral-950 to-transparent z-10 pointer-events-none" />
+                    <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-neutral-950 to-transparent z-10 pointer-events-none" />
+                    <div className="p-6 md:p-8 overflow-y-auto max-h-[500px] custom-scrollbar relative z-0">
+                        <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-emerald-400">
+                            <ReactMarkdown>{post.contentMarkdown}</ReactMarkdown>
 
-                        {/* Render FAQs */}
-                        <div className="mt-8 pt-8 border-t border-neutral-800">
-                            <h2 className="text-neutral-100">Frequently Asked Questions</h2>
-                            <div className="space-y-4 mt-4">
-                                {post.faqs.map((faq, i) => (
-                                    <div key={i}>
-                                        <h3 className="text-neutral-200 mt-0">{faq.question}</h3>
-                                        <p className="text-neutral-400">{faq.answer}</p>
-                                    </div>
-                                ))}
+                            {/* Render FAQs */}
+                            <div className="mt-8 pt-8 border-t border-neutral-800 pb-16">
+                                <h2 className="text-neutral-100">Frequently Asked Questions</h2>
+                                <div className="space-y-4 mt-4">
+                                    {post.faqs.map((faq, i) => (
+                                        <div key={i}>
+                                            <h3 className="text-neutral-200 mt-0">{faq.question}</h3>
+                                            <p className="text-neutral-400">{faq.answer}</p>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                        </div>
-                    </article>
+                        </article>
+                    </div>
                 </div>
 
                 {/* Call to action */}
