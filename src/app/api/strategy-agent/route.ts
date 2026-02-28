@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { businessContext, customPrompt } = await req.json();
+    const { businessContext, customPrompt, platform } = await req.json();
 
     if (!businessContext) {
       return NextResponse.json(
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction: SYSTEM_PROMPT + (platform === "linkedin" ? "\n\nPLATFORM FOCUS: LinkedIn. Focus on thought-leadership, industry insights, and viral story-based topics rather than just SEO keywords." : ""),
       generationConfig: {
         responseMimeType: "application/json",
       }
@@ -74,6 +74,9 @@ export async function POST(req: Request) {
     let userPrompt = `Here is the verified BusinessContext:\n\n${JSON.stringify(businessContext, null, 2)}`;
     if (customPrompt && typeof customPrompt === "string" && customPrompt.trim().length > 0) {
       userPrompt += `\n\nCRITICAL DIRECTIVE FROM USER FOR TOPICS: "${customPrompt.trim()}". You MUST prioritize topics and keywords that align with this specific request.`;
+    }
+    if (platform === "linkedin") {
+      userPrompt += `\n\nADDITIONAL INSTRUCTION: Since this is for LinkedIn, prioritize topics that spark conversation, challenge status quo, or share personal 'aha' moments related to the business.`;
     }
 
     // In a full architecture, this step would invoke the MCP client to hit a separate Python server

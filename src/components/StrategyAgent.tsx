@@ -8,9 +8,10 @@ interface StrategyAgentProps {
     businessContext: BusinessContext;
     onApprove: (session: StrategySession) => void;
     onModify: () => void;
+    platform?: "blog" | "linkedin";
 }
 
-export function StrategyAgentUI({ businessContext, onApprove, onModify }: StrategyAgentProps) {
+export function StrategyAgentUI({ businessContext, onApprove, onModify, platform = "blog" }: StrategyAgentProps) {
     const [strategy, setStrategy] = useState<{ keywordStrategy: KeywordStrategy, topicOptions: TopicOption[] } | null>(null);
     const [loading, setLoading] = useState(false);
     const [loadingStep, setLoadingStep] = useState(0);
@@ -30,7 +31,7 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify }: Strate
             const res = await fetch("/api/strategy-agent", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ businessContext, customPrompt }),
+                body: JSON.stringify({ businessContext, customPrompt, platform }),
             });
 
             const json = await res.json();
