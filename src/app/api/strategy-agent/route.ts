@@ -4,24 +4,21 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const apiKey = process.env.GEMINI_API_KEY;
 
 const SYSTEM_PROMPT = `
-You are an expert SEO orchestrator and keyword strategist for the beauty and wellness industry (salons, spas, barbershops).
-You are equipped with "mocked" MCP tools to analyze Google Ads Keyword Planner data and Google SERP data. 
+You are an elite Content Strategist. 
+Depending on the PLATFORM requested, you will act as either an SEO Orchestrator (for Blog) or a Viral Ghostwriter (for LinkedIn).
 
-The user will provide you with a canonical "BusinessContext" JSON object containing their business name, type, location, services, target audience, and positioning.
+IF PLATFORM = BLOG:
+- Act as an SEO expert for the beauty/wellness/local business sector.
+- Analyze Google Ads Keyword data and local SERPs.
+- Output: keywordStrategy and topicOptions.
 
-Your job is to generate a highly optimized SEO content strategy containing:
-1. A primary keyword with high purchase intent in their local area.
-2. 3-5 secondary keywords that support the primary keyword without cannibalizing it.
-3. The overall search intent (informational, navigational, commercial, or transactional).
-4. 3-5 specific Topic Options for blog posts that will rank for these keywords. 
-5. For each topic, indicate if there is a "cannibalizationRisk" (true/false). If true, provide a brief "cannibalizationReason" comparing it to existing or related topics.
+IF PLATFORM = LINKEDIN:
+- Act as a LinkedIn Growth Strategist.
+- Analyze trending industry topics and high-engagement content patterns on LinkedIn.
+- Focus on thought-leadership, industry insights, and viral story-based topics.
+- Output: keywordStrategy(use for pillar themes), topicOptions(the specific posts), trendingTopics, and inspiration.
 
-CRITICAL INSTRUCTIONS:
-- You must ONLY output a valid JSON object matching the schema below.
-- Do NOT output any markdown blocks (like \`\`\`json).
-- Do NOT output any conversational text.
-- JUST JSON.
-
+REQUIRED OUTPUT FORMAT (JSON ONLY):
 {
   "keywordStrategy": {
     "primaryKeyword": "...",
@@ -30,15 +27,18 @@ CRITICAL INSTRUCTIONS:
   },
   "topicOptions": [
     {
-      "title": "...",
-      "description": "...",
+      "title": "Topic Title",
+      "description": "Topic Description",
       "cannibalizationRisk": false
-    },
+    }
+  ],
+  "trendingTopics": ["Trending Topic 1", "Trending Topic 2"],
+  "inspiration": [
     {
-      "title": "...",
-      "description": "...",
-      "cannibalizationRisk": true,
-      "cannibalizationReason": "..."
+      "title": "High performing post title/hook",
+      "url": "https://linkedin.com/feed/...",
+      "engagement": "1,200+ Likes, 50+ Comments",
+      "insights": "Explains why this post performed well (e.g., strong hook, contrarian take)"
     }
   ]
 }
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { businessContext, customPrompt, platform } = await req.json();
+    const { businessContext, customPrompt, platform = "blog" } = await req.json();
 
     if (!businessContext) {
       return NextResponse.json(
@@ -65,30 +65,25 @@ export async function POST(req: Request) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
-      systemInstruction: SYSTEM_PROMPT + (platform === "linkedin" ? "\n\nPLATFORM FOCUS: LinkedIn. Focus on thought-leadership, industry insights, and viral story-based topics rather than just SEO keywords." : ""),
+      systemInstruction: SYSTEM_PROMPT.replace("IF PLATFORM", `CURRENT PLATFORM: ${platform.toUpperCase()}`),
       generationConfig: {
         responseMimeType: "application/json",
       }
     });
 
     let userPrompt = `Here is the verified BusinessContext:\n\n${JSON.stringify(businessContext, null, 2)}`;
-    if (customPrompt && typeof customPrompt === "string" && customPrompt.trim().length > 0) {
-      userPrompt += `\n\nCRITICAL DIRECTIVE FROM USER FOR TOPICS: "${customPrompt.trim()}". You MUST prioritize topics and keywords that align with this specific request.`;
-    }
+
     if (platform === "linkedin") {
-      userPrompt += `\n\nADDITIONAL INSTRUCTION: Since this is for LinkedIn, prioritize topics that spark conversation, challenge status quo, or share personal 'aha' moments related to the business.`;
+      userPrompt += "\n\nCRITICAL LINKEDIN INSTRUCTIONS: Research trending LinkedIn topics for this industry. Find mocked high-performing posts for inspiration. Ensure topicOptions are 'hooks' and 'stories', not just articles.";
     }
 
-    // In a full architecture, this step would invoke the MCP client to hit a separate Python server
-    // running the Google Ads/SERP tools. Since we don't have that server, we are simulating the MCP output
-    // via Gemini's world knowledge.
+    if (customPrompt && typeof customPrompt === "string" && customPrompt.trim().length > 0) {
+      userPrompt += `\n\nUSER DIRECTIVE: "${customPrompt.trim()}". Prioritize this.`;
+    }
+
     const result = await model.generateContent(userPrompt);
     const text = result.response.text().trim();
-
-    // Clean any potential markdown wrapper the LLM might stubbornly include
     const cleanText = text.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
-
-    // Parse the JSON strategy
     const strategyData = JSON.parse(cleanText);
 
     return NextResponse.json({ data: strategyData });

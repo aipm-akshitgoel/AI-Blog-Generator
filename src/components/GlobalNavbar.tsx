@@ -14,12 +14,17 @@ export function GlobalNavbar() {
 
     const isDashboard = pathname === "/dashboard";
     const isSetupMode = pathname.startsWith("/setup");
+    const isLinkedinMode = pathname.startsWith("/linkedin");
+
+    const brandName = isLinkedinMode ? "LinkedIn Ghostwriter" : "Bloggie AI";
+    const brandColor = isLinkedinMode ? "text-blue-500" : "text-emerald-400";
+    const brandHref = isLinkedinMode ? "/linkedin" : "/";
 
     return (
         <header className="sticky top-0 z-50 border-b border-neutral-800 bg-neutral-950/80 backdrop-blur">
             <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4">
-                <Link href="/" className="font-bold text-lg text-emerald-400 tracking-tight">
-                    Bloggie AI
+                <Link href={brandHref} className={`font-bold text-lg ${brandColor} tracking-tight uppercase`}>
+                    {brandName}
                 </Link>
                 <div className="flex items-center gap-6">
                     <ClerkLoaded>
@@ -27,8 +32,8 @@ export function GlobalNavbar() {
                             <SignInButton mode="modal">
                                 <button className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">Sign In</button>
                             </SignInButton>
-                            <SignUpButton mode="modal" forceRedirectUrl="/setup">
-                                <button className="text-sm font-medium bg-emerald-600 text-white px-4 py-1.5 rounded-md hover:bg-emerald-500 transition-colors">Sign Up</button>
+                            <SignUpButton mode="modal" forceRedirectUrl={isLinkedinMode ? "/linkedin" : "/setup"}>
+                                <button className={`text-sm font-medium ${isLinkedinMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white px-4 py-1.5 rounded-md transition-colors uppercase tracking-widest text-[10px] font-black`}>Sign Up</button>
                             </SignUpButton>
                         </SignedOut>
                         <SignedIn>
@@ -37,18 +42,24 @@ export function GlobalNavbar() {
                                     DASHBOARD
                                 </Link>
                             )}
-                            {!isDashboard && !isSetupMode && (
-                                <>
-                                    <Link href="/dashboard" className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">
-                                        Dashboard
-                                    </Link>
-                                    <Link href="/linkedin" className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">
-                                        LinkedIn
-                                    </Link>
-                                    <Link href="/setup?mode=blog" className="text-sm font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-4 py-1.5 rounded-md hover:bg-emerald-600/30 transition-colors">
-                                        + New Blog
-                                    </Link>
-                                </>
+
+                            {!isSetupMode && (
+                                <div className="flex items-center gap-6">
+                                    {isLinkedinMode ? (
+                                        <>
+                                            {/* LinkedIn Ghostwriter specific links would go here */}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Link href="/dashboard" className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">
+                                                Dashboard
+                                            </Link>
+                                            <Link href="/setup?mode=blog" className="text-sm font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-4 py-1.5 rounded-md hover:bg-emerald-600/30 transition-colors">
+                                                + New Blog
+                                            </Link>
+                                        </>
+                                    )}
+                                </div>
                             )}
                             <UserButton />
                         </SignedIn>

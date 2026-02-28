@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://bloggieai.com"),
   title: "Bloggie AI",
   description: "Generate highly-optimized, SEO-ready blog posts in seconds. The ultimate AI content pipeline.",
   openGraph: {
@@ -14,11 +15,13 @@ export const metadata: Metadata = {
     siteName: "Bloggie AI",
     locale: "en_US",
     type: "website",
+    images: ["/opengraph-image"],
   },
   twitter: {
     card: "summary_large_image",
     title: "Bloggie AI",
     description: "Generate highly-optimized, SEO-ready blog posts in seconds. The ultimate AI content pipeline.",
+    images: ["/opengraph-image"],
   },
 };
 

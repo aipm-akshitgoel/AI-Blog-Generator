@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { type BusinessContext as BusinessContextType } from "@/lib/types/businessContext";
 
-export function BusinessContextSetup({ onComplete }: { onComplete?: (context: BusinessContextType) => void }) {
+export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComplete?: (context: BusinessContextType) => void, platform?: "blog" | "linkedin" }) {
   // Application State
   const [step, setStep] = useState<"input" | "scraping" | "verify">("input");
   const [url, setUrl] = useState("");
@@ -102,15 +102,15 @@ export function BusinessContextSetup({ onComplete }: { onComplete?: (context: Bu
 
   if (saved) {
     return (
-      <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-4 shadow-sm flex items-center justify-between">
+      <div className={`rounded-xl border ${platform === 'linkedin' ? 'border-blue-900/50 bg-blue-950/20' : 'border-emerald-900/50 bg-emerald-950/20'} p-4 shadow-sm flex items-center justify-between`}>
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+          <div className={`flex h-8 w-8 items-center justify-center rounded-full ${platform === 'linkedin' ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
               <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
             </svg>
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-emerald-400">Business context saved</h2>
+            <h2 className={`text-sm font-semibold ${platform === 'linkedin' ? 'text-blue-400' : 'text-emerald-400'}`}>Business identity verified</h2>
             <p className="text-xs text-neutral-400">{saved.businessName}</p>
           </div>
         </div>
@@ -126,19 +126,19 @@ export function BusinessContextSetup({ onComplete }: { onComplete?: (context: Bu
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50 shadow-xl transition-all duration-500">
+    <div className={`overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/50 shadow-xl transition-all duration-500`}>
 
       {/* ── STEP 1: INPUT URL ── */}
       {step === "input" && (
         <div className="p-8 text-center animate-in fade-in zoom-in-95 duration-500">
-          <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <div className={`w-16 h-16 ${platform === 'linkedin' ? 'bg-blue-500/10 border-blue-500/20' : 'bg-emerald-500/10 border-emerald-500/20'} border rounded-full flex items-center justify-center mx-auto mb-6`}>
+            <svg className={`w-8 h-8 ${platform === 'linkedin' ? 'text-blue-400' : 'text-emerald-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
           </div>
           <h2 className="text-2xl font-black text-white mb-2 uppercase tracking-tighter">Enter Your Website</h2>
-          <p className="text-neutral-400 mb-8 max-w-sm mx-auto">
-            Bloggie AI will scan your website to automatically extract your services, brand tone, and target audience. No long forms required.
+          <p className="text-neutral-400 mb-8 max-w-sm mx-auto italic">
+            {platform === "linkedin" ? "Our platform" : "Bloggie AI"} will scan your website to automatically extract your services, brand tone, and target audience. No long forms required.
           </p>
 
           <form onSubmit={handleScrape} className="mx-auto max-w-md relative">

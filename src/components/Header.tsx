@@ -18,7 +18,7 @@ export function Header() {
     <header className="border-b border-neutral-800 bg-neutral-950/80 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4">
         <Link href="/" className="font-semibold text-neutral-100">
-          My App
+          Bloggie AI
         </Link>
         <div className="flex items-center gap-4">
           <SignedOut>

@@ -89,7 +89,7 @@ function LinkedinPageInner() {
                 <div className="space-y-12">
                     {/* STEP 1: Profile / Business Context */}
                     {!context ? (
-                        <BusinessContextSetup onComplete={handleContextComplete} />
+                        <BusinessContextSetup onComplete={handleContextComplete} platform="linkedin" />
                     ) : (
                         <div className="flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 backdrop-blur-sm">
                             <div className="flex items-center gap-4">
