@@ -42,6 +42,9 @@ export function GlobalNavbar() {
                                     <Link href="/dashboard" className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">
                                         Dashboard
                                     </Link>
+                                    <Link href="/linkedin" className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">
+                                        LinkedIn
+                                    </Link>
                                     <Link href="/setup?mode=blog" className="text-sm font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-4 py-1.5 rounded-md hover:bg-emerald-600/30 transition-colors">
                                         + New Blog
                                     </Link>
