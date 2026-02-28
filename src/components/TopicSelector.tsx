@@ -164,7 +164,7 @@ export function TopicSelector({ strategy, onSelect, businessContext, onAutoPubli
                             value={customPrompt}
                             onChange={(e) => setCustomPrompt(e.target.value)}
                             placeholder="Custom topic direction..."
-                            className="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-600 flex-1 sm:w-48 transition-all"
+                            className="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-600 flex-1 sm:w-80 transition-all"
                         />
                         <button
                             type="button"
