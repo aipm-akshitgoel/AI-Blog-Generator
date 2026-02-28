@@ -18,6 +18,7 @@ export function TopicSelector({ strategy, onSelect, businessContext, onAutoPubli
     const [editingIdx, setEditingIdx] = useState<number | null>(null);
     const [editDraft, setEditDraft] = useState<{ title: string; description: string } | null>(null);
     const [isRegenerating, setIsRegenerating] = useState(false);
+    const [customPrompt, setCustomPrompt] = useState("");
 
     // Batch selection state
     const [batchCount, setBatchCount] = useState(mode === "manual" ? 1 : 1);
@@ -83,7 +84,7 @@ export function TopicSelector({ strategy, onSelect, businessContext, onAutoPubli
             const res = await fetch("/api/strategy-agent", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ businessContext }),
+                body: JSON.stringify({ businessContext, customPrompt }),
             });
             const json = await res.json();
             if (!res.ok) throw new Error(json.error ?? "Failed to regenerate topics");
@@ -130,13 +131,13 @@ export function TopicSelector({ strategy, onSelect, businessContext, onAutoPubli
                 {mode === "batch" && (
                     <div className="flex flex-col items-end gap-2 shrink-0 bg-neutral-950 p-4 rounded-2xl border border-neutral-800/50">
                         <label className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-500 mb-1">1. Batch Size</label>
-                        <div className="flex items-center gap-1.5">
-                            {[1, 2, 3, 4, 5].map(n => (
+                        <div className="flex items-center gap-1.5 flex-wrap justify-end max-w-[280px]">
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
                                 <button
                                     key={n}
                                     onClick={() => setBatchCount(n)}
                                     disabled={n > topics.length}
-                                    className={`w-10 h-10 rounded-lg text-sm font-black transition-all ${batchCount === n
+                                    className={`w-9 h-9 rounded-lg text-xs font-black transition-all ${batchCount === n
                                         ? 'bg-amber-500 text-neutral-900 shadow-lg shadow-amber-900/40 scale-105'
                                         : 'text-neutral-500 hover:text-white hover:bg-neutral-800'
                                         } disabled:opacity-20 active:scale-95`}
@@ -157,17 +158,26 @@ export function TopicSelector({ strategy, onSelect, businessContext, onAutoPubli
                     )}
                 </h3>
                 {businessContext && (
-                    <button
-                        type="button"
-                        onClick={handleRegenerate}
-                        disabled={isRegenerating}
-                        className="text-xs font-bold text-neutral-500 hover:text-emerald-400 flex items-center gap-2 transition-colors group"
-                    >
-                        <svg className={`w-3.5 h-3.5 transition-transform group-hover:rotate-180 ${isRegenerating ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Refresh Topics
-                    </button>
+                    <div className="flex items-center gap-4">
+                        <input
+                            type="text"
+                            value={customPrompt}
+                            onChange={(e) => setCustomPrompt(e.target.value)}
+                            placeholder="Custom topic direction..."
+                            className="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-600 w-48 transition-all"
+                        />
+                        <button
+                            type="button"
+                            onClick={handleRegenerate}
+                            disabled={isRegenerating}
+                            className="text-xs font-bold text-neutral-500 hover:text-emerald-400 flex items-center gap-2 transition-colors group"
+                        >
+                            <svg className={`w-3.5 h-3.5 transition-transform group-hover:rotate-180 ${isRegenerating ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
                 )}
             </div>
 

@@ -15,6 +15,7 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify }: Strate
     const [loading, setLoading] = useState(false);
     const [loadingStep, setLoadingStep] = useState(0);
     const [error, setError] = useState<string | null>(null);
+    const [customPrompt, setCustomPrompt] = useState("");
 
     const generateStrategy = async () => {
         setLoading(true);
@@ -29,7 +30,7 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify }: Strate
             const res = await fetch("/api/strategy-agent", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ businessContext }),
+                body: JSON.stringify({ businessContext, customPrompt }),
             });
 
             const json = await res.json();
@@ -68,6 +69,19 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify }: Strate
                 <p className="mb-6 text-sm text-neutral-400 leading-relaxed">
                     Now that your business context is established, this agent will use Google Ads Keyword Planner and analyze local SERPs to generate a highly-targeted topic strategy.
                 </p>
+
+                <div className="mb-6 relative group">
+                    <label className="text-xs font-black uppercase tracking-widest text-emerald-500 mb-2 flex items-center gap-2">
+                        Custom Direction <span className="text-neutral-500 font-medium normal-case">(Optional)</span>
+                    </label>
+                    <textarea
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        placeholder="E.g., I want to focus only on wedding makeup topics right now..."
+                        rows={2}
+                        className="w-full bg-neutral-950/50 border border-neutral-800 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-600 resize-none transition-all"
+                    />
+                </div>
 
                 {error && (
                     <div className="mb-6 rounded-lg bg-red-900/20 p-4 border border-red-900/50 flex flex-col items-center text-center">

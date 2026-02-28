@@ -53,7 +53,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { businessContext } = await req.json();
+    const { businessContext, customPrompt } = await req.json();
 
     if (!businessContext) {
       return NextResponse.json(
@@ -71,7 +71,10 @@ export async function POST(req: Request) {
       }
     });
 
-    const userPrompt = `Here is the verified BusinessContext:\n\n${JSON.stringify(businessContext, null, 2)}`;
+    let userPrompt = `Here is the verified BusinessContext:\n\n${JSON.stringify(businessContext, null, 2)}`;
+    if (customPrompt && typeof customPrompt === "string" && customPrompt.trim().length > 0) {
+      userPrompt += `\n\nCRITICAL DIRECTIVE FROM USER FOR TOPICS: "${customPrompt.trim()}". You MUST prioritize topics and keywords that align with this specific request.`;
+    }
 
     // In a full architecture, this step would invoke the MCP client to hit a separate Python server
     // running the Google Ads/SERP tools. Since we don't have that server, we are simulating the MCP output
