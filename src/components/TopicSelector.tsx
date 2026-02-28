@@ -150,7 +150,7 @@ export function TopicSelector({ strategy, onSelect, businessContext, onAutoPubli
                 )}
             </div>
 
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                 <h3 className="text-sm font-bold text-neutral-400 uppercase tracking-widest flex items-center gap-3">
                     {mode === "batch" ? `2. Pick Your ${batchCount} Topic${batchCount > 1 ? 's' : ''}` : "Select Your Topic"}
                     {selectedIndices.length > 0 && mode === "batch" && (
@@ -158,19 +158,19 @@ export function TopicSelector({ strategy, onSelect, businessContext, onAutoPubli
                     )}
                 </h3>
                 {businessContext && (
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
                         <input
                             type="text"
                             value={customPrompt}
                             onChange={(e) => setCustomPrompt(e.target.value)}
                             placeholder="Custom topic direction..."
-                            className="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-600 w-48 transition-all"
+                            className="bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-600 flex-1 sm:w-48 transition-all"
                         />
                         <button
                             type="button"
                             onClick={handleRegenerate}
                             disabled={isRegenerating}
-                            className="text-xs font-bold text-neutral-500 hover:text-emerald-400 flex items-center gap-2 transition-colors group"
+                            className="text-xs font-bold text-neutral-500 hover:text-emerald-400 flex items-center gap-2 transition-colors group shrink-0"
                         >
                             <svg className={`w-3.5 h-3.5 transition-transform group-hover:rotate-180 ${isRegenerating ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
