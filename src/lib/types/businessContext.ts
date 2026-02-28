@@ -2,7 +2,7 @@
  * Canonical Business Context — output of the Business Context Agent.
  * Used for salons, spas, barbershops (beauty & wellness).
  */
-export type BusinessType = "salon" | "spa" | "barbershop" | "other";
+export type BusinessType = string;
 
 export interface BusinessContextLocation {
   city?: string;

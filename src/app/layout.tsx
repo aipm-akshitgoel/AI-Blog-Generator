@@ -5,8 +5,21 @@ import { Suspense } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "My App",
-  description: "Next.js app with Vercel, Supabase, Gemini, Clerk",
+  title: "Bloggie AI",
+  description: "Generate highly-optimized, SEO-ready blog posts in seconds. The ultimate AI content pipeline.",
+  openGraph: {
+    title: "Bloggie AI",
+    description: "Generate highly-optimized, SEO-ready blog posts in seconds. The ultimate AI content pipeline.",
+    url: "https://bloggieai.com",
+    siteName: "Bloggie AI",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Bloggie AI",
+    description: "Generate highly-optimized, SEO-ready blog posts in seconds. The ultimate AI content pipeline.",
+  },
 };
 
 export default function RootLayout({
