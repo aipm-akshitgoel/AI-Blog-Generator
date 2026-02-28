@@ -428,6 +428,23 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
+                                <div className="hidden md:flex items-center gap-4 mr-6 pr-6 border-r border-neutral-800">
+                                    <div className="flex flex-col items-center">
+                                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">SEO Score</span>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className={`h-2 w-2 rounded-full ${liveScores.overall >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                            <span className="text-lg font-black text-white leading-none">{liveScores.overall}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-center">
+                                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">Structure</span>
+                                        <span className="text-sm font-bold text-neutral-300">{liveScores.contentStructure}%</span>
+                                    </div>
+                                    <div className="flex flex-col items-center">
+                                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">Readability</span>
+                                        <span className="text-sm font-bold text-neutral-300">{liveScores.readability}%</span>
+                                    </div>
+                                </div>
                                 <button
                                     onClick={() => { setEditedContent(optimizedData.contentMarkdown); setIsEditing(false); }}
                                     className="rounded-lg px-4 py-2 text-sm font-bold text-neutral-400 transition-colors hover:text-white"
@@ -455,11 +472,25 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                         </div>
 
                         <div className="border-t border-neutral-800 bg-neutral-950/50 px-6 py-3">
-                            <div className="flex items-center gap-2 text-xs text-neutral-400">
-                                <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                SEO Analyzer scores update live as you type.
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-6">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`h-1.5 w-1.5 rounded-full ${liveScores.overall >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                        <span className="text-[10px] font-black uppercase text-neutral-500">Overall:</span>
+                                        <span className="text-xs font-black text-white">{liveScores.overall}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black uppercase text-neutral-500">Struct:</span>
+                                        <span className="text-xs font-black text-white">{liveScores.contentStructure}%</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black uppercase text-neutral-500">Read:</span>
+                                        <span className="text-xs font-black text-white">{liveScores.readability}%</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 text-[10px] font-black uppercase text-neutral-600 hidden md:flex">
+                                    Analylzer Active
+                                </div>
                             </div>
                         </div>
                     </div>

@@ -538,10 +538,7 @@ function SetupPageInner() {
                   </div>
                   <h3 className="text-2xl font-black text-white mb-4 uppercase tracking-tighter">Published!</h3>
                   <p className="text-neutral-400 mb-8 max-w-md mx-auto leading-relaxed">Your SEO-optimized blog post has been generated and published successfully.</p>
-                  <div className="flex gap-4 justify-center">
-                    <a href="/dashboard" className="inline-flex items-center gap-2 rounded-xl bg-neutral-800 px-6 py-3 text-sm font-black text-neutral-200 hover:bg-neutral-700 transition-all uppercase tracking-widest">
-                      Dashboard
-                    </a>
+                  <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6">
                     <button
                       onClick={() => {
                         setPublishData(null);
@@ -554,11 +551,19 @@ function SetupPageInner() {
                         setGeneratedImages(null);
                         setCreationMode(null);
                       }}
-                      className="inline-flex items-center gap-3 rounded-xl bg-emerald-600 px-8 py-3 text-sm font-black text-white hover:bg-emerald-500 shadow-xl shadow-emerald-900/30 active:scale-95 uppercase tracking-widest transition-all"
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-900 border border-neutral-800 px-6 py-3.5 text-xs font-black text-neutral-400 hover:bg-neutral-800 hover:text-white transition-all uppercase tracking-widest"
                     >
                       Write Another Post
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
                     </button>
+                    <a href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-800 px-6 py-3.5 text-sm font-black text-neutral-200 hover:bg-neutral-700 hover:text-white transition-all uppercase tracking-widest border border-neutral-700">
+                      Dashboard
+                    </a>
+                    {publishData.slug && (
+                      <a href={`/blog/${publishData.slug}`} className="inline-flex items-center justify-center gap-3 rounded-xl bg-emerald-600 px-8 py-3.5 text-sm font-black text-white hover:bg-emerald-500 shadow-xl shadow-emerald-900/40 active:scale-95 uppercase tracking-widest transition-all">
+                        Go to Draft Editor
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>
+                      </a>
+                    )}
                   </div>
                 </div>
               )}
