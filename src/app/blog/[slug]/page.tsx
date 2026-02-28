@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import Link from "next/link";
 import Script from "next/script";
 import { FAQAccordion } from "@/components/FAQAccordion";
+import { FeedbackPopup } from "@/components/FeedbackPopup";
 
 export const dynamic = 'force-dynamic';
 
@@ -58,6 +59,10 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
             {/* Inject JSON-LD Schema for SEO */}
             {schema && schema.jsonLd && (
                 <Script id="blog-schema" type="application/ld+json" dangerouslySetInnerHTML={{ __html: extractArticleSchema(schema.jsonLd) }} />
+            )}
+
+            {blog.status === "draft" && (
+                <FeedbackPopup blogId={blog.id} blogTitle={blog.title} />
             )}
 
             {/* Public Header */}
