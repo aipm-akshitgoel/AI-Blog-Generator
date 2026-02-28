@@ -1,9 +1,32 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, Schema, SchemaType } from "@google/generative-ai";
 import { type BusinessContext } from "@/lib/types/businessContext";
 import { type TopicOption } from "@/lib/types/strategy";
 
 const apiKey = process.env.GEMINI_API_KEY;
+
+const postSchema: Schema = {
+    type: SchemaType.OBJECT,
+    properties: {
+        title: { type: SchemaType.STRING, description: "The exact SEO Title" },
+        slug: { type: SchemaType.STRING, description: "url-friendly-slug-with-dashes" },
+        metaDescription: { type: SchemaType.STRING, description: "A punchy, 150-character meta description." },
+        contentMarkdown: { type: SchemaType.STRING, description: "Full markdown string of the post. Intro paragraph...\\n\\n## First Heading\\n..." },
+        faqs: {
+            type: SchemaType.ARRAY,
+            items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    question: { type: SchemaType.STRING },
+                    answer: { type: SchemaType.STRING }
+                },
+                required: ["question", "answer"]
+            }
+        },
+        status: { type: SchemaType.STRING }
+    },
+    required: ["title", "slug", "metaDescription", "contentMarkdown", "faqs", "status"]
+};
 
 const SYSTEM_PROMPT = `
 You are an elite, master-level copywriter specializing in local SEO for the beauty and wellness industry (salons, spas, barbershops).
@@ -31,19 +54,6 @@ CRITICAL INSTRUCTIONS:
 - Do NOT output any markdown code blocks (like \`\`\`json).
 - Do NOT output any conversational text.
 - JUST JSON.
-
-{
-  "title": "The exact SEO Title",
-  "slug": "url-friendly-slug-with-dashes",
-  "metaDescription": "A punchy, 150-character meta description.",
-  "contentMarkdown": "Intro paragraph...\\n\\n## First Heading\\n...",
-  "faqs": [
-    { "question": "...", "answer": "..." },
-    { "question": "...", "answer": "..." },
-    { "question": "...", "answer": "..." }
-  ],
-  "status": "draft"
-}
 `;
 
 export async function POST(req: Request) {
@@ -70,6 +80,7 @@ export async function POST(req: Request) {
             systemInstruction: SYSTEM_PROMPT,
             generationConfig: {
                 responseMimeType: "application/json",
+                responseSchema: postSchema,
                 maxOutputTokens: 8192,
             }
         });
