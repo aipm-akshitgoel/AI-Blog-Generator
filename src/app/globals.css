@@ -5,6 +5,9 @@
 :root {
   --foreground: #0a0a0a;
   --background: #fafafa;
+  --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif: 'Playfair Display', serif;
+  --parul-max-width: 1430px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -17,7 +20,21 @@
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-main);
+}
+
+.parul-container {
+  max-width: var(--parul-max-width);
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+.btn-primary {
+  @apply bg-[#02a7b6] text-white px-8 py-4 rounded-full font-bold flex items-center gap-2 hover:opacity-90 transition-all;
+}
+
+.glass {
+  @apply bg-white/5 backdrop-blur-xl border border-white/10;
 }
 
 /* Hide global scrollbar but maintain scrollability */

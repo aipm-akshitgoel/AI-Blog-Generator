@@ -8,12 +8,15 @@ import {
 import type { BusinessContext } from "@/lib/types/businessContext";
 import { auth } from "@clerk/nextjs/server";
 
-export async function GET() {
+export async function GET(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const { searchParams } = new URL(req.url);
+  const platform = searchParams.get("platform") as "blog" | "linkedin" | null;
+
   try {
-    const list = await listBusinessContexts(userId);
+    const list = await listBusinessContexts(userId, platform || undefined);
     return NextResponse.json(list);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to list";
@@ -33,6 +36,7 @@ export async function POST(req: Request) {
   }
 
   const {
+    platform = "blog",
     businessName,
     domain,
     businessType,
@@ -59,10 +63,11 @@ export async function POST(req: Request) {
   }
 
   try {
-    const list = await listBusinessContexts(userId);
-    const existing = list[0]; // User's singleton context
+    const list = await listBusinessContexts(userId, platform as "blog" | "linkedin");
+    const existing = list[0]; // User's singleton context for this platform
 
-    const contextData = {
+    const contextData: any = {
+      platform,
       businessName: String(businessName).trim(),
       domain: domain ? String(domain).trim() : undefined,
       businessType: businessType as BusinessContext["businessType"],

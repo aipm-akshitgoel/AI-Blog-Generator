@@ -36,9 +36,9 @@ export default function BlogHubClient({ blogs, categories, activeCategory }: Pro
                 <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
                     <Link href="/" className="font-black text-xl tracking-tight flex items-center gap-2 text-neutral-900">
                         <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white">
-                            <span className="font-serif font-bold text-lg leading-none">B</span>
+                            <span className="font-serif font-bold text-lg leading-none">A</span>
                         </div>
-                        Bloggie Hub
+                        AI Organic Growth Hub
                     </Link>
                 </div>
             </header>

@@ -57,8 +57,8 @@ export function PublishingAgentUI({
 
             if (!res.ok) {
                 setPublishState("failed");
-                setError(data.error || data.publishData?.errorDetails || "Publishing failed");
-                if (data.publishData) setPublishData(data.publishData);
+                setError(data.error || "Publishing failed");
+                setPublishData({ ...data.publishData, errorDetails: data.details });
                 return;
             }
 
@@ -298,9 +298,15 @@ export function PublishingAgentUI({
                     <h3 className="mb-2 text-2xl font-bold text-white tracking-tight">Publishing Interrupted</h3>
                     <p className="text-neutral-400 mb-6 max-w-md mx-auto">There was a problem communicating with the external API.</p>
 
-                    <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-4 inline-block text-left mb-6">
+                    <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-4 inline-block text-left mb-6 w-full">
                         <span className="block text-xs text-red-400/70 uppercase font-semibold mb-1">Error Trace</span>
-                        <code className="text-red-400 text-sm">{error}</code>
+                        <code className="text-red-400 text-sm block break-all">{error}</code>
+                        {publishData?.errorDetails && (
+                            <div className="mt-2 pt-2 border-t border-red-900/30">
+                                <span className="block text-[10px] text-red-500/70 uppercase font-semibold mb-1">Details</span>
+                                <code className="text-red-300 text-xs block break-all">{publishData.errorDetails}</code>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex justify-center gap-4">

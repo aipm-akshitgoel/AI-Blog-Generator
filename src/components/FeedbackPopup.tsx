@@ -26,9 +26,11 @@ export function FeedbackPopup({ blogId, blogTitle }: FeedbackPopupProps) {
     });
 
     useEffect(() => {
-        // Only show if not previously dismissed/submitted for this blog
+        // Only show if not previously submitted or dismissed in this session
         const hasSubmitted = localStorage.getItem(`bloggie_feedback_${blogId}`);
-        if (!hasSubmitted) {
+        const hasDismissed = sessionStorage.getItem(`bloggie_feedback_dismissed_${blogId}`);
+
+        if (!hasSubmitted && !hasDismissed) {
             const timer = setTimeout(() => {
                 setIsOpen(true);
                 setStep(1);
@@ -116,20 +118,20 @@ export function FeedbackPopup({ blogId, blogTitle }: FeedbackPopupProps) {
 
                     {step === 1 && (
                         <div className="text-center space-y-6">
-                            <div className="w-16 h-16 mx-auto bg-gradient-to-tr from-emerald-500 to-teal-400 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                                <span className="text-2xl">🎁</span>
+                            <div className="w-16 h-16 mx-auto bg-gradient-to-tr from-blue-600 to-indigo-400 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/20">
+                                <span className="text-2xl">🎓</span>
                             </div>
                             <div>
-                                <h2 className="text-2xl font-black text-white tracking-tight mb-2">Claim 1-Year Free Access</h2>
+                                <h2 className="text-2xl font-black text-white tracking-tight mb-2">Claim Your 1-Year Academic Grant</h2>
                                 <p className="text-neutral-400">
-                                    Share your expert feedback on this generated draft to help us improve Bloggie AI, and we'll upgrade your account to a full year of premium access for free.
+                                    Help us improve the curriculum by providing feedback on this session. Your insights help us refine our educational methodology, and we'll grant you a full year of sponsored premium access in return.
                                 </p>
                             </div>
                             <button
                                 onClick={() => setStep(2)}
-                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-emerald-900/50 transition-all hover:scale-[1.02] active:scale-95"
+                                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-blue-900/50 transition-all hover:scale-[1.02] active:scale-95"
                             >
-                                Start Feedback
+                                Start Evaluation
                             </button>
                             <button onClick={handleDismiss} className="text-sm font-semibold text-neutral-500 hover:text-neutral-300 underline underline-offset-4 decoration-neutral-700 transition-colors">
                                 No thanks, maybe later
@@ -140,8 +142,8 @@ export function FeedbackPopup({ blogId, blogTitle }: FeedbackPopupProps) {
                     {step === 2 && (
                         <div className="animate-in slide-in-from-right-4 duration-300 space-y-6">
                             <div>
-                                <h3 className="text-xl font-bold text-white tracking-tight mb-1">The Basics</h3>
-                                <p className="text-sm text-neutral-400">Let's start with your overall impression.</p>
+                                <h3 className="text-xl font-bold text-white tracking-tight mb-1">Academy Baseline</h3>
+                                <p className="text-sm text-neutral-400">Let's start with your overall learning experience.</p>
                             </div>
 
                             <div className="space-y-4">
@@ -151,8 +153,8 @@ export function FeedbackPopup({ blogId, blogTitle }: FeedbackPopupProps) {
                                         type="email"
                                         value={email}
                                         onChange={e => setEmail(e.target.value)}
-                                        placeholder="To receive your 1-year free upgrade"
-                                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-600"
+                                        placeholder="To receive your scholarly grant confirmation"
+                                        className="w-full bg-neutral-950 border border-neutral-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 placeholder:text-neutral-600"
                                     />
                                 </div>
                                 <StarRating value={overallRating} onChange={setOverallRating} label="Overall Rating" />
@@ -171,8 +173,8 @@ export function FeedbackPopup({ blogId, blogTitle }: FeedbackPopupProps) {
                     {step === 3 && (
                         <div className="animate-in slide-in-from-right-4 duration-300 space-y-6">
                             <div>
-                                <h3 className="text-xl font-bold text-white tracking-tight mb-1">Content Writer Agent</h3>
-                                <p className="text-sm text-emerald-400/80 font-medium">How well did the LLM write the blog?</p>
+                                <h3 className="text-xl font-bold text-white tracking-tight mb-1">Content Mastery</h3>
+                                <p className="text-sm text-blue-400/80 font-medium">How effective was this learning material?</p>
                             </div>
 
                             <div className="space-y-4">
@@ -298,7 +300,7 @@ export function FeedbackPopup({ blogId, blogTitle }: FeedbackPopupProps) {
                             </div>
                             <h2 className="text-3xl font-black text-white tracking-tight">Thank You!</h2>
                             <p className="text-neutral-400">
-                                Your feedback is invaluable. We've received your submission and will be applying the 1-year free credit to your account shortly!
+                                Your contribution is invaluable to our academic research. We've received your evaluation and will be applying the 1-year sponsored access to your account shortly!
                             </p>
                         </div>
                     )}

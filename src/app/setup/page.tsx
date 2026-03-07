@@ -164,6 +164,7 @@ function SetupPageInner() {
   const handleContextComplete = async (newContext: BusinessContext) => {
     const enriched: BusinessContext = {
       ...newContext,
+      platform: "blog",
       internalLinks: [
         { href: "/", anchorText: "Home", target: "page" },
         { href: "/services", anchorText: "Services", target: "page" },
@@ -200,11 +201,11 @@ function SetupPageInner() {
   useEffect(() => {
     async function loadSavedData() {
       try {
-        const contextRes = await fetch("/api/business-context");
+        const contextRes = await fetch("/api/business-context?platform=blog");
         const contexts = await contextRes.json();
         if (contexts && contexts.length > 0) {
           handleContextComplete(contexts[0]);
-          const strategyRes = await fetch(`/api/strategy-session?businessContextId=${contexts[0].id}`);
+          const strategyRes = await fetch(`/api/strategy-session?businessContextId=${contexts[0].id}&platform=blog`);
           const strategy = await strategyRes.json();
           if (strategy && !strategy.error && strategy.topicOptions) {
             setStrategySession(strategy);

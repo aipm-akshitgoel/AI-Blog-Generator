@@ -20,6 +20,7 @@ export interface InspirationContent {
 
 export interface StrategySession {
     id?: string;
+    platform?: "blog" | "linkedin";
     businessContextId: string;
     keywordStrategy: KeywordStrategy;
     topicOptions: TopicOption[];

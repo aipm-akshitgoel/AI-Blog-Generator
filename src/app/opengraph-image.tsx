@@ -3,7 +3,7 @@ import { ImageResponse } from 'next/og';
 export const runtime = 'edge';
 
 // Image metadata
-export const alt = 'Bloggie AI';
+export const alt = 'AI Organic Growth Platform';
 export const size = {
     width: 1200,
     height: 630,
@@ -45,10 +45,10 @@ export default function Image() {
                         boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
                     }}
                 >
-                    B
+                    A
                 </div>
                 <div style={{ fontSize: 96, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 20 }}>
-                    Bloggie AI
+                    AI Organic Growth Platform
                 </div>
                 <div style={{ fontSize: 42, color: '#a7f3d0', fontWeight: 600, letterSpacing: '-0.01em', textAlign: 'center' }}>
                     SEO Content Engine for Local Businesses

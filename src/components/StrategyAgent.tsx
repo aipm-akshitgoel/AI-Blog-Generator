@@ -236,10 +236,11 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, platform
                     <button
                         onClick={() => onApprove({
                             ...strategy,
+                            platform,
                             businessContextId: businessContext.id ?? String(businessContext.businessName),
                             status: "approved"
                         })}
-                        className={`rounded-lg px-6 py-2.5 text-xs font-black uppercase tracking-widest text-white transition-all shadow-lg ${platform === 'linkedin' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20'}`}
+                        className={`rounded-lg px-6 py-2.5 text-xs font-black uppercase tracking-widest text-white transition-all shadow-lg ${platform === 'linkedin' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/40'}`}
                     >
                         Approve & Start Drafting
                     </button>

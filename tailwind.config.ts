@@ -7,7 +7,15 @@ const config: Config = {
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        'parul-purple': '#342b7c',
+        'parul-teal': '#02a7b6',
+      },
+      maxWidth: {
+        'parul': '1430px',
+      }
+    },
   },
   plugins: [
     require('@tailwindcss/typography'),

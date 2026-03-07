@@ -22,6 +22,7 @@ export interface IntegrationCredentials {
 
 export interface BusinessContext {
   id?: string;
+  platform?: "blog" | "linkedin";
   businessName: string;
   domain?: string;
   businessType: BusinessType;

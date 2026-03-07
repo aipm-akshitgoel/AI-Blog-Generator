@@ -81,9 +81,9 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ publishData: successPayload }, { status: 200 });
 
-    } catch (err) {
-        const message = err instanceof Error ? err.message : "Publishing failed catastrophically";
-        console.error("Publish Agent Error:", message);
-        return NextResponse.json({ error: message }, { status: 500 });
+    } catch (err: any) {
+        const message = err?.message || (typeof err === "string" ? err : JSON.stringify(err)) || "Unknown catastrophic failure";
+        console.error("Publish Agent Error FINAL:", err);
+        return NextResponse.json({ error: message, details: err?.details || "No details provided" }, { status: 500 });
     }
 }

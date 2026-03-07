@@ -104,7 +104,7 @@ export async function saveBlog(blog: SavedBlog): Promise<void> {
     const { error } = await supabase
         .from("blogs")
         .upsert(row, { onConflict: "id" });
-    if (error) throw error;
+    if (error) throw new Error(error.message || "Failed to save blog to database");
 }
 
 export async function deleteBlog(id: string, userId: string): Promise<boolean> {
@@ -113,6 +113,6 @@ export async function deleteBlog(id: string, userId: string): Promise<boolean> {
         .delete({ count: "exact" })
         .eq("id", id)
         .eq("user_id", userId);
-    if (error) throw error;
+    if (error) throw new Error(error.message || "Failed to delete blog from database");
     return (count ?? 0) > 0;
 }

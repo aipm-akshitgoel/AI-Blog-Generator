@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI, Schema, SchemaType } from "@google/generative-ai";
 import { type BusinessContext } from "@/lib/types/businessContext";
 import { type TopicOption } from "@/lib/types/strategy";
@@ -49,6 +50,9 @@ JUST JSON. Output only valid JSON.
 `;
 
 export async function POST(req: Request) {
+    const { userId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     if (!apiKey) {
         return NextResponse.json(
             { error: "GEMINI_API_KEY is not set" },

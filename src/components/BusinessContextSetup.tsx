@@ -71,6 +71,7 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
     // Parse the comma-separated services back to an array
     const finalDeps = {
       ...draftContext,
+      platform,
       services: editServicesStr.split(",").map(s => s.trim()).filter(Boolean)
     };
 
@@ -138,7 +139,7 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
           </div>
           <h2 className="text-2xl font-black text-white mb-2 uppercase tracking-tighter">Enter Your Website</h2>
           <p className="text-neutral-400 mb-8 max-w-sm mx-auto italic">
-            {platform === "linkedin" ? "Our platform" : "Bloggie AI"} will scan your website to automatically extract your services, brand tone, and target audience. No long forms required.
+            {platform === "linkedin" ? "Our platform" : "AI Organic Growth Platform"} will scan your website to automatically extract your services, brand tone, and target audience. No long forms required.
           </p>
 
           <form onSubmit={handleScrape} className="mx-auto max-w-md relative">

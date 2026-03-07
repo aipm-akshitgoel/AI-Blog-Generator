@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { createStrategySession, getLatestStrategySession, deleteStrategySession } from "@/lib/strategyDb";
 import type { StrategySession } from "@/lib/types/strategy";
 
 export async function GET(req: Request) {
+    const { userId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const { searchParams } = new URL(req.url);
     const businessContextId = searchParams.get("businessContextId");
+    const platform = searchParams.get("platform") as "blog" | "linkedin" | null;
 
     try {
-        const session = await getLatestStrategySession(businessContextId || undefined);
+        const session = await getLatestStrategySession(businessContextId || undefined, platform || undefined);
         return NextResponse.json(session);
     } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to fetch strategy session";
@@ -16,6 +21,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+    const { userId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     let body: StrategySession;
     try {
         body = await req.json();
@@ -34,6 +42,9 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+    const { userId } = await auth();
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 

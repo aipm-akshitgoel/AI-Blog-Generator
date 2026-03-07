@@ -20,7 +20,7 @@ export default async function Home() {
 
       <div className="relative z-10 max-w-3xl border border-neutral-800/50 bg-neutral-900/40 p-8 md:p-16 rounded-3xl backdrop-blur-xl shadow-2xl">
         <h1 className="text-4xl md:text-6xl font-black text-white mb-6 tracking-tight">
-          Bloggie AI
+          AI Organic Growth Platform
           <br />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-600 font-bold">
             Intelligent Blog Generation Agent

@@ -8,15 +8,15 @@ export function GlobalNavbar() {
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
-    // Hide global navbar on public blog pages to avoid double-headers
-    const isPublicPage = pathname.startsWith("/blog");
+    // Hide global navbar on public blog pages and test templates to avoid double-headers
+    const isPublicPage = pathname.startsWith("/blog") || pathname === "/test-template";
     if (isPublicPage) return null;
 
     const isDashboard = pathname === "/dashboard";
     const isSetupMode = pathname.startsWith("/setup");
     const isLinkedinMode = pathname.startsWith("/linkedin");
 
-    const brandName = isLinkedinMode ? "LinkedIn Ghostwriter" : "Bloggie AI";
+    const brandName = isLinkedinMode ? "LinkedIn Ghostwriter" : "AI Organic Growth Platform";
     const brandColor = isLinkedinMode ? "text-blue-500" : "text-emerald-400";
     const brandHref = isLinkedinMode ? "/linkedin" : "/";
 

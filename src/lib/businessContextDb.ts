@@ -3,6 +3,7 @@ import type { BusinessContext } from "@/lib/types/businessContext";
 
 export interface BusinessContextRow {
   id: string;
+  platform: "blog" | "linkedin";
   business_name: string;
   business_type: string;
   location_city: string | null;
@@ -19,6 +20,7 @@ export interface BusinessContextRow {
 function rowToContext(row: BusinessContextRow): BusinessContext {
   return {
     id: row.id,
+    platform: row.platform,
     businessName: row.business_name,
     businessType: row.business_type as BusinessContext["businessType"],
     location: {
@@ -43,6 +45,7 @@ export async function createBusinessContext(
     .from("business_context")
     .insert({
       user_id: userId,
+      platform: data.platform || "blog",
       business_name: data.businessName,
       business_type: data.businessType,
       location_city: data.location.city || null,
@@ -56,7 +59,7 @@ export async function createBusinessContext(
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) throw new Error(error.message || "Failed to create business context");
   return rowToContext(row as BusinessContextRow);
 }
 
@@ -65,6 +68,7 @@ export async function updateBusinessContext(
   data: Partial<Omit<BusinessContext, "id" | "createdAt" | "updatedAt">>
 ): Promise<BusinessContext> {
   const updateData: any = {};
+  if (data.platform) updateData.platform = data.platform;
   if (data.businessName) updateData.business_name = data.businessName;
   if (data.businessType) updateData.business_type = data.businessType;
   if (data.location) {
@@ -85,7 +89,7 @@ export async function updateBusinessContext(
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) throw new Error(error.message || "Failed to update business context");
   return rowToContext(row as BusinessContextRow);
 }
 
@@ -100,7 +104,7 @@ export async function getBusinessContext(id: string): Promise<BusinessContext | 
   return rowToContext(row as BusinessContextRow);
 }
 
-export async function listBusinessContexts(userId?: string): Promise<BusinessContext[]> {
+export async function listBusinessContexts(userId?: string, platform?: "blog" | "linkedin"): Promise<BusinessContext[]> {
   let query = supabase
     .from("business_context")
     .select("*")
@@ -110,8 +114,12 @@ export async function listBusinessContexts(userId?: string): Promise<BusinessCon
     query = query.eq("user_id", userId);
   }
 
+  if (platform) {
+    query = query.eq("platform", platform);
+  }
+
   const { data: rows, error } = await query;
-  if (error) throw error;
+  if (error) throw new Error(error.message || "Failed to list business contexts");
   return (rows ?? []).map((r) => rowToContext(r as BusinessContextRow));
 }
 
@@ -121,5 +129,5 @@ export async function deleteBusinessContext(id: string): Promise<void> {
     .delete()
     .eq("id", id);
 
-  if (error) throw error;
+  if (error) throw new Error(error.message || "Failed to delete business context");
 }
