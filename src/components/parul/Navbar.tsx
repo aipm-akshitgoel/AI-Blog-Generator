@@ -17,18 +17,20 @@ const Navbar: React.FC = () => {
     return (
         <nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-300">
             {/* Top Banner */}
-            <div className={`bg-[#342b7c] text-white py-1 px-4 text-center text-[10px] md:text-xs font-bold tracking-[0.2em] uppercase flex items-center justify-center gap-3 transition-all duration-300 ${isScrolled ? 'h-0 py-0 opacity-0 overflow-hidden' : 'h-8 opacity-100'}`}>
-                <span>Admissions Open for PG Program in Artificial Intelligence & Machine Learning |</span>
-                <a href="#" className="flex items-center gap-1 hover:text-[#02a7b6] transition-colors">
-                    Enroll Now <Send className="w-3 h-3" />
-                </a>
+            <div className={`bg-[#342b7c] text-white py-1.5 px-4 text-center text-[8px] md:text-[10px] font-bold tracking-[0.2em] uppercase transition-all duration-300 ${isScrolled ? 'h-0 py-0 opacity-0 overflow-hidden' : 'min-h-[2.5rem] md:h-8 opacity-100'}`}>
+                <div className="flex flex-col md:flex-row items-center justify-center gap-1 md:gap-3">
+                    <span>Admissions Open for PG Program in AI & ML |</span>
+                    <a href="#" className="flex items-center gap-1 hover:text-[#02a7b6] transition-colors">
+                        Enroll Now <Send className="w-3 h-3" />
+                    </a>
+                </div>
             </div>
 
             {/* Main Nav menu */}
-            <div className={`transition-all duration-500 ${isScrolled ? 'bg-black/80 backdrop-blur-2xl border-b border-white/10 py-4 shadow-2xl' : 'bg-transparent py-8'}`}>
-                <div className="parul-container px-6 flex items-center justify-between">
+            <div className={`transition-all duration-500 ${isScrolled ? 'bg-black/80 backdrop-blur-2xl border-b border-white/10 py-3 md:py-4 shadow-2xl' : 'bg-transparent py-4 md:py-8'}`}>
+                <div className="parul-container px-4 md:px-6 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <h1 className="text-2xl font-black tracking-tighter text-white italic">PARUL <span className="font-light not-italic text-white/70">UNIVERSITY</span></h1>
+                        <h1 className="text-xl md:text-2xl font-black tracking-tighter text-white italic">PARUL <span className="font-light not-italic text-white/70 text-base md:text-2xl">UNIVERSITY</span></h1>
                     </div>
 
                     <div className="hidden md:flex items-center gap-12 text-[11px] font-black uppercase tracking-[0.3em] text-white/70">
