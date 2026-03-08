@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { GoogleGenerativeAI, Schema, SchemaType } from "@google/generative-ai";
 import { type BusinessContext } from "@/lib/types/businessContext";
 import { type TopicOption } from "@/lib/types/strategy";
+import { sanitizeJsonString } from "@/lib/sanitizeJson";
+import { GoogleGenerativeAI, Schema, SchemaType } from "@google/generative-ai";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -77,7 +78,8 @@ export async function POST(req: Request) {
 
         const result = await model.generateContent(userPrompt);
         const text = result.response.text().trim();
-        const postData = JSON.parse(text);
+        const clean = sanitizeJsonString(text);
+        const postData = JSON.parse(clean);
 
         return NextResponse.json({ data: postData });
     } catch (err) {

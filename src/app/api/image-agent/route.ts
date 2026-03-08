@@ -4,6 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import type { ImageMetadata } from "@/lib/types/image";
+import { sanitizeJsonString } from "@/lib/sanitizeJson";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -50,7 +51,8 @@ Return ONLY valid JSON: { "searchQuery": "...", "altText": "..." }`,
 
         const result = await model.generateContent(promptContents);
         const text = result.response.text().trim();
-        const json = JSON.parse(text);
+        const clean = sanitizeJsonString(text);
+        const json = JSON.parse(clean);
 
         // Dynamically fetch from an image generation API. Using random seeds to prevent caching.
         const randomSeed = Math.floor(Math.random() * 1000000);

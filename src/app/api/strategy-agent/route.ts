@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { sanitizeJsonString } from "@/lib/sanitizeJson";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -87,7 +88,7 @@ export async function POST(req: Request) {
 
     const result = await model.generateContent(userPrompt);
     const text = result.response.text().trim();
-    const cleanText = text.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
+    const cleanText = sanitizeJsonString(text);
     const strategyData = JSON.parse(cleanText);
 
     return NextResponse.json({ data: strategyData });

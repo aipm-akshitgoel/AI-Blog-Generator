@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, Schema, SchemaType } from "@google/generative-ai";
 import { type BusinessContext } from "@/lib/types/businessContext";
 import { type TopicOption } from "@/lib/types/strategy";
+import { sanitizeJsonString } from "@/lib/sanitizeJson";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -91,7 +92,7 @@ export async function POST(req: Request) {
         const text = result.response.text().trim();
 
         // Clean any potential markdown wrapper the LLM might stubborn include
-        const cleanText = text.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
+        const cleanText = sanitizeJsonString(text);
 
         // Parse the JSON post
         const postData = JSON.parse(cleanText);

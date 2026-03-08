@@ -4,6 +4,7 @@ import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import type { MetaOption } from "@/lib/types/meta";
 import type { SchemaData } from "@/lib/types/schema";
+import { sanitizeJsonString } from "@/lib/sanitizeJson";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -45,7 +46,7 @@ Do NOT include any explanatory text outside the JSON. Ensure the jsonLd field co
 
         const result = await model.generateContent(prompt);
         const text = result.response.text().trim();
-        const clean = text.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "").trim();
+        const clean = sanitizeJsonString(text);
 
         const payload: SchemaData = JSON.parse(clean);
 

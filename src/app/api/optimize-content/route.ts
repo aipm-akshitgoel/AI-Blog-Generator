@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { BlogPost } from "@/lib/types/content";
 import type { OptimizedContent } from "@/lib/types/optimization";
+import { sanitizeJsonString } from "@/lib/sanitizeJson";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -51,7 +52,7 @@ Do NOT include any explanatory text.
 
         const result = await model.generateContent(prompt);
         const text = result.response.text().trim();
-        const clean = text.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "").trim();
+        const clean = sanitizeJsonString(text);
         const optimized: OptimizedContent = JSON.parse(clean);
 
         // Fix for Gemini over-escaping newlines into literal "\n" strings
