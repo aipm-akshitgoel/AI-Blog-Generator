@@ -76,7 +76,7 @@ const Programs: React.FC = () => {
                 </div>
 
                 {/* Why Choose Parul (Horizontal Scoll / Grid) */}
-                <div className="mt-20 md:mt-60 pt-20 md:pt-40 border-t border-gray-100 overflow-hidden">
+                <div className="mt-12 md:mt-24 pt-12 md:pt-16 border-t border-gray-100 overflow-hidden">
                     <h2 className="text-4xl md:text-7xl font-bold mb-12 md:mb-20 text-center">
                         Why Serious Professionals <br />
                         Choose <span className="text-[#342b7c]">PARUL</span>
