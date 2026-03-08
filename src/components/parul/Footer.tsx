@@ -62,7 +62,7 @@ const Footer: React.FC = () => {
             </div>
 
             {/* Final Bottom section */}
-            <div className="parul-container pt-20 pb-32 md:pb-20 px-6 text-center">
+            <div className="parul-container pt-20 pb-48 md:pb-24 px-6 text-center">
                 <div className="text-3xl md:text-4xl font-black tracking-tighter mb-8 italic uppercase text-white/20">PARUL UNIVERSITY</div>
                 <div className="text-[8px] md:text-[10px] font-black tracking-[0.4em] text-white/30 uppercase">
                     © 2026 PARUL UNIVERSITY. ALL RIGHTS RESERVED.
