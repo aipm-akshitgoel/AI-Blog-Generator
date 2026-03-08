@@ -51,11 +51,17 @@ const Footer: React.FC = () => {
                             transition={{ duration: 0.8 }}
                             className="bg-white/5 backdrop-blur-3xl border border-white/10 p-6 md:p-12 rounded-[2.5rem] md:rounded-[3.5rem] flex flex-col justify-end min-h-[250px] md:min-h-[500px] group transition-all relative overflow-hidden"
                         >
-                            <Globe className="absolute top-6 right-6 w-16 h-16 md:top-10 md:right-10 md:w-32 md:h-32 opacity-10 group-hover:rotate-45 transition-transform duration-1000" />
-                            <h3 className="text-2xl md:text-4xl font-black mb-4 md:mb-6 italic uppercase tracking-tighter">Visit Parul</h3>
-                            <a href="#" className="btn-primary w-fit px-6 md:px-12 py-3 md:py-5 rounded-full text-base md:text-xl font-black italic uppercase shadow-[0_0_50px_rgba(2,167,182,0.3)] group no-underline">
-                                Reach Out <ArrowRight className="w-5 h-5 md:w-6 md:h-6 group-hover:translate-x-3 transition-transform ml-2" />
-                            </a>
+                            <img src="/assets/campus_classy.webp" alt="Visit Campus" className="absolute inset-0 w-full h-full object-cover z-0 opacity-40 group-hover:opacity-60 transition-opacity duration-700 mix-blend-overlay" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-0" />
+
+                            <Globe className="absolute top-6 right-6 w-16 h-16 md:top-10 md:right-10 md:w-32 md:h-32 opacity-10 group-hover:rotate-45 transition-transform duration-1000 z-10" />
+
+                            <div className="relative z-10 flex flex-col items-start mt-auto">
+                                <h3 className="text-2xl md:text-4xl font-black mb-4 md:mb-6 italic uppercase tracking-tighter">Visit Parul</h3>
+                                <a href="#" className="btn-primary flex items-center w-fit px-6 md:px-12 py-3 md:py-5 rounded-full text-base md:text-xl font-black italic uppercase shadow-[0_0_50px_rgba(2,167,182,0.3)] group/btn no-underline">
+                                    Reach Out <ArrowRight className="w-5 h-5 md:w-6 md:h-6 group-hover/btn:translate-x-3 transition-transform ml-2" />
+                                </a>
+                            </div>
                         </motion.div>
                     </div>
                 </div>
