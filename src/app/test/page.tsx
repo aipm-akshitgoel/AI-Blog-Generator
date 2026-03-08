@@ -29,9 +29,7 @@ function SetupPageInner() {
 
   // mode=blog → blog creation flow (topic picker → pipeline)
   // mode=account OR no param → account setup flow (profile → strategy → save → dashboard)
-  // mode=blog → blog creation flow (topic picker → pipeline)
-  // mode=account OR no param → account setup flow (profile → strategy → save → dashboard)
-  const isBlogMode = searchParams.get("mode") === "blog";
+  const isBlogMode = true; // Forced for /test bypassing setup
 
   // ── Account data ─────────────────────────────────────────────────────────
   const [context, setContext] = useState<BusinessContext | null>(null);
