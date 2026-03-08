@@ -17,11 +17,11 @@ const Navbar: React.FC = () => {
     return (
         <nav className="fixed top-0 left-0 right-0 z-50 transition-all duration-300">
             {/* Top Banner */}
-            <div className={`bg-[#342b7c] text-white py-1 px-4 text-center text-[7px] md:text-[10px] font-bold tracking-[0.2em] uppercase transition-all duration-300 ${isScrolled ? 'h-0 py-0 opacity-0 overflow-hidden' : 'h-auto md:h-8 opacity-100'}`}>
-                <div className="flex flex-col md:flex-row items-center justify-center gap-1 md:gap-3">
+            <div className={`bg-[#342b7c] text-white py-1 px-2 md:px-4 text-center text-[6.5px] md:text-[10px] font-bold tracking-[0.15em] md:tracking-[0.2em] uppercase transition-all duration-300 ${isScrolled ? 'h-0 py-0 opacity-0 overflow-hidden' : 'h-auto md:h-8 opacity-100'}`}>
+                <div className="flex flex-row flex-wrap items-center justify-center gap-x-1 gap-y-0.5 md:gap-3">
                     <span>Admissions Open for PG Program in AI & ML |</span>
                     <a href="#" className="flex items-center gap-1 hover:text-[#02a7b6] transition-colors">
-                        Enroll Now <Send className="w-3 h-3" />
+                        Enroll Now <Send className="w-2.5 h-2.5 md:w-3 md:h-3" />
                     </a>
                 </div>
             </div>

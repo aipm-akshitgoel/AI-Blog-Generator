@@ -24,32 +24,32 @@ const Hero: React.FC = () => {
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ duration: 1 }}
                 >
-                    <h1 className="text-5xl sm:text-7xl md:text-[10rem] font-black tracking-tighter mb-6 md:mb-8 leading-[0.9] md:leading-[0.8] italic uppercase drop-shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
+                    <h1 className="text-[2.75rem] md:text-5xl lg:text-[10rem] font-black tracking-tighter mb-4 md:mb-8 leading-[0.9] md:leading-[0.8] italic uppercase drop-shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
                         Education <br />
                         <span className="text-[#02a7b6] italic block drop-shadow-[0_10px_10px_rgba(0,0,0,0.5)]">Transforms</span>
                     </h1>
 
-                    <p className="text-lg md:text-2xl text-white max-w-2xl mx-auto mb-8 md:mb-12 leading-relaxed font-black italic drop-shadow-[0_2px_4px_rgba(0,0,0,1)] px-4 md:px-0">
+                    <p className="text-base md:text-2xl text-white max-w-2xl mx-auto mb-6 md:mb-12 leading-relaxed font-black italic drop-shadow-[0_2px_4px_rgba(0,0,0,1)] px-4 md:px-0">
                         Parul University brings premium, industry-aligned learning to your screen. Build skills that matter.
                     </p>
 
                     <div className="flex justify-center px-6">
-                        <a href="#programmes" className="btn-primary group py-4 md:py-6 px-8 md:px-16 text-lg md:text-2xl font-black italic rounded-full shadow-[0_0_50px_rgba(2,167,182,0.4)]">
+                        <a href="#programmes" className="btn-primary group py-3 md:py-6 px-6 md:px-16 text-base md:text-2xl font-black italic rounded-full shadow-[0_0_50px_rgba(2,167,182,0.4)]">
                             Explore Programmes
-                            <ArrowRight className="w-5 h-5 md:w-8 md:h-8 group-hover:translate-x-3 transition-transform ml-2" />
+                            <ArrowRight className="w-4 h-4 md:w-8 md:h-8 group-hover:translate-x-3 transition-transform ml-2" />
                         </a>
                     </div>
                 </motion.div>
 
                 {/* Ranking Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mt-12 md:mt-20 px-4 md:px-0">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 mt-8 md:mt-20 px-4 md:px-0">
                     {[
                         "Top 5 World Ranking",
                         "Rank 1: Top Management",
                         "Best Institution 2024",
                         "King's Award 2024"
                     ].map((title, idx) => (
-                        <div key={idx} className="bg-white/5 backdrop-blur-3xl border border-white/10 p-4 rounded-2xl flex flex-col justify-end text-left h-24 md:h-32 hover:bg-white/10 transition-all">
+                        <div key={idx} className="bg-white/5 backdrop-blur-3xl border border-white/10 p-3 md:p-4 rounded-xl md:rounded-2xl flex flex-col justify-end text-left h-20 md:h-32 hover:bg-white/10 transition-all">
                             <div className="text-[10px] md:text-sm font-black italic uppercase leading-tight">{title}</div>
                         </div>
                     ))}
