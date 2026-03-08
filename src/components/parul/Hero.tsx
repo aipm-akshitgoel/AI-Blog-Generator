@@ -49,9 +49,8 @@ const Hero: React.FC = () => {
                         { title: "Best Institution 2024", icon: "/assets/logos/qs.webp" },
                         { title: "King's Award 2024", icon: "/assets/logos/award.webp" }
                     ].map((item, idx) => (
-                        <div key={idx} className="bg-white/5 backdrop-blur-3xl border border-white/10 p-3 md:p-4 rounded-xl md:rounded-2xl flex flex-col items-center justify-between text-center h-24 md:h-36 hover:bg-white/10 transition-all">
-                            <img src={item.icon} alt={item.title} className="h-6 w-auto md:h-12 object-contain mx-auto rounded-md drop-shadow-md" />
-                            <div className="text-[10px] md:text-sm font-black italic uppercase leading-tight mt-2">{item.title}</div>
+                        <div key={idx} className="bg-white/5 backdrop-blur-3xl border border-white/10 p-4 md:p-6 rounded-xl md:rounded-2xl flex items-center justify-center h-20 md:h-32 hover:bg-white/10 transition-all duration-300 hover:scale-[1.03] cursor-pointer group">
+                            <img src={item.icon} alt={item.title} className="h-10 md:h-16 lg:h-20 w-auto object-contain drop-shadow-2xl opacity-70 group-hover:opacity-100 transition-opacity" />
                         </div>
                     ))}
                 </div>
