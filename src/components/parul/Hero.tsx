@@ -44,13 +44,14 @@ const Hero: React.FC = () => {
                 {/* Ranking Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 mt-8 md:mt-20 px-4 md:px-0">
                     {[
-                        "Top 5 World Ranking",
-                        "Rank 1: Top Management",
-                        "Best Institution 2024",
-                        "King's Award 2024"
-                    ].map((title, idx) => (
-                        <div key={idx} className="bg-white/5 backdrop-blur-3xl border border-white/10 p-3 md:p-4 rounded-xl md:rounded-2xl flex flex-col justify-end text-left h-20 md:h-32 hover:bg-white/10 transition-all">
-                            <div className="text-[10px] md:text-sm font-black italic uppercase leading-tight">{title}</div>
+                        { title: "Top 5 World Ranking", icon: "/assets/logos/nirf.webp" },
+                        { title: "Rank 1: Top Management", icon: "/assets/logos/naac.webp" },
+                        { title: "Best Institution 2024", icon: "/assets/logos/qs.webp" },
+                        { title: "King's Award 2024", icon: "/assets/logos/award.webp" }
+                    ].map((item, idx) => (
+                        <div key={idx} className="bg-white/5 backdrop-blur-3xl border border-white/10 p-3 md:p-4 rounded-xl md:rounded-2xl flex flex-col justify-between text-left h-24 md:h-36 hover:bg-white/10 transition-all">
+                            <img src={item.icon} alt={item.title} className="h-6 w-auto md:h-12 object-contain self-start rounded-md drop-shadow-md" />
+                            <div className="text-[10px] md:text-sm font-black italic uppercase leading-tight mt-2">{item.title}</div>
                         </div>
                     ))}
                 </div>
