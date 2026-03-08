@@ -15,6 +15,7 @@ interface PublishingAgentProps {
     meta: MetaOption;
     schema: SchemaData;
     onComplete?: (publishData: PublishPayload) => void;
+    forcedTemplate?: string;
 }
 
 export function PublishingAgentUI({
@@ -24,12 +25,13 @@ export function PublishingAgentUI({
     cta,
     meta,
     schema,
-    onComplete
+    onComplete,
+    forcedTemplate
 }: PublishingAgentProps) {
     const [publishState, setPublishState] = useState<"idle" | "publishing" | "success" | "failed">("idle");
     const [publishData, setPublishData] = useState<PublishPayload | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [selectedTemplate, setSelectedTemplate] = useState<"minimal" | "magazine">("minimal");
+    const [selectedTemplate, setSelectedTemplate] = useState<string>(forcedTemplate || "minimal");
 
     // New states for demo vs domain publishing
     const [publishType, setPublishType] = useState<"demo" | "domain">("demo");
@@ -147,37 +149,39 @@ export function PublishingAgentUI({
                         </ul>
                     </div>
 
-                    <div className="bg-neutral-900/50 rounded-lg p-5 border border-neutral-800">
-                        <h3 className="text-sm font-semibold text-neutral-300 mb-3 uppercase tracking-wider">Select Blog Layout</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                            <label className={`cursor-pointer rounded-xl border-2 p-4 flex flex-col items-center gap-3 transition-colors ${selectedTemplate === 'minimal' ? 'border-emerald-500 bg-emerald-500/10' : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700'}`}>
-                                <input type="radio" className="hidden" name="template" value="minimal" checked={selectedTemplate === 'minimal'} onChange={() => setSelectedTemplate('minimal')} />
-                                <div className="w-16 h-20 bg-neutral-800 rounded border border-neutral-700 flex flex-col p-2 gap-1.5 shadow-sm overflow-hidden">
-                                    <div className="w-full h-4 bg-neutral-600 rounded-sm"></div>
-                                    <div className="w-3/4 h-1.5 bg-neutral-700 rounded-full mt-2"></div>
-                                    <div className="w-full h-1.5 bg-neutral-700 rounded-full"></div>
-                                    <div className="w-5/6 h-1.5 bg-neutral-700 rounded-full"></div>
-                                    <div className="w-full h-4 bg-emerald-600/50 rounded-sm mt-auto"></div>
-                                </div>
-                                <span className="text-sm font-semibold text-neutral-200">Modern Minimal</span>
-                            </label>
-
-                            <label className={`cursor-pointer rounded-xl border-2 p-4 flex flex-col items-center gap-3 transition-colors ${selectedTemplate === 'magazine' ? 'border-emerald-500 bg-emerald-500/10' : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700'}`}>
-                                <input type="radio" className="hidden" name="template" value="magazine" checked={selectedTemplate === 'magazine'} onChange={() => setSelectedTemplate('magazine')} />
-                                <div className="w-16 h-20 bg-neutral-800 rounded border border-neutral-700 flex p-1.5 gap-1.5 shadow-sm overflow-hidden">
-                                    <div className="w-1/3 h-full bg-neutral-700 rounded-sm"></div>
-                                    <div className="flex-1 flex flex-col gap-1">
-                                        <div className="w-full h-5 bg-neutral-600 rounded-sm"></div>
-                                        <div className="w-full h-1 bg-neutral-700 rounded-full mt-1"></div>
-                                        <div className="w-5/6 h-1 bg-neutral-700 rounded-full"></div>
-                                        <div className="w-full h-1 bg-neutral-700 rounded-full"></div>
-                                        <div className="w-full h-3 bg-emerald-600/50 rounded-sm mt-auto"></div>
+                    {!forcedTemplate && (
+                        <div className="bg-neutral-900/50 rounded-lg p-5 border border-neutral-800">
+                            <h3 className="text-sm font-semibold text-neutral-300 mb-3 uppercase tracking-wider">Select Blog Layout</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <label className={`cursor-pointer rounded-xl border-2 p-4 flex flex-col items-center gap-3 transition-colors ${selectedTemplate === 'minimal' ? 'border-emerald-500 bg-emerald-500/10' : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700'}`}>
+                                    <input type="radio" className="hidden" name="template" value="minimal" checked={selectedTemplate === 'minimal'} onChange={() => setSelectedTemplate('minimal')} />
+                                    <div className="w-16 h-20 bg-neutral-800 rounded border border-neutral-700 flex flex-col p-2 gap-1.5 shadow-sm overflow-hidden">
+                                        <div className="w-full h-4 bg-neutral-600 rounded-sm"></div>
+                                        <div className="w-3/4 h-1.5 bg-neutral-700 rounded-full mt-2"></div>
+                                        <div className="w-full h-1.5 bg-neutral-700 rounded-full"></div>
+                                        <div className="w-5/6 h-1.5 bg-neutral-700 rounded-full"></div>
+                                        <div className="w-full h-4 bg-emerald-600/50 rounded-sm mt-auto"></div>
                                     </div>
-                                </div>
-                                <span className="text-sm font-semibold text-neutral-200">Editorial Magazine</span>
-                            </label>
+                                    <span className="text-sm font-semibold text-neutral-200">Modern Minimal</span>
+                                </label>
+
+                                <label className={`cursor-pointer rounded-xl border-2 p-4 flex flex-col items-center gap-3 transition-colors ${selectedTemplate === 'magazine' ? 'border-emerald-500 bg-emerald-500/10' : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700'}`}>
+                                    <input type="radio" className="hidden" name="template" value="magazine" checked={selectedTemplate === 'magazine'} onChange={() => setSelectedTemplate('magazine')} />
+                                    <div className="w-16 h-20 bg-neutral-800 rounded border border-neutral-700 flex p-1.5 gap-1.5 shadow-sm overflow-hidden">
+                                        <div className="w-1/3 h-full bg-neutral-700 rounded-sm"></div>
+                                        <div className="flex-1 flex flex-col gap-1">
+                                            <div className="w-full h-5 bg-neutral-600 rounded-sm"></div>
+                                            <div className="w-full h-1 bg-neutral-700 rounded-full mt-1"></div>
+                                            <div className="w-5/6 h-1 bg-neutral-700 rounded-full"></div>
+                                            <div className="w-full h-1 bg-neutral-700 rounded-full"></div>
+                                            <div className="w-full h-3 bg-emerald-600/50 rounded-sm mt-auto"></div>
+                                        </div>
+                                    </div>
+                                    <span className="text-sm font-semibold text-neutral-200">Editorial Magazine</span>
+                                </label>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-neutral-800 mt-6">
                         <div className="flex flex-col p-4 rounded-xl border border-neutral-800 bg-neutral-900/50">
