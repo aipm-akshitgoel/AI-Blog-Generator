@@ -6,7 +6,7 @@ import { ArrowRight } from 'lucide-react';
 
 const Hero: React.FC = () => {
     return (
-        <section className="relative h-screen flex flex-col items-center justify-center text-center px-4 overflow-hidden bg-black text-white">
+        <section className="relative min-h-[95dvh] pt-32 pb-16 lg:min-h-screen lg:py-0 flex flex-col items-center justify-center text-center px-4 overflow-hidden bg-black text-white">
             {/* Background elements */}
             <div className="absolute inset-0 z-0">
                 <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-black/60 via-black/30 to-black z-10" />

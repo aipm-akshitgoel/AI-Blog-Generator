@@ -9,9 +9,9 @@ const Ticker: React.FC = () => {
     ];
 
     return (
-        <section className="bg-black py-20 px-4 overflow-hidden">
+        <section className="bg-black pt-8 pb-16 md:pt-12 md:pb-20 px-4 overflow-hidden">
             <div className="parul-container">
-                <div className="text-gray-400 text-center mb-10 text-sm font-medium tracking-widest uppercase italic font-black">
+                <div className="text-gray-400 text-center mb-6 md:mb-10 text-sm font-medium tracking-widest uppercase italic font-black">
                     Powering the careers of those at:
                 </div>
 
