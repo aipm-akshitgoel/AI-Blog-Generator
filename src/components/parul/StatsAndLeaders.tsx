@@ -39,7 +39,7 @@ const StatsAndLeaders: React.FC = () => {
                         </div>
 
                         {/* Desktop CTA (Hidden on mobile) */}
-                        <div className="hidden md:flex justify-end lg:pr-10">
+                        <div className="hidden md:flex justify-start pt-6">
                             <a href="#" className="btn-primary flex items-center justify-center w-fit px-8 py-4 rounded-full text-lg font-black italic uppercase shadow-[0_0_50px_rgba(2,167,182,0.3)] group/btn no-underline">
                                 Meet Our Leaders <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-3 transition-transform ml-2" />
                             </a>
