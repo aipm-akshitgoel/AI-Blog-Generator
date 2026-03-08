@@ -23,7 +23,7 @@ export default async function Home() {
           AI Organic Growth Platform
           <br />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-600 font-bold">
-            Intelligent Blog Generation Agent
+            Intelligent Organic Page Generation Agent
           </span>
         </h1>
         <p className="text-lg md:text-xl text-neutral-400 mb-10 leading-relaxed max-w-2xl mx-auto">

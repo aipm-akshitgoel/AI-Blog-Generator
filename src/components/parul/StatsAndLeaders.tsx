@@ -22,7 +22,7 @@ const StatsAndLeaders: React.FC = () => {
                             Access 300+ CXO-led sessions featuring experts from Google, Meta, McKinsey, and more.
                         </p>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 md:gap-8">
                             <div className="flex flex-col items-start">
                                 <div className="text-4xl md:text-5xl font-black italic mb-1 uppercase tracking-tighter text-white">500+</div>
                                 <div className="text-[10px] font-black uppercase tracking-[0.3em] text-[#02a7b6]">Partners</div>

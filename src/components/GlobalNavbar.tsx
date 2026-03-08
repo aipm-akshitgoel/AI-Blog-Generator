@@ -16,7 +16,7 @@ export function GlobalNavbar() {
     const isSetupMode = pathname.startsWith("/setup");
     const isLinkedinMode = pathname.startsWith("/linkedin");
 
-    const brandName = isLinkedinMode ? "LinkedIn Ghostwriter" : "AI Organic Growth Platform";
+    const brandName = isLinkedinMode ? "LinkedIn Ghostwriter" : "Bloggie AI";
     const brandColor = isLinkedinMode ? "text-blue-500" : "text-emerald-400";
     const brandHref = isLinkedinMode ? "/linkedin" : "/";
 
