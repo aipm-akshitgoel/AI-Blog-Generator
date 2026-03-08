@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
+import { ArrowRight } from 'lucide-react';
 
 const Curriculum: React.FC = () => {
     return (
@@ -44,6 +45,17 @@ const Curriculum: React.FC = () => {
                         ))}
                     </div>
                 </div>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.8, delay: 0.2 }}
+                    className="mt-16 md:mt-24 flex justify-center"
+                >
+                    <a href="#" className="btn-primary flex items-center w-fit px-8 md:px-12 py-4 md:py-5 rounded-full text-lg md:text-xl font-black italic uppercase shadow-[0_0_50px_rgba(2,167,182,0.3)] group/btn no-underline">
+                        Download Curriculum <ArrowRight className="w-5 h-5 md:w-6 md:h-6 group-hover/btn:translate-x-3 transition-transform ml-2" />
+                    </a>
+                </motion.div>
             </div>
         </section>
     );
