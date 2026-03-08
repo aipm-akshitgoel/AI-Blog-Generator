@@ -201,16 +201,40 @@ function SetupPageInner() {
   useEffect(() => {
     async function loadSavedData() {
       try {
-        const contextRes = await fetch("/api/business-context?platform=blog");
-        const contexts = await contextRes.json();
-        if (contexts && contexts.length > 0) {
-          handleContextComplete(contexts[0]);
-          const strategyRes = await fetch(`/api/strategy-session?businessContextId=${contexts[0].id}&platform=blog`);
-          const strategy = await strategyRes.json();
-          if (strategy && !strategy.error && strategy.topicOptions) {
-            setStrategySession(strategy);
-          }
-        }
+        const parulContext: BusinessContext = {
+          id: "parul-mock-id",
+          platform: "blog",
+          businessName: "Parul University",
+          businessType: "education",
+          location: { city: "Vadodara", region: "Gujarat", country: "India" },
+          services: ["B.Tech", "MBA", "Design", "Medical", "Law"],
+          targetAudience: "Ambitious students looking for career-driven education and global placements.",
+          positioning: "A premier university powering the careers of those at Google, Meta, and Fortune 500 companies.",
+          internalLinks: [
+            { href: "/admissions", anchorText: "Admissions", target: "page" }
+          ]
+        };
+        const parulStrategy: StrategySession = {
+          id: "parul-mock-strategy-id",
+          businessContextId: "parul-mock-id",
+          platform: "blog",
+          status: "approved",
+          createdAt: new Date().toISOString(),
+          keywordStrategy: {
+            primaryKeyword: "Top placement university in India",
+            secondaryKeywords: ["tech placements", "engineering admissions"],
+            searchIntent: "informational"
+          },
+          topicOptions: [
+            { title: "Why Parul University is the Top Choice for Engineering", description: "An overview of the engineering programs and placement records at Parul.", cannibalizationRisk: false },
+            { title: "Life at Parul University: A Student's Perspective", description: "A glimpse into campus life, events, and student communities.", cannibalizationRisk: false },
+            { title: "How Parul University's Industry Tie-ups Power Careers", description: "Highlighting connections with companies like Google and Meta.", cannibalizationRisk: false }
+          ],
+          inspiration: []
+        };
+
+        setContext(parulContext);
+        setStrategySession(parulStrategy);
       } catch (err) {
         console.error("Failed to load initial data", err);
       } finally {

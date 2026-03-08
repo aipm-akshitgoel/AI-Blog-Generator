@@ -149,7 +149,7 @@ export function PublishingAgentUI({
                         </ul>
                     </div>
 
-                    {!forcedTemplate && (
+                    {!forcedTemplate ? (
                         <div className="bg-neutral-900/50 rounded-lg p-5 border border-neutral-800">
                             <h3 className="text-sm font-semibold text-neutral-300 mb-3 uppercase tracking-wider">Select Blog Layout</h3>
                             <div className="grid grid-cols-2 gap-4">
@@ -178,6 +178,23 @@ export function PublishingAgentUI({
                                         </div>
                                     </div>
                                     <span className="text-sm font-semibold text-neutral-200">Editorial Magazine</span>
+                                </label>
+                            </div>
+                        </div>
+                    ) : forcedTemplate === 'test-template' && (
+                        <div className="bg-neutral-900/50 rounded-lg p-5 border border-neutral-800">
+                            <h3 className="text-sm font-semibold text-neutral-300 mb-3 uppercase tracking-wider">Select Blog Layout</h3>
+                            <div className="grid grid-cols-1 gap-4">
+                                <label className="cursor-default rounded-xl border-2 p-4 flex items-center gap-4 transition-colors border-emerald-500 bg-emerald-500/10">
+                                    <div className="w-16 h-20 bg-neutral-800 rounded border border-neutral-700 flex flex-col p-2 gap-1.5 shadow-sm overflow-hidden shrink-0">
+                                        <div className="w-full h-6 bg-neutral-600 rounded-sm"></div>
+                                        <div className="w-full h-1.5 bg-neutral-700 rounded-full mt-2"></div>
+                                        <div className="w-5/6 h-1.5 bg-neutral-700 rounded-full"></div>
+                                        <div className="w-full h-6 bg-emerald-600/50 rounded-sm mt-auto"></div>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-lg font-black text-emerald-400 capitalize">Parul University</span>
+                                    </div>
                                 </label>
                             </div>
                         </div>
