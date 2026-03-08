@@ -92,9 +92,10 @@ export async function getBlogBySlug(slug: string): Promise<SavedBlog | null> {
         .from("blogs")
         .select("*")
         .eq("slug", slug)
-        .single();
-    if (error || !data) return null;
-    return rowToBlog(data);
+        .order("created_at", { ascending: false })
+        .limit(1);
+    if (error || !data || data.length === 0) return null;
+    return rowToBlog(data[0]);
 }
 
 export async function saveBlog(blog: SavedBlog): Promise<void> {
