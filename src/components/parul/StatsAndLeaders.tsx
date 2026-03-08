@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
+import { ArrowRight } from 'lucide-react';
 
 const StatsAndLeaders: React.FC = () => {
     return (
@@ -22,7 +23,7 @@ const StatsAndLeaders: React.FC = () => {
                             Access 300+ CXO-led sessions featuring experts from Google, Meta, McKinsey, and more.
                         </p>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 md:gap-8">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 md:gap-8 mb-12">
                             <div className="flex flex-col items-start">
                                 <div className="text-4xl md:text-5xl font-black italic mb-1 uppercase tracking-tighter text-white">500+</div>
                                 <div className="text-[10px] font-black uppercase tracking-[0.3em] text-[#02a7b6]">Partners</div>
@@ -36,6 +37,10 @@ const StatsAndLeaders: React.FC = () => {
                                 <div className="text-[10px] font-black uppercase tracking-[0.3em] text-[#02a7b6]">Leaders</div>
                             </div>
                         </div>
+
+                        <a href="#" className="btn-primary flex items-center w-fit px-8 py-4 rounded-full text-base md:text-lg font-black italic uppercase shadow-[0_0_50px_rgba(2,167,182,0.3)] group/btn no-underline">
+                            Meet Our Leaders <ArrowRight className="w-5 h-5 group-hover/btn:translate-x-3 transition-transform ml-2" />
+                        </a>
                     </motion.div>
 
                     <motion.div
