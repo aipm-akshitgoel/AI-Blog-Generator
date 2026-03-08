@@ -150,7 +150,7 @@ function SetupPageInner() {
       // Show a "done" state in the overlay while router navigates — prevents flash
       setBatchDone(true);
       setAutoProgress({ step: AUTO_STEPS.length - 1, label: `All ${count} drafts saved! Redirecting to dashboard…` });
-      router.push(`/dashboard?drafts=${count}`);
+      router.push(`/test-dashboard`);
     } catch (err: any) {
       setAutoProgress(null);
       setBatchDone(false);
@@ -307,7 +307,7 @@ function SetupPageInner() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a
-                href="/dashboard"
+                href="/test-dashboard"
                 className="inline-flex items-center justify-center gap-3 rounded-2xl bg-neutral-900 px-8 py-5 text-sm font-black text-white transition-all hover:bg-neutral-800 uppercase tracking-widest border border-neutral-800"
               >
                 Go to Dashboard
@@ -354,7 +354,7 @@ function SetupPageInner() {
               // Should not normally reach here — but handle gracefully
               <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.02] p-6 text-center">
                 <p className="text-emerald-400 font-bold mb-4">Strategy already active. Redirecting...</p>
-                <a href="/dashboard" className="text-sm text-emerald-500 underline">Go to Dashboard</a>
+                <a href="/test-dashboard" className="text-sm text-emerald-500 underline">Go to Dashboard</a>
               </div>
             )}
           </div>
@@ -578,7 +578,7 @@ function SetupPageInner() {
                     >
                       Write Another Post
                     </button>
-                    <a href="/dashboard" className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-800 px-6 py-3.5 text-sm font-black text-neutral-200 hover:bg-neutral-700 hover:text-white transition-all uppercase tracking-widest border border-neutral-700">
+                    <a href="/test-dashboard" className="inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-800 px-6 py-3.5 text-sm font-black text-neutral-200 hover:bg-neutral-700 hover:text-white transition-all uppercase tracking-widest border border-neutral-700">
                       Dashboard
                     </a>
                     {publishData.slug && (

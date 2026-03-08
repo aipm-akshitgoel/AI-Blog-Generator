@@ -38,7 +38,7 @@ export function GlobalNavbar() {
                         </SignedOut>
                         <SignedIn>
                             {isSetupMode && (
-                                <Link href="/dashboard" className="text-[11px] font-black text-neutral-500 hover:text-emerald-500 uppercase tracking-widest transition-colors flex items-center gap-1">
+                                <Link href={pathname.startsWith("/test") ? "/test-dashboard" : "/dashboard"} className="text-[11px] font-black text-neutral-500 hover:text-emerald-500 uppercase tracking-widest transition-colors flex items-center gap-1">
                                     DASHBOARD
                                 </Link>
                             )}

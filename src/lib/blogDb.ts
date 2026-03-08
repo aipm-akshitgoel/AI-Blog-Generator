@@ -67,6 +67,16 @@ export async function getBlogById(id: string, userId: string): Promise<SavedBlog
     return rowToBlog(data);
 }
 
+export async function getBlogsByTemplateId(templateId: string): Promise<SavedBlog[]> {
+    const { data, error } = await supabase
+        .from("blogs")
+        .select("*")
+        .eq("template_id", templateId)
+        .order("created_at", { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(rowToBlog);
+}
+
 export async function getAllBlogs(): Promise<SavedBlog[]> {
     const { data, error } = await supabase
         .from("blogs")
