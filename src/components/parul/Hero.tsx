@@ -18,7 +18,7 @@ const Hero: React.FC = () => {
             </div>
 
             {/* Content */}
-            <div className="parul-container relative z-10 max-w-5xl pt-24 md:pt-0">
+            <div className="parul-container relative z-10 max-w-5xl pt-12 md:pt-0">
                 <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
