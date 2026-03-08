@@ -298,7 +298,7 @@ export function PublishingAgentUI({
                         <button
                             onClick={() => {
                                 if (onComplete) onComplete(publishData);
-                                window.location.href = "/dashboard";
+                                window.location.href = forcedTemplate === "test-template" ? "/test-dashboard" : "/dashboard";
                             }}
                             className="rounded-lg bg-white px-6 py-2.5 text-sm font-bold text-neutral-900 transition-colors hover:bg-neutral-200"
                         >
