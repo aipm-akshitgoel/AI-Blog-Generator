@@ -7,6 +7,7 @@ import type { BusinessContext } from "@/lib/types/businessContext";
 interface Props {
     businessContext: BusinessContext | null;
     onUpdate?: (updated: BusinessContext) => void;
+    isTest?: boolean;
 }
 
 interface FormState {
@@ -29,7 +30,7 @@ function ConnectedBadge({ connected }: { connected: boolean }) {
     );
 }
 
-export function IntegrationsPanel({ businessContext, onUpdate }: Props) {
+export function IntegrationsPanel({ businessContext, onUpdate, isTest }: Props) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -46,16 +47,26 @@ export function IntegrationsPanel({ businessContext, onUpdate }: Props) {
     const anyConnected = !!(integrations?.gscPropertyUrl || integrations?.ga4MeasurementId || integrations?.crmWebhookUrl);
 
     const handleSave = async () => {
-        if (!businessContext?.id) {
+        if (!businessContext?.id && !isTest) {
             setError("Business context not found. Please complete Account Setup first.");
             return;
         }
         setSaving(true);
         setError(null);
         setSaved(false);
+
+        if (isTest) {
+            setTimeout(() => {
+                setSaved(true);
+                setSaving(false);
+                setTimeout(() => setSaved(false), 3000);
+            }, 1000);
+            return;
+        }
+
         try {
             const updated: BusinessContext = {
-                ...businessContext,
+                ...(businessContext as BusinessContext),
                 integrations: {
                     gscPropertyUrl: form.gscPropertyUrl.trim() || undefined,
                     ga4MeasurementId: form.ga4MeasurementId.trim() || undefined,
@@ -75,7 +86,7 @@ export function IntegrationsPanel({ businessContext, onUpdate }: Props) {
         } catch (e: any) {
             setError(e.message);
         } finally {
-            setSaving(false);
+            if (!isTest) setSaving(false);
         }
     };
 

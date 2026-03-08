@@ -4,12 +4,17 @@ import { useState, useEffect } from "react";
 import { BusinessContext, BUSINESS_TYPES } from "@/lib/types/businessContext";
 import type { StrategySession, TopicOption } from "@/lib/types/strategy";
 
-export function StrategyManagement() {
-    const [context, setContext] = useState<BusinessContext | null>(null);
-    const [strategy, setStrategy] = useState<StrategySession | null>(null);
-    const [loading, setLoading] = useState(true);
+interface StrategyManagementProps {
+    mockContext?: BusinessContext;
+    mockStrategy?: StrategySession;
+}
+
+export function StrategyManagement({ mockContext, mockStrategy }: StrategyManagementProps = {}) {
+    const [context, setContext] = useState<BusinessContext | null>(mockContext || null);
+    const [strategy, setStrategy] = useState<StrategySession | null>(mockStrategy || null);
+    const [loading, setLoading] = useState(!mockContext);
     const [isEditing, setIsEditing] = useState(false);
-    const [isExpanded, setIsExpanded] = useState(true);
+    const [isExpanded, setIsExpanded] = useState(!mockContext);
 
     // Edit form state
     const [editForm, setEditForm] = useState({
@@ -29,8 +34,10 @@ export function StrategyManagement() {
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        fetchData();
-    }, []);
+        if (!mockContext) {
+            fetchData();
+        }
+    }, [mockContext]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -453,27 +460,29 @@ export function StrategyManagement() {
                                 </div>
 
                                 {/* Action buttons */}
-                                <div className="flex flex-row lg:flex-col gap-4 shrink-0 pt-10 lg:pt-0 border-t border-neutral-800/50 lg:border-t-0 min-w-[200px]">
-                                    <button
-                                        onClick={openEdit}
-                                        className="flex-1 flex items-center justify-center gap-3 rounded-2xl bg-emerald-600 px-8 py-5 text-sm font-black text-white transition-all hover:bg-emerald-500 shadow-2xl shadow-emerald-900/40 hover:-translate-y-1 active:scale-95 uppercase tracking-widest border border-emerald-400/20"
-                                    >
-                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5M16.586 3.586a2 2 0 112.828 2.828l-8.485 8.485-3 1-1-3 8.485-8.485z" />
-                                        </svg>
-                                        Edit Profile
-                                    </button>
-                                    <button
-                                        onClick={handleDelete}
-                                        className="group/del flex items-center justify-center gap-3 p-5 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-2xl transition-all border border-neutral-800/50 hover:border-red-400/20"
-                                        title="Delete Profile"
-                                    >
-                                        <svg className="w-6 h-6 transition-transform group-hover/del:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
-                                        <span className="lg:hidden font-black text-xs uppercase tracking-widest">Delete</span>
-                                    </button>
-                                </div>
+                                {!mockContext && (
+                                    <div className="flex flex-row lg:flex-col gap-4 shrink-0 pt-10 lg:pt-0 border-t border-neutral-800/50 lg:border-t-0 min-w-[200px]">
+                                        <button
+                                            onClick={openEdit}
+                                            className="flex-1 flex items-center justify-center gap-3 rounded-2xl bg-emerald-600 px-8 py-5 text-sm font-black text-white transition-all hover:bg-emerald-500 shadow-2xl shadow-emerald-900/40 hover:-translate-y-1 active:scale-95 uppercase tracking-widest border border-emerald-400/20"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5M16.586 3.586a2 2 0 112.828 2.828l-8.485 8.485-3 1-1-3 8.485-8.485z" />
+                                            </svg>
+                                            Edit Profile
+                                        </button>
+                                        <button
+                                            onClick={handleDelete}
+                                            className="group/del flex items-center justify-center gap-3 p-5 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-2xl transition-all border border-neutral-800/50 hover:border-red-400/20"
+                                            title="Delete Profile"
+                                        >
+                                            <svg className="w-6 h-6 transition-transform group-hover/del:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                            <span className="lg:hidden font-black text-xs uppercase tracking-widest">Delete</span>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

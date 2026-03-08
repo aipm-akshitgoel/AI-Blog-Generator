@@ -7,9 +7,10 @@ import type { BusinessContext } from "@/lib/types/businessContext";
 interface DomainSetupPanelProps {
     businessContext: BusinessContext | null;
     onUpdate?: (updated: BusinessContext) => void;
+    isTest?: boolean;
 }
 
-export function DomainSetupPanel({ businessContext, onUpdate }: DomainSetupPanelProps) {
+export function DomainSetupPanel({ businessContext, onUpdate, isTest }: DomainSetupPanelProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [isExpanded, setIsExpanded] = useState(false);
@@ -30,6 +31,16 @@ export function DomainSetupPanel({ businessContext, onUpdate }: DomainSetupPanel
     const handleSave = async () => {
         setSaving(true);
         setSaveStatus("idle");
+
+        if (isTest) {
+            setTimeout(() => {
+                setSaveStatus("success");
+                setLocallyLinked(true);
+                setSaving(false);
+                setTimeout(() => setSaveStatus("idle"), 3000);
+            }, 1000);
+            return;
+        }
 
         try {
             const res = await fetch("/api/business-context", {
@@ -52,7 +63,7 @@ export function DomainSetupPanel({ businessContext, onUpdate }: DomainSetupPanel
         } catch (err) {
             setSaveStatus("error");
         } finally {
-            setSaving(false);
+            if (!isTest) setSaving(false);
         }
     };
 
