@@ -13,7 +13,7 @@ export function GlobalNavbar() {
     if (isPublicPage) return null;
 
     const isDashboard = pathname === "/dashboard";
-    const isSetupMode = pathname.startsWith("/setup");
+    const isSetupMode = pathname.startsWith("/setup") || pathname.startsWith("/test");
     const isLinkedinMode = pathname.startsWith("/linkedin");
 
     const brandName = isLinkedinMode ? "LinkedIn Ghostwriter" : "Bloggie AI";
