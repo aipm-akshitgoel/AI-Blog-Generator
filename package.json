@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "sync:ai-faq": "node scripts/sync-ai-faq.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.0.0",

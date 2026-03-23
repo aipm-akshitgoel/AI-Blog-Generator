@@ -54,7 +54,8 @@ export async function POST(req: Request) {
             status: blogStatus as any,
             publishUrl: liveUrl || `/blog/${simulatedSlug}`,
             publishedAt: new Date().toISOString(),
-            platform: saveAsDraft ? "Draft" : "Webflow"
+            platform: saveAsDraft ? "Draft" : "Webflow",
+            slug: simulatedSlug,
         };
 
         // Save the composed blog to our mock database
