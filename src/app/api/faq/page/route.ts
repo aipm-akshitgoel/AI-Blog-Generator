@@ -1,31 +1,42 @@
 import { NextResponse } from "next/server";
+import { faqUpstreamFetch } from "@/lib/faqUpstreamFetch";
+import { getFaqUpstreamBase } from "@/lib/faqUpstreamConfig";
+import { buildFaqUpstreamHeaders } from "@/lib/faqUpstreamHeaders";
 
-const UPSTREAM_BASE = "https://dev-iitkgp-portal-server.upgrad.dev";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export async function GET(req: Request) {
   const incomingUrl = new URL(req.url);
-  const upstreamUrl = new URL(`${UPSTREAM_BASE}/api/faq/page`);
+  const upstreamUrl = new URL(`${getFaqUpstreamBase()}/api/faq/page`);
   upstreamUrl.search = incomingUrl.search;
 
-  const upstreamRes = await fetch(upstreamUrl.toString(), {
-    method: "GET",
-    cache: "no-store",
-    next: { revalidate: 0 },
-    headers: {
-      cookie: req.headers.get("cookie") ?? "",
-    },
-  });
+  let upstreamRes: Response;
+  try {
+    upstreamRes = await faqUpstreamFetch(upstreamUrl.toString(), {
+      method: "GET",
+      cache: "no-store",
+      next: { revalidate: 0 },
+      headers: buildFaqUpstreamHeaders(req),
+    });
+  } catch (e) {
+    const aborted = e instanceof Error && e.name === "AbortError";
+    return NextResponse.json(
+      {
+        success: false,
+        error: aborted ? "Upstream timeout" : "Upstream request failed",
+      },
+      { status: aborted ? 504 : 502 },
+    );
+  }
 
   const contentType = upstreamRes.headers.get("content-type") ?? "application/json";
+  const text = await upstreamRes.text();
 
-  // Pass through JSON when possible (our frontend expects JSON).
   try {
-    const json = await upstreamRes.json();
+    const json = text ? JSON.parse(text) : null;
     return NextResponse.json(json, { status: upstreamRes.status, headers: { "content-type": contentType } });
   } catch {
-    const text = await upstreamRes.text();
     return new NextResponse(text, { status: upstreamRes.status, headers: { "content-type": contentType } });
   }
 }
