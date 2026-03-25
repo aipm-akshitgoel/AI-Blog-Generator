@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 
+export const runtime = "nodejs";
+
 type FaqRow = {
   id?: unknown;
   category?: string;
@@ -46,8 +48,19 @@ export async function POST(req: Request) {
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
+    const hasAzureEndpoint = Boolean(process.env.AZURE_OPENAI_ENDPOINT);
+    const hasAzureDeployment = Boolean(process.env.AZURE_OPENAI_DEPLOYMENT);
+    const hasAzureApiVersion = Boolean(process.env.AZURE_OPENAI_API_VERSION);
     return NextResponse.json(
-      { error: "OPENAI_API_KEY is not configured on the server" },
+      {
+        error: "OPENAI_API_KEY is not configured on the server",
+        debug: {
+          hasOpenaiKey: Boolean(process.env.OPENAI_API_KEY),
+          hasAzureEndpoint,
+          hasAzureDeployment,
+          hasAzureApiVersion,
+        },
+      },
       { status: 500 },
     );
   }
