@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { AzureOpenAI } from "openai";
 
 export const runtime = "nodejs";
 
@@ -46,30 +47,31 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    const hasAzureEndpoint = Boolean(process.env.AZURE_OPENAI_ENDPOINT);
-    const hasAzureDeployment = Boolean(process.env.AZURE_OPENAI_DEPLOYMENT);
-    const hasAzureApiVersion = Boolean(process.env.AZURE_OPENAI_API_VERSION);
+  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT?.trim();
+  const azureApiKey = process.env.AZURE_OPENAI_API_KEY?.trim();
+  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT?.trim();
+  const azureApiVersion = process.env.AZURE_OPENAI_API_VERSION?.trim() || "2024-12-01-preview";
+
+  if (!azureEndpoint || !azureApiKey || !azureDeployment) {
     return NextResponse.json(
       {
-        error: "OPENAI_API_KEY is not configured on the server",
+        error: "Azure OpenAI is not configured on the server",
         debug: {
-          hasOpenaiKey: Boolean(process.env.OPENAI_API_KEY),
-          hasAzureEndpoint,
-          hasAzureDeployment,
-          hasAzureApiVersion,
+          hasAzureEndpoint: Boolean(azureEndpoint),
+          hasAzureApiKey: Boolean(azureApiKey),
+          hasAzureDeployment: Boolean(azureDeployment),
+          azureApiVersion,
         },
       },
       { status: 500 },
     );
   }
 
-  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
-  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT?.trim();
-  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT?.trim();
-  const azureApiVersion = process.env.AZURE_OPENAI_API_VERSION?.trim() || "2024-12-01-preview";
-  const useAzure = Boolean(azureEndpoint && azureDeployment);
+  const client = new AzureOpenAI({
+    endpoint: azureEndpoint,
+    apiKey: azureApiKey,
+    apiVersion: azureApiVersion,
+  });
   const timeoutMs = 20_000;
   const abortController = new AbortController();
   const timeout = setTimeout(() => abortController.abort(), timeoutMs);
@@ -115,46 +117,37 @@ Each object must have:
 Do not wrap the array in markdown or add any extra keys outside the array.
         `.trim();
 
-        const url = useAzure
-          ? `${azureEndpoint!.replace(/\/+$/, "")}/openai/deployments/${azureDeployment}/chat/completions?api-version=${azureApiVersion}`
-          : "https://api.openai.com/v1/chat/completions";
-
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: useAzure
-            ? {
-                "content-type": "application/json",
-                "api-key": apiKey,
-              }
-            : {
-                "content-type": "application/json",
-                authorization: `Bearer ${apiKey}`,
-              },
-          signal: abortController.signal,
-          body: JSON.stringify({
-            ...(useAzure ? {} : { model }),
-            temperature: 0.7,
-            max_tokens: 2500,
-            messages: [
-              {
-                role: "system",
-                content: "Return ONLY JSON arrays, no markdown, no commentary.",
-              },
-              { role: "user", content: prompt },
-            ],
-          }),
-        });
-
-        const respText = await resp.text();
-        if (!resp.ok) {
-          return { pageId: page.id, suggestions: [], error: `ai ${resp.status}` };
-        }
-
         let parsed: { choices?: Array<{ message?: { content?: string } }> } | null = null;
         try {
-          parsed = JSON.parse(respText);
-        } catch {
-          parsed = null;
+          // SDK call (Azure uses deployment name as `model`)
+          const resp = await client.chat.completions.create(
+            {
+              model: azureDeployment,
+              max_completion_tokens: 2500,
+              messages: [
+                {
+                  role: "system",
+                  content: "Return ONLY JSON arrays, no markdown, no commentary.",
+                },
+                { role: "user", content: prompt },
+              ],
+            },
+            { signal: abortController.signal },
+          );
+
+          parsed = resp as any;
+        } catch (err) {
+          const status =
+            typeof (err as any)?.status === "number"
+              ? (err as any).status
+              : typeof (err as any)?.code === "number"
+                ? (err as any).code
+                : null;
+          return {
+            pageId: page.id,
+            suggestions: [],
+            error: status ? `ai ${status} via azure` : "ai error via azure",
+          };
         }
 
         const content = parsed?.choices?.[0]?.message?.content || "";

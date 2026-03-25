@@ -10,6 +10,7 @@
     "sync:ai-faq": "node scripts/sync-ai-faq.mjs"
   },
   "dependencies": {
+    "@azure/identity": "^4.12.0",
     "@clerk/nextjs": "^6.0.0",
     "@google/genai": "^1.42.0",
     "@google/generative-ai": "^0.21.0",
@@ -21,6 +22,7 @@
     "framer-motion": "^12.35.1",
     "lucide-react": "^0.577.0",
     "next": "^15.0.0",
+    "openai": "^5.16.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
