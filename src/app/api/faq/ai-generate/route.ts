@@ -253,15 +253,23 @@ export async function POST(req: Request) {
     apiKey: azureApiKey,
     apiVersion: azureApiVersion,
   });
-  const timeoutMs = 20_000;
+  // Multi-page runs do: fetch HTML + extract JSON + generate FAQs per page.
+  // Keep a generous server timeout and limit concurrency to avoid Azure rate limits.
+  const REQUEST_TIMEOUT_MS = 180_000;
   const abortController = new AbortController();
-  const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+  const timeout = setTimeout(() => abortController.abort(), REQUEST_TIMEOUT_MS);
 
   try {
     const { pages, businessPrompt, targetCategory = null } = body;
 
-    const suggestionsByPage = await Promise.all(
-      pages.map(async (page) => {
+    const CONCURRENCY = 2;
+    const results: Array<any> = new Array(pages.length);
+    let nextIdx = 0;
+
+    const worker = async () => {
+      while (nextIdx < pages.length) {
+        const i = nextIdx++;
+        const page = pages[i];
         const activeFaqs = Array.isArray(page.faqs) ? page.faqs : [];
         const existingCats = Array.from(
           new Set(
@@ -386,9 +394,12 @@ Return ONLY a valid JSON array of FAQ objects with:
           };
         });
 
-        return { pageId: page.id, suggestions };
-      }),
-    );
+        results[i] = { pageId: page.id, suggestions };
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pages.length) }, () => worker()));
+    const suggestionsByPage = results.filter(Boolean);
 
     return NextResponse.json({ suggestionsByPage });
   } catch (e) {
