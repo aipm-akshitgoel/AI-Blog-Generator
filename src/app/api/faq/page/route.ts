@@ -6,6 +6,38 @@ import { buildFaqUpstreamHeaders } from "@/lib/faqUpstreamHeaders";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const DEFAULT_LIVE_BASE = "https://online.iitkgp.ac.in";
+
+function buildLiveUrlFromSlug(slug: unknown): string {
+  const base = String(process.env.FAQ_LIVE_BASE_URL || DEFAULT_LIVE_BASE)
+    .trim()
+    .replace(/\/+$/, "");
+  const cleanSlug = String(slug || "")
+    .trim()
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+  if (!cleanSlug) return base;
+  if (cleanSlug.toLowerCase() === "home") return base;
+  return `${base}/${cleanSlug}`;
+}
+
+function enrichPagesWithLiveUrl(payload: any): any {
+  const pages = payload?.data?.pages;
+  if (!Array.isArray(pages)) return payload;
+  const nextPages = pages.map((p: any) => ({
+    ...p,
+    // UI prefers page.liveUrl when present; set a canonical full URL server-side.
+    liveUrl: buildLiveUrlFromSlug(p?.pageSlug),
+  }));
+  return {
+    ...payload,
+    data: {
+      ...payload.data,
+      pages: nextPages,
+    },
+  };
+}
+
 export async function GET(req: Request) {
   const incomingUrl = new URL(req.url);
   const upstreamUrl = new URL(`${getFaqUpstreamBase()}/api/faq/page`);
@@ -35,7 +67,11 @@ export async function GET(req: Request) {
 
   try {
     const json = text ? JSON.parse(text) : null;
-    return NextResponse.json(json, { status: upstreamRes.status, headers: { "content-type": contentType } });
+    const enriched = enrichPagesWithLiveUrl(json);
+    return NextResponse.json(enriched, {
+      status: upstreamRes.status,
+      headers: { "content-type": contentType },
+    });
   } catch {
     return new NextResponse(text, { status: upstreamRes.status, headers: { "content-type": contentType } });
   }

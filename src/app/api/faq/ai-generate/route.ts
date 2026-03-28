@@ -41,6 +41,41 @@ type ExtractedProgrammeData = {
   curriculum?: Array<{ moduleName: string; topics?: string[] }>;
 };
 
+/** Chat Completions may return `content` as a string or as `[{ type: 'text', text: '...' }]`. */
+function assistantMessageText(content: unknown): string {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const p = part as Record<string, unknown>;
+      if (p.type === "text" && typeof p.text === "string") parts.push(p.text);
+      else if (p.type === "refusal" && typeof p.refusal === "string") parts.push(p.refusal);
+      else if (typeof p.text === "string") parts.push(p.text);
+    }
+    return parts.join("");
+  }
+  return String(content);
+}
+
+function assistantOutputFromChoice(choice: { message?: { content?: unknown; refusal?: string | null } } | undefined): string {
+  const msg = choice?.message;
+  if (!msg) return "";
+  if (typeof msg.refusal === "string" && msg.refusal.trim()) return msg.refusal;
+  return assistantMessageText(msg.content);
+}
+
+/** Model often wraps JSON in ```json ... ``` — strip so extractors see raw JSON. */
+function stripOuterMarkdownFence(s: string): string {
+  let t = s.trim();
+  if (!t.startsWith("```")) return t;
+  t = t.replace(/^```(?:json)?\s*/i, "");
+  const end = t.lastIndexOf("```");
+  if (end >= 0) t = t.slice(0, end);
+  return t.trim();
+}
+
 function extractJsonArray(text: string): unknown[] {
   if (!text) return [];
   const start = text.indexOf("[");
@@ -53,6 +88,49 @@ function extractJsonArray(text: string): unknown[] {
   } catch {
     return [];
   }
+}
+
+function faqArrayFromRecord(obj: Record<string, unknown>): unknown[] {
+  const candidates = [
+    obj.faqs,
+    obj.faq,
+    obj.items,
+    obj.questions,
+    obj.data,
+    obj.results,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c;
+    if (c && typeof c === "object") {
+      const nested = (c as any).faqs || (c as any).items || (c as any).questions;
+      if (Array.isArray(nested)) return nested;
+    }
+  }
+  return [];
+}
+
+function extractFaqArrayFromAnyJson(text: string): unknown[] {
+  const trimmed = text.trim();
+  if (trimmed) {
+    try {
+      const top = JSON.parse(trimmed);
+      if (Array.isArray(top)) return top;
+      if (top && typeof top === "object" && !Array.isArray(top)) {
+        const fromObj = faqArrayFromRecord(top as Record<string, unknown>);
+        if (fromObj.length > 0) return fromObj;
+      }
+    } catch {
+      /* fall through — model may add prose around JSON */
+    }
+  }
+
+  const direct = extractJsonArray(text);
+  if (direct.length > 0) return direct;
+
+  const obj = extractJsonObject(text);
+  if (!obj) return [];
+
+  return faqArrayFromRecord(obj as Record<string, unknown>);
 }
 
 function extractJsonObject(text: string): Record<string, unknown> | null {
@@ -85,6 +163,106 @@ function stripHtmlToText(html: string): string {
   return text.length > 75_000 ? text.slice(0, 75_000) : text;
 }
 
+function cleanExtractedValue(v: unknown): string {
+  const s = String(v ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return s;
+}
+
+function extractDeterministicProgrammeData(pageText: string): Partial<ExtractedProgrammeData> {
+  const text = String(pageText || "");
+  const compact = text.replace(/\s+/g, " ").trim();
+
+  const h1Match = compact.match(
+    /(Executive\s+Post\s+Graduate[^.]{0,140}?(?:Certificate|Programme|Program)[^.]{0,120})/i,
+  );
+
+  const durationMatch =
+    compact.match(/Duration\s*[:\-]\s*([^|✦•]{2,80})/i) ||
+    compact.match(/\b(\d{1,2}\s*(?:Months?|Month|Weeks?|Week|Years?|Year))\b/i);
+
+  const modeMatch =
+    compact.match(/(?:Learning\s+Mode|Mode)\s*[:\-]\s*([^|✦•]{2,80})/i) ||
+    compact.match(/\b(100%\s*Live\s*Online|Live\s*Online|Online)\b/i);
+
+  const feeTotal = compact.match(/Total\s+Fee\s*[:\-]?\s*(₹\s?[\d,]+(?:\.\d+)?)/i)?.[1];
+  const seat = compact.match(/Block\s+Your\s+Seat(?:\s+Now)?(?:\s+At)?\s*[:\-]?\s*(₹\s?[\d,]+)/i)?.[1];
+  const emi = compact.match(/EMI\s+per\s+Month\s*[:\-]?\s*(₹\s?[\d,]+)/i)?.[1];
+  const feeParts = [
+    feeTotal ? `Total Fee: ${feeTotal}` : "",
+    seat ? `Seat Booking Amount: ${seat}` : "",
+    emi ? `EMI per Month: ${emi}` : "",
+  ].filter(Boolean);
+
+  const eligibilityMatch = compact.match(
+    /Eligibility\s*[:\-]\s*([\s\S]{20,450}?)(?=\b(?:Our\s+Admission\s+process|Frequently\s+Asked\s+Questions|Develop\s+and|On-?Campus|Apply\s+Now)\b|$)/i,
+  );
+
+  const admissionMatch = compact.match(
+    /1\s+([^0-9]{5,120}?)\s+2\s+([^0-9]{5,140}?)\s+3\s+([^0-9]{5,120}?)(?=\b(?:Frequently|FAQs|Apply|$))/i,
+  );
+  const admissionSteps = admissionMatch
+    ? [admissionMatch[1], admissionMatch[2], admissionMatch[3]].map((s) => cleanExtractedValue(s))
+    : [];
+
+  const certificationMatch = compact.match(
+    /(Executive\s+Post\s+Graduate\s+Certificate[^.]{0,140}|Certificate\s+with\s+Distinction)/i,
+  );
+
+  return {
+    programPageH1: cleanExtractedValue(h1Match?.[1] || ""),
+    programmeDuration: cleanExtractedValue(durationMatch?.[1] || ""),
+    learningMode: cleanExtractedValue(modeMatch?.[1] || ""),
+    eligibilityCriteria: cleanExtractedValue(eligibilityMatch?.[1] || ""),
+    feeStructure: cleanExtractedValue(feeParts.join(" | ")),
+    certificationType: cleanExtractedValue(certificationMatch?.[1] || ""),
+    admissionSteps,
+  };
+}
+
+function pickNonEmpty(...values: Array<unknown>): string | undefined {
+  for (const v of values) {
+    const s = cleanExtractedValue(v);
+    if (s) return s;
+  }
+  return undefined;
+}
+
+function mergeExtractedProgrammeData(
+  llmExtracted: ExtractedProgrammeData,
+  deterministic: Partial<ExtractedProgrammeData>,
+): ExtractedProgrammeData {
+  return {
+    programPageH1: pickNonEmpty(llmExtracted.programPageH1, deterministic.programPageH1),
+    programmeCategory: pickNonEmpty(llmExtracted.programmeCategory, deterministic.programmeCategory),
+    programmeDuration: pickNonEmpty(llmExtracted.programmeDuration, deterministic.programmeDuration),
+    learningMode: pickNonEmpty(llmExtracted.learningMode, deterministic.learningMode),
+    eligibilityCriteria: pickNonEmpty(llmExtracted.eligibilityCriteria, deterministic.eligibilityCriteria),
+    feeStructure: pickNonEmpty(llmExtracted.feeStructure, deterministic.feeStructure),
+    certificationType: pickNonEmpty(llmExtracted.certificationType, deterministic.certificationType),
+    admissionSteps:
+      (Array.isArray(llmExtracted.admissionSteps) && llmExtracted.admissionSteps.length > 0
+        ? llmExtracted.admissionSteps
+        : deterministic.admissionSteps) || [],
+    curriculum: llmExtracted.curriculum || [],
+  };
+}
+
+function renderExtractedFacts(extracted: ExtractedProgrammeData): string {
+  const admission = renderAdmissionSteps(extracted.admissionSteps);
+  const facts = [
+    `Programme Page H1: ${extracted.programPageH1 || ""}`,
+    `Programme Duration: ${extracted.programmeDuration || ""}`,
+    `Learning Mode: ${extracted.learningMode || ""}`,
+    `Eligibility Criteria: ${extracted.eligibilityCriteria || ""}`,
+    `Fee Structure: ${extracted.feeStructure || ""}`,
+    `Certification Type: ${extracted.certificationType || ""}`,
+    `Admission Steps:\n${admission}`,
+  ];
+  return facts.join("\n");
+}
+
 function renderAdmissionSteps(steps?: string[]): string {
   const list = Array.isArray(steps) ? steps.filter((s) => String(s || "").trim().length > 0) : [];
   if (list.length === 0) return "{{Refer to Official Programme Page}}";
@@ -110,44 +288,92 @@ function buildPlaceholderMap(opts: {
 }): Record<string, string> {
   const { programWebsiteUrl, extracted } = opts;
   const map: Record<string, string> = {
-    "program website URL": programWebsiteUrl,
-    "Programme Page URL": programWebsiteUrl,
-    "Official Programme Page URL": programWebsiteUrl,
-    "Program page H1": extracted.programPageH1 || "",
-    "Programme Page H1": extracted.programPageH1 || "",
-    "Programme Page Name": extracted.programPageH1 || "",
-    "Paste exact text from official page": "",
-    "Programme Category": extracted.programmeCategory || "{{Refer to Official Programme Page}}",
-    "Programme Duration": extracted.programmeDuration || "{{Refer to Official Programme Page}}",
-    "Learning Mode": extracted.learningMode || "{{Refer to Official Programme Page}}",
-    "Eligibility Criteria": extracted.eligibilityCriteria || "{{Refer to Official Programme Page}}",
-    "Fee Structure": extracted.feeStructure || "{{Refer to Official Programme Page}}",
-    "Certification Type": extracted.certificationType || "{{Refer to Official Programme Page}}",
-    "Admission Process / Application Steps": renderAdmissionSteps(extracted.admissionSteps),
-    CURRICULUM_BLOCK: renderCurriculumBlock(extracted.curriculum),
+    // Strict replacement rules requested by user:
+    // - Replace only page URL and page H1 placeholders.
+    // - Keep module/topic placeholders untouched for per-page prompt execution.
+    // - Keep {{Refer to Official Page}} untouched; handled as an output flag downstream.
+    "page url": programWebsiteUrl,
+    "page URL": programWebsiteUrl,
+    "page Url": programWebsiteUrl,
+    "page H1": extracted.programPageH1 || "",
   };
-
-  // Also generate Module_1_Name / Topic_1 style placeholders for compatibility.
-  const curriculum = Array.isArray(extracted.curriculum) ? extracted.curriculum : [];
-  curriculum.forEach((m, idx) => {
-    const i = idx + 1;
-    map[`Module_${i}_Name`] = String(m?.moduleName || "").trim();
-    const topics = Array.isArray(m?.topics) ? m!.topics! : [];
-    topics.forEach((t, tIdx) => {
-      map[`Module_${i}_Topic_${tIdx + 1}`] = String(t || "").trim();
-    });
-  });
 
   return map;
 }
 
 function fillMustacheTemplate(template: string, values: Record<string, string>): string {
   const src = String(template || "");
-  return src.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (full, keyRaw) => {
+  // Be tolerant to common token typos like "{{page URL})" from user-authored prompts.
+  const normalized = src.replace(/\{\{\s*([^}]+?)\s*\)\}/g, "{{$1}}");
+  const valuesLower: Record<string, string> = {};
+  for (const [k, v] of Object.entries(values)) valuesLower[k.toLowerCase()] = v;
+
+  return normalized.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (full, keyRaw) => {
     const key = String(keyRaw || "").trim();
     if (key in values) return values[key];
+    const lower = key.toLowerCase();
+    if (lower in valuesLower) return valuesLower[lower];
     return full; // leave unknown placeholders intact (caller can decide)
   });
+}
+
+function hasReferToOfficialFlag(value: unknown): boolean {
+  const text = String(value ?? "");
+  return (
+    text.includes("{{Refer to Official Page}}") ||
+    text.includes("{{Refer to Official Programme Page}}")
+  );
+}
+
+function normalizeCategoryKey(input: unknown): string {
+  return String(input || "")
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function resolveCategoryName(
+  rawCategory: unknown,
+  existingCats: string[],
+  suggestedCatOrder: string[],
+): string {
+  const raw = String(rawCategory || "").trim();
+  const rawKey = normalizeCategoryKey(raw);
+
+  // 1) Prefer exact/normalized matches to existing categories.
+  if (rawKey) {
+    const exact = existingCats.find((c) => normalizeCategoryKey(c) === rawKey);
+    if (exact) return exact;
+
+    // 2) Allow strong partial matches (common in LLM outputs with minor suffix/prefix changes).
+    const partial = existingCats.find((c) => {
+      const k = normalizeCategoryKey(c);
+      return k && (k.includes(rawKey) || rawKey.includes(k));
+    });
+    if (partial) return partial;
+  }
+
+  // 3) Keep sensible new category from model (not forced to "AI Recommended").
+  const fallback = raw || "General";
+  if (
+    !suggestedCatOrder.some((c) => normalizeCategoryKey(c) === normalizeCategoryKey(fallback))
+  ) {
+    suggestedCatOrder.push(fallback);
+  }
+
+  // 4) Limit number of new suggested categories to max 10 per page.
+  if (suggestedCatOrder.length <= 10) return fallback;
+  return suggestedCatOrder[9];
+}
+
+function trimToSystemRole(prompt: string): string {
+  const src = String(prompt || "");
+  // If user prompt contains extra text before the canonical header, drop it.
+  const idx = src.search(/SYSTEM ROLE\b/i);
+  if (idx <= 0) return src.trim();
+  return src.slice(idx).trim();
 }
 
 async function extractProgrammeData(args: {
@@ -198,7 +424,8 @@ Rules:
     { signal },
   );
 
-  const content = (resp as any)?.choices?.[0]?.message?.content || "";
+  const raw = assistantOutputFromChoice((resp as any)?.choices?.[0]);
+  const content = stripOuterMarkdownFence(raw);
   const obj = extractJsonObject(content);
   if (!obj) return {};
 
@@ -281,11 +508,12 @@ export async function POST(req: Request) {
 
         const programWebsiteUrl = String(page?.liveUrl || "").trim();
         if (!programWebsiteUrl.startsWith("http")) {
-          return {
+          results[i] = {
             pageId: page.id,
             suggestions: [],
             error: "Missing/invalid page.liveUrl (programme URL)",
           };
+          continue;
         }
 
         // 1) Fetch programme page and extract structured data.
@@ -299,13 +527,15 @@ export async function POST(req: Request) {
           });
           const html = await res.text();
           const pageText = stripHtmlToText(html);
-          extracted = await extractProgrammeData({
+          const llmExtracted = await extractProgrammeData({
             client,
             azureDeployment,
             pageUrl: programWebsiteUrl,
             pageText,
             signal: abortController.signal,
           });
+          const deterministicExtracted = extractDeterministicProgrammeData(pageText);
+          extracted = mergeExtractedProgrammeData(llmExtracted, deterministicExtracted);
         } catch {
           extracted = {};
         }
@@ -316,16 +546,19 @@ export async function POST(req: Request) {
           extracted,
         });
 
-        const basePrompt = (businessPrompt || "").trim();
+        const rawBusinessPrompt = (businessPrompt || "").trim();
         const filledBusinessPrompt =
-          basePrompt.length > 0 ? fillMustacheTemplate(basePrompt, placeholderMap) : "";
+          rawBusinessPrompt.length > 0
+            ? fillMustacheTemplate(rawBusinessPrompt, placeholderMap)
+            : "";
+        const normalizedBusinessPrompt = trimToSystemRole(filledBusinessPrompt);
 
         const categoryInstruction = targetCategory
           ? `\n\nGenerate FAQs specifically for the "${targetCategory}" category when relevant.\n`
           : "";
 
-        const prompt =
-          filledBusinessPrompt ||
+        const basePrompt =
+          normalizedBusinessPrompt ||
           `
 You are an expert FAQ generator for a university website.
 
@@ -340,6 +573,36 @@ Return ONLY a valid JSON array of FAQ objects with:
 - answer
 - priority
           `.trim();
+
+        const jsonOutputGuard = `
+
+CRITICAL OUTPUT RULE (MANDATORY):
+- Return ONLY a valid JSON array (no markdown, no prose, no headings).
+- Each element must be:
+  {
+    "category": "string",
+    "question": "string",
+    "answer": "string",
+    "priority": number
+  }
+- Keep answers concise (about 50-70 words) and factual.
+- If a FAQ fits an existing page category, use that exact category name.
+- If it does not fit any existing category, suggest a meaningful category label (do NOT use "AI Recommended" as a default catch-all).
+- You may propose multiple categories when needed, but keep total distinct new categories <= 10.
+`.trim();
+
+        const extractedFactsBlock = renderExtractedFacts(extracted);
+        const prompt = `${basePrompt}
+
+EXTRACTED FACTS FROM OFFICIAL PAGE (USE THESE VALUES WHEN PRESENT):
+${extractedFactsBlock}
+
+DATA USAGE MANDATORY:
+- If any of the above extracted fields are non-empty, you MUST use them in answers.
+- Do NOT output {{Refer to Official Page}} or {{Refer to Official Programme Page}} for those non-empty fields.
+- Use those placeholders only when the corresponding extracted field is genuinely empty.
+
+${jsonOutputGuard}`;
 
         let parsed: { choices?: Array<{ message?: { content?: string } }> } | null = null;
         try {
@@ -367,30 +630,37 @@ Return ONLY a valid JSON array of FAQ objects with:
               : typeof (err as any)?.code === "number"
                 ? (err as any).code
                 : null;
-          return {
+          results[i] = {
             pageId: page.id,
             suggestions: [],
             error: status ? `ai ${status} via azure` : "ai error via azure",
           };
+          continue;
         }
 
-        const content = parsed?.choices?.[0]?.message?.content || "";
-        const rawSuggestions = extractJsonArray(content) as Array<any>;
+        const rawOut = assistantOutputFromChoice(parsed?.choices?.[0]);
+        const content = stripOuterMarkdownFence(rawOut);
+        const rawSuggestions = extractFaqArrayFromAnyJson(content) as Array<any>;
 
+        const suggestedCatOrder: string[] = [];
         const suggestions = rawSuggestions.map((s) => {
-          const cat = String(s?.category || "");
-          const matchedCat = existingCats.find(
-            (c) => c.toLowerCase().trim() === cat.toLowerCase().trim(),
-          );
+          const category = resolveCategoryName(s?.category, existingCats, suggestedCatOrder);
+
+          const needsOfficialReferenceFlag =
+            hasReferToOfficialFlag(s?.question) ||
+            hasReferToOfficialFlag(s?.answer) ||
+            hasReferToOfficialFlag(s?.category);
 
           return {
-            category: matchedCat || "AI Recommended",
+            category,
             question: String(s?.question || ""),
             answer: String(s?.answer || ""),
             priority: Number(s?.priority ?? 0),
             active: true,
             isSuggestion: true,
             id: s?.id ?? `sug-${randomUUID()}`,
+            referToOfficialPageFlag: needsOfficialReferenceFlag,
+            flags: needsOfficialReferenceFlag ? ["FLAG_REFER_TO_OFFICIAL_PAGE"] : [],
           };
         });
 

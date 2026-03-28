@@ -43,7 +43,7 @@ Set `VITE_GEMINI_API_KEY` (or your env name) in the host for the client bundle i
 
 | Variable | Purpose |
 |----------|---------|
-| `FAQ_UPSTREAM_BASE` | Optional. Base URL (no trailing slash). Default: `https://dev-iitkgp-portal-server.upgrad.dev` |
+| `FAQ_UPSTREAM_BASE` | Optional. Base URL (no trailing slash). Default: `https://iitkgp-portal-server.upgrad.com` |
 | `FAQ_UPSTREAM_AUTHORIZATION` | Optional. Server-only Bearer (or full `Authorization` value) sent to the upstream if the browser does not send one. Example: `Bearer your-token` |
 
 If the default host returns **502** or **504**, point `FAQ_UPSTREAM_BASE` at the FAQ service your team actually runs (VPN/staging/production as appropriate).
