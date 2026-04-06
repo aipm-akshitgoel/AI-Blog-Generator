@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { BlogPost } from "@/lib/types/content";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
-
-const apiKey = process.env.GEMINI_API_KEY;
+import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
 export async function POST(req: Request) {
-    if (!apiKey) {
-        return NextResponse.json({ error: "GEMINI_API_KEY is not set" }, { status: 500 });
+    const azure = getAzureConfig();
+    if (!azure) {
+        return NextResponse.json({ error: "Azure OpenAI is not configured on the server", debug: azureConfigDebug() }, { status: 500 });
     }
 
     let body: { blogPost?: BlogPost };
@@ -24,10 +23,8 @@ export async function POST(req: Request) {
     }
 
     try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
-            systemInstruction: `You are an expert content optimizer for beauty & wellness blogs. Take the provided blog post JSON and:
+        const client = createAzureClient(azure);
+        const systemPrompt = `You are an expert content optimizer for beauty & wellness blogs. Take the provided blog post JSON and:
 - Improve flow and readability (use clear headings, concise paragraphs).
 - Ensure balanced sections (no overly long or short parts).
 - CRITICAL — INTERNAL LINKS: You MUST weave at least 2-3 internal links directly into the body of contentMarkdown using markdown link syntax. Example: [Book a consultation](/services). ONLY use links from this approved list: ${JSON.stringify(businessContext?.internalLinks || [])}. Do not place links in headings. Place them naturally within paragraphs so they read well.
@@ -39,20 +36,22 @@ export async function POST(req: Request) {
 - Do NOT include the H1 title in the contentMarkdown. Start directly with the intro paragraph or H2.
 - Return ONLY a JSON object matching the OptimizedContent schema.
 Do NOT include any explanatory text.
-`,
-            generationConfig: {
-                responseMimeType: "application/json",
-                maxOutputTokens: 8192,
-            }
-        });
+`;
 
         const prompt = isRefining
             ? `Please strictly fix any previously identified issues and further optimize the following content. BlogPost JSON:\n${JSON.stringify(blogPost, null, 2)}`
             : `BlogPost JSON:\n${JSON.stringify(blogPost, null, 2)}`;
 
-        const result = await model.generateContent(prompt);
-        const text = result.response.text().trim();
-        const clean = sanitizeJsonString(text);
+        const response = await client.chat.completions.create({
+            model: azure.deployment,
+            max_completion_tokens: 5000,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: prompt },
+            ],
+        });
+        const text = assistantMessageText((response as any)?.choices?.[0]?.message?.content);
+        const clean = sanitizeJsonString(stripOuterMarkdownFence(text));
         const optimized: OptimizedContent = JSON.parse(clean);
 
         // Fix for Gemini over-escaping newlines into literal "\n" strings

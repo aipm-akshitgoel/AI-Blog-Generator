@@ -1,33 +1,9 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI, Schema, SchemaType } from "@google/generative-ai";
 import { type BusinessContext } from "@/lib/types/businessContext";
 import { type TopicOption } from "@/lib/types/strategy";
+import { type BlogPost } from "@/lib/types/content";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
-
-const apiKey = process.env.GEMINI_API_KEY;
-
-const postSchema: Schema = {
-    type: SchemaType.OBJECT,
-    properties: {
-        title: { type: SchemaType.STRING, description: "The exact SEO Title" },
-        slug: { type: SchemaType.STRING, description: "url-friendly-slug-with-dashes" },
-        metaDescription: { type: SchemaType.STRING, description: "A punchy, 150-character meta description." },
-        contentMarkdown: { type: SchemaType.STRING, description: "Full markdown string of the post. Intro paragraph...\\n\\n## First Heading\\n..." },
-        faqs: {
-            type: SchemaType.ARRAY,
-            items: {
-                type: SchemaType.OBJECT,
-                properties: {
-                    question: { type: SchemaType.STRING },
-                    answer: { type: SchemaType.STRING }
-                },
-                required: ["question", "answer"]
-            }
-        },
-        status: { type: SchemaType.STRING }
-    },
-    required: ["title", "slug", "metaDescription", "contentMarkdown", "faqs", "status"]
-};
+import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
 const SYSTEM_PROMPT = `
 You are an elite, master-level copywriter specializing in local SEO for the beauty and wellness industry (salons, spas, barbershops).
@@ -57,10 +33,56 @@ CRITICAL INSTRUCTIONS:
 - JUST JSON.
 `;
 
+function extractFirstJsonObject(input: string): string | null {
+    const text = String(input || "");
+    let start = -1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch === "\\") {
+                escaped = true;
+            } else if (ch === "\"") {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (ch === "\"") {
+            inString = true;
+            continue;
+        }
+
+        if (ch === "{") {
+            if (depth === 0) start = i;
+            depth++;
+            continue;
+        }
+
+        if (ch === "}") {
+            if (depth > 0) {
+                depth--;
+                if (depth === 0 && start >= 0) {
+                    return text.slice(start, i + 1);
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
 export async function POST(req: Request) {
-    if (!apiKey) {
+    const azure = getAzureConfig();
+    if (!azure) {
         return NextResponse.json(
-            { error: "GEMINI_API_KEY is not set" },
+            { error: "Azure OpenAI is not configured on the server", debug: azureConfigDebug() },
             { status: 500 }
         );
     }
@@ -75,27 +97,61 @@ export async function POST(req: Request) {
             );
         }
 
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
-            systemInstruction: SYSTEM_PROMPT,
-            generationConfig: {
-                responseMimeType: "application/json",
-                responseSchema: postSchema,
-                maxOutputTokens: 8192,
-            }
-        });
+        const client = createAzureClient(azure);
 
         const userPrompt = `Generate the blog post JSON for the following:\n\n### Business Context\n${JSON.stringify(businessContext, null, 2)}\n\n### Approved Topic\n${JSON.stringify(topic, null, 2)}`;
 
-        const result = await model.generateContent(userPrompt);
-        const text = result.response.text().trim();
+        const response = await client.chat.completions.create({
+            model: azure.deployment,
+            max_completion_tokens: 5000,
+            messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: userPrompt },
+            ],
+        });
+        const text = assistantMessageText((response as any)?.choices?.[0]?.message?.content);
+        const deFenced = stripOuterMarkdownFence(text);
 
-        // Clean any potential markdown wrapper the LLM might stubborn include
-        const cleanText = sanitizeJsonString(text);
+        let parsed: Partial<BlogPost> | null = null;
+        const directCandidates = [deFenced, sanitizeJsonString(deFenced)];
+        for (const candidate of directCandidates) {
+            try {
+                parsed = JSON.parse(candidate) as Partial<BlogPost>;
+                break;
+            } catch { }
+        }
 
-        // Parse the JSON post
-        const postData = JSON.parse(cleanText);
+        if (!parsed) {
+            const extractedObject = extractFirstJsonObject(deFenced);
+            if (extractedObject) {
+                const extractedCandidates = [extractedObject, sanitizeJsonString(extractedObject)];
+                for (const candidate of extractedCandidates) {
+                    try {
+                        parsed = JSON.parse(candidate) as Partial<BlogPost>;
+                        break;
+                    } catch { }
+                }
+            }
+        }
+
+        if (!parsed) {
+            throw new Error("Model returned invalid JSON format");
+        }
+
+        const postData: BlogPost = {
+            title: String(parsed.title || topic.title || "Untitled Post"),
+            slug: String(parsed.slug || topic.title || "untitled-post")
+                .toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9\s-]/g, "")
+                .replace(/\s+/g, "-")
+                .replace(/-+/g, "-")
+                .replace(/^-|-$/g, ""),
+            metaDescription: String(parsed.metaDescription || ""),
+            contentMarkdown: String(parsed.contentMarkdown || ""),
+            faqs: Array.isArray(parsed.faqs) ? parsed.faqs : [],
+            status: parsed.status === "published" ? "published" : "draft",
+        };
 
         // Fix for Gemini over-escaping newlines into literal "\n" strings
         if (postData.contentMarkdown) {

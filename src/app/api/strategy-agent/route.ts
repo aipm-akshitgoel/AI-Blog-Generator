@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
-
-const apiKey = process.env.GEMINI_API_KEY;
+import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
 const SYSTEM_PROMPT = `
 You are an elite Content Strategist. 
@@ -50,9 +48,10 @@ export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (!apiKey) {
+  const azure = getAzureConfig();
+  if (!azure) {
     return NextResponse.json(
-      { error: "GEMINI_API_KEY is not set" },
+      { error: "Azure OpenAI is not configured on the server", debug: azureConfigDebug() },
       { status: 500 }
     );
   }
@@ -67,14 +66,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      systemInstruction: SYSTEM_PROMPT.replace("IF PLATFORM", `CURRENT PLATFORM: ${platform.toUpperCase()}`),
-      generationConfig: {
-        responseMimeType: "application/json",
-      }
-    });
+    const client = createAzureClient(azure);
 
     let userPrompt = `Here is the verified BusinessContext:\n\n${JSON.stringify(businessContext, null, 2)}`;
 
@@ -86,9 +78,17 @@ export async function POST(req: Request) {
       userPrompt += `\n\nUSER DIRECTIVE: "${customPrompt.trim()}". Prioritize this.`;
     }
 
-    const result = await model.generateContent(userPrompt);
-    const text = result.response.text().trim();
-    const cleanText = sanitizeJsonString(text);
+    const response = await client.chat.completions.create({
+      model: azure.deployment,
+      max_completion_tokens: 2000,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT.replace("IF PLATFORM", `CURRENT PLATFORM: ${platform.toUpperCase()}`) },
+        { role: "user", content: userPrompt },
+      ],
+    });
+
+    const text = assistantMessageText((response as any)?.choices?.[0]?.message?.content);
+    const cleanText = sanitizeJsonString(stripOuterMarkdownFence(text));
     const strategyData = JSON.parse(cleanText);
 
     return NextResponse.json({ data: strategyData });

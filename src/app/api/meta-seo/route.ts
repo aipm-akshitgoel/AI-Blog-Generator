@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { MetaSeoPayload } from "@/lib/types/meta";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
-
-const apiKey = process.env.GEMINI_API_KEY;
+import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
 const TITLE_LIMIT = 60;
 const DESC_LIMIT = 160;
@@ -18,8 +16,9 @@ function hardTruncate(text: string, limit: number): string {
 }
 
 export async function POST(req: Request) {
-    if (!apiKey) {
-        return NextResponse.json({ error: "GEMINI_API_KEY is not set" }, { status: 500 });
+    const azure = getAzureConfig();
+    if (!azure) {
+        return NextResponse.json({ error: "Azure OpenAI is not configured on the server", debug: azureConfigDebug() }, { status: 500 });
     }
 
     let body: { optimizedContent?: OptimizedContent };
@@ -35,10 +34,8 @@ export async function POST(req: Request) {
     }
 
     try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
-            systemInstruction: `You are a meta data specialist. Generate 3 compelling Meta Title and Meta Description options for the provided blog post.
+        const client = createAzureClient(azure);
+        const systemPrompt = `You are a meta data specialist. Generate 3 compelling Meta Title and Meta Description options for the provided blog post.
 
 STRICT CHARACTER LIMITS — THIS IS THE MOST IMPORTANT RULE:
 - Meta Title: MAXIMUM 60 characters (count every character including spaces). NEVER exceed 60.
@@ -65,17 +62,20 @@ Choose ONLY from this list: Tips, Guide, Trends, How-To, Case Study, Opinion, Ne
 - Do NOT use the business's industry (e.g. never use "hair", "salon", "construction" as category)
 
 OUTPUT ONLY a valid JSON object: { "options": [{ "title": "...", "description": "...", "explanation": "...", "category": "..." }] }
-No markdown, no extra text, no code fences.`,
-            generationConfig: {
-                responseMimeType: "application/json",
-            },
-        });
+No markdown, no extra text, no code fences.`;
 
         const prompt = `Blog Post Content:\nTitle: ${optimizedContent.title}\nDescription: ${optimizedContent.metaDescription}\n\n${optimizedContent.contentMarkdown}`;
-        const result = await model.generateContent(prompt);
+        const response = await client.chat.completions.create({
+            model: azure.deployment,
+            max_completion_tokens: 1800,
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: prompt },
+            ],
+        });
 
-        const text = result.response.text().trim();
-        const clean = sanitizeJsonString(text);
+        const text = assistantMessageText((response as any)?.choices?.[0]?.message?.content);
+        const clean = sanitizeJsonString(stripOuterMarkdownFence(text));
         const payload: MetaSeoPayload = JSON.parse(clean);
 
         // ── Server-side safety net: hard truncate every option regardless of LLM output ──

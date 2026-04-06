@@ -22,6 +22,20 @@ import type { CTAData } from "@/lib/types/cta";
 import type { ImageMetadata } from "@/lib/types/image";
 import type { PublishPayload } from "@/lib/types/publish";
 
+async function parseJsonSafely<T>(response: Response): Promise<T | null> {
+  const raw = await response.text();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function isStrategySession(value: unknown): value is StrategySession {
+  return !!value && typeof value === "object" && "topicOptions" in value;
+}
+
 // ── Internal component (needs useSearchParams inside Suspense) ──────────────
 function SetupPageInner() {
   const searchParams = useSearchParams();
@@ -202,12 +216,19 @@ function SetupPageInner() {
     async function loadSavedData() {
       try {
         const contextRes = await fetch("/api/business-context?platform=blog");
-        const contexts = await contextRes.json();
-        if (contexts && contexts.length > 0) {
-          handleContextComplete(contexts[0]);
+        const contexts = await parseJsonSafely<BusinessContext[] | { error?: string }>(contextRes);
+
+        if (!contextRes.ok) {
+          console.warn("Failed to fetch business context", contexts);
+          return;
+        }
+
+        if (Array.isArray(contexts) && contexts.length > 0) {
+          // Existing profile should be loaded, not re-saved.
+          setContext(contexts[0]);
           const strategyRes = await fetch(`/api/strategy-session?businessContextId=${contexts[0].id}&platform=blog`);
-          const strategy = await strategyRes.json();
-          if (strategy && !strategy.error && strategy.topicOptions) {
+          const strategy = await parseJsonSafely<StrategySession | { error?: string }>(strategyRes);
+          if (strategyRes.ok && isStrategySession(strategy) && strategy.topicOptions) {
             setStrategySession(strategy);
           }
         }

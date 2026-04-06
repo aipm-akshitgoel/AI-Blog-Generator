@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const apiKey = process.env.GEMINI_API_KEY;
+import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
 export async function POST(req: Request) {
-    if (!apiKey) {
-        return NextResponse.json({ error: "GEMINI_API_KEY is not set" }, { status: 500 });
+    const azure = getAzureConfig();
+
+    if (!azure) {
+        return NextResponse.json({
+            error: "Azure OpenAI is not configured on the server",
+            debug: azureConfigDebug(),
+        }, { status: 500 });
     }
 
     try {
@@ -15,17 +18,27 @@ export async function POST(req: Request) {
         }
 
         // 1. Fetch website HTML
-        const response = await fetch(url, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (compatible; BloggieBot/1.0; +http://bloggieai.com)",
-            },
-        });
-
-        if (!response.ok) {
-            return NextResponse.json({ error: `Failed to fetch URL. Status: ${response.status}` }, { status: 400 });
+        let pageResponse: Response;
+        try {
+            pageResponse = await fetch(url, {
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (compatible; BloggieBot/1.0; +http://bloggieai.com)",
+                },
+            });
+        } catch (fetchErr: any) {
+            const causeCode = fetchErr?.cause?.code;
+            const detail = causeCode ? ` (${causeCode})` : "";
+            return NextResponse.json(
+                { error: `Unable to fetch the website URL${detail}. Please verify the URL and SSL certificate.` },
+                { status: 400 },
+            );
         }
 
-        let html = await response.text();
+        if (!pageResponse.ok) {
+            return NextResponse.json({ error: `Failed to fetch URL. Status: ${pageResponse.status}` }, { status: 400 });
+        }
+
+        let html = await pageResponse.text();
 
         // 2. Naive cleanup to save tokens (remove head, scripts, styles, svgs)
         html = html.replace(/<head[^>]*>([\s\S]*?)<\/head>/gi, "");
@@ -46,11 +59,10 @@ export async function POST(req: Request) {
             text = text.slice(0, 75000);
         }
 
-        // 3. Pass text to Gemini for extraction
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
-            systemInstruction: `You are an expert business analyst and data extractor. 
+        // 3. Pass text to Azure OpenAI for extraction
+        const client = createAzureClient(azure);
+
+        const prompt = `You are an expert business analyst and data extractor. 
 You will be given the raw text scraped from a business's website.
 Your objective is to extract the core business details and format them into a strict JSON object.
 
@@ -70,17 +82,24 @@ REQUIRED JSON FORMAT:
 
 CRITICAL INSTRUCTIONS:
 - You MUST only return the raw JSON object. NO markdown blocks like \`\`\`json. NO conversational text.
-- If you absolutely cannot find a piece of information, make your best educated guess based on the context, or leave it as an empty string.`,
-            generationConfig: {
-                responseMimeType: "application/json",
-            }
+- If you absolutely cannot find a piece of information, make your best educated guess based on the context, or leave it as an empty string.
+
+Website URL: ${url}
+
+Scraped text:
+${text}`;
+
+        const aiResponse = await client.chat.completions.create({
+            model: azure.deployment,
+            max_completion_tokens: 1800,
+            messages: [
+                { role: "system", content: "Return ONLY a valid JSON object." },
+                { role: "user", content: prompt }
+            ]
         });
 
-        const prompt = `Here is the scraped text from ${url}:\n\n${text}`;
-        const result = await model.generateContent(prompt);
-        let extractedText = result.response.text().trim();
-        extractedText = extractedText.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
-
+        const raw = assistantMessageText((aiResponse as any)?.choices?.[0]?.message?.content);
+        const extractedText = stripOuterMarkdownFence(raw);
         const contextData = JSON.parse(extractedText);
 
         // Inject the domain back into the data

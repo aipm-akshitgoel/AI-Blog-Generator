@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { getBlogsByUserId } from "@/lib/blogDb";
+import type { SavedBlog } from "@/lib/blogDb";
 import { DashboardClient } from "@/components/DashboardClient";
 import { IntegrationsPanel } from "@/components/IntegrationsPanel";
 import { BlogHubSettings } from "@/components/BlogHubSettings";
@@ -10,6 +11,7 @@ import { SupportPanel } from "@/components/SupportPanel";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { listBusinessContexts } from "@/lib/businessContextDb";
+import type { BusinessContext } from "@/lib/types/businessContext";
 
 export const dynamic = 'force-dynamic';
 
@@ -21,11 +23,26 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         redirect("/");
     }
 
-    const blogs = await getBlogsByUserId(userId);
-    const hasBlogs = blogs && blogs.length > 0;
+    let blogs: SavedBlog[] = [];
+    let businessContext: BusinessContext | null = null;
+    let dataLoadError = false;
 
-    const contexts = await listBusinessContexts(userId);
-    const businessContext = contexts?.[0] ?? null;
+    try {
+        blogs = await getBlogsByUserId(userId);
+    } catch (error) {
+        dataLoadError = true;
+        console.error("Dashboard failed to load blogs", error);
+    }
+
+    try {
+        const contexts = await listBusinessContexts(userId);
+        businessContext = contexts?.[0] ?? null;
+    } catch (error) {
+        dataLoadError = true;
+        console.error("Dashboard failed to load business contexts", error);
+    }
+
+    const hasBlogs = blogs.length > 0;
     const anyIntegrationConnected = !!(
         businessContext?.integrations?.gscPropertyUrl ||
         businessContext?.integrations?.ga4MeasurementId ||
@@ -82,6 +99,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
                         {tab === "settings" && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400 animate-in fade-in slide-in-from-bottom-1" />}
                     </Link>
                 </div>
+
+                {dataLoadError && (
+                    <div className="mb-8 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                        We could not load some dashboard data right now. You can refresh in a moment, and core actions remain available.
+                    </div>
+                )}
 
                 {tab === "content" && (
                     <div className="animate-in fade-in duration-500">

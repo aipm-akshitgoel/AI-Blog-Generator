@@ -106,6 +106,7 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
     }
 
     if (post) {
+        const safeFaqs = Array.isArray(post.faqs) ? post.faqs : [];
         return (
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-6 shadow-xl animate-in slide-in-from-bottom-4 duration-500">
                 <div className="flex items-center gap-3 mb-6 border-b border-neutral-800 pb-4">
@@ -134,12 +135,15 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
                             <div className="mt-8 pt-8 border-t border-neutral-800 pb-16">
                                 <h2 className="text-neutral-100">Frequently Asked Questions</h2>
                                 <div className="space-y-4 mt-4">
-                                    {post.faqs.map((faq, i) => (
+                                    {safeFaqs.map((faq, i) => (
                                         <div key={i}>
                                             <h3 className="text-neutral-200 mt-0">{faq.question}</h3>
                                             <p className="text-neutral-400">{faq.answer}</p>
                                         </div>
                                     ))}
+                                    {safeFaqs.length === 0 && (
+                                        <p className="text-neutral-500 text-sm">No FAQs were generated for this draft.</p>
+                                    )}
                                 </div>
                             </div>
                         </article>
