@@ -45,8 +45,20 @@ Set `VITE_GEMINI_API_KEY` (or your env name) in the host for the client bundle i
 |----------|---------|
 | `FAQ_UPSTREAM_BASE` | Optional. Base URL (no trailing slash). Default: `https://iitkgp-portal-server.upgrad.com` |
 | `FAQ_UPSTREAM_AUTHORIZATION` | Optional. Server-only Bearer (or full `Authorization` value) sent to the upstream if the browser does not send one. Example: `Bearer your-token` |
+| `PROD_PUSH_PASSWORD` | Required for prod push. The fixed password continues to work as before. |
+| `PROD_PUSH_OTP_SECRET` | Optional. Secret used to sign 10-minute OTPs. Falls back to `PROD_PUSH_PASSWORD` if omitted. |
 
 If the default host returns **502** or **504**, point `FAQ_UPSTREAM_BASE` at the FAQ service your team actually runs (VPN/staging/production as appropriate).
+
+### 10-minute OTPs
+
+To generate a temporary prod-push password that works for 10 minutes from the moment it is created:
+
+```bash
+npm run otp:prod-push
+```
+
+You can paste that generated token into the same password field used for the fixed password.
 
 ## Local dev quirks
 

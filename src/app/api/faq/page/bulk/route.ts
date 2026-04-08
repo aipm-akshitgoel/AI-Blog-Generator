@@ -2,9 +2,28 @@ import { NextResponse } from "next/server";
 import { faqUpstreamFetch } from "@/lib/faqUpstreamFetch";
 import { getFaqUpstreamBase } from "@/lib/faqUpstreamConfig";
 import { buildFaqUpstreamHeaders } from "@/lib/faqUpstreamHeaders";
+import {
+  extractProdPushCredential,
+  stripProdPushCredential,
+  validateProdPushCredential,
+} from "@/lib/prodPushAuth";
 
 export async function POST(req: Request) {
   const body = await req.json();
+  const credential = extractProdPushCredential(body);
+  const authResult = validateProdPushCredential(credential);
+
+  if (!authResult.ok) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: authResult.error,
+      },
+      { status: authResult.status },
+    );
+  }
+
+  const upstreamBody = stripProdPushCredential(body);
 
   let upstreamRes: Response;
   try {
@@ -14,7 +33,7 @@ export async function POST(req: Request) {
         "content-type": "application/json",
         ...buildFaqUpstreamHeaders(req),
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(upstreamBody),
     });
   } catch (e) {
     const aborted = e instanceof Error && e.name === "AbortError";

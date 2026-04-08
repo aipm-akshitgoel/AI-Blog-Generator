@@ -32,4 +32,5 @@ clerk-nextjs/
 # Test files
 test-*.mjs
 test-*.js
-scripts/
+scripts/*
+!scripts/generate-prod-push-otp.mjs
