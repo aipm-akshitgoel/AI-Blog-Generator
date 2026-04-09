@@ -8,7 +8,11 @@ export const revalidate = 0;
 
 const DEFAULT_LIVE_BASE = "https://online.iitkgp.ac.in";
 
-function buildLiveUrlFromSlug(slug: unknown): string {
+function isBlogPageType(pageType: unknown): boolean {
+  return String(pageType || "").trim().toLowerCase() === "blog";
+}
+
+function buildLiveUrlFromSlug(slug: unknown, pageType?: unknown): string {
   const base = String(process.env.FAQ_LIVE_BASE_URL || DEFAULT_LIVE_BASE)
     .trim()
     .replace(/\/+$/, "");
@@ -18,7 +22,8 @@ function buildLiveUrlFromSlug(slug: unknown): string {
     .replace(/\/+$/, "");
   if (!cleanSlug) return base;
   if (cleanSlug.toLowerCase() === "home") return base;
-  return `${base}/${cleanSlug}`;
+  const pathPrefix = isBlogPageType(pageType) ? "/blog" : "";
+  return `${base}${pathPrefix}/${cleanSlug}`;
 }
 
 function enrichPagesWithLiveUrl(payload: any): any {
@@ -26,8 +31,14 @@ function enrichPagesWithLiveUrl(payload: any): any {
   if (!Array.isArray(pages)) return payload;
   const nextPages = pages.map((p: any) => ({
     ...p,
+    // The static FAQ admin bundle only retains `programId` for prod push payloads.
+    // Preserve blog identifiers there so blog pages can still be pushed without
+    // rebuilding the external frontend bundle.
+    programId: isBlogPageType(p?.pageType ?? p?.type)
+      ? (p?.blogId ?? p?.programId ?? null)
+      : (p?.programId ?? null),
     // UI prefers page.liveUrl when present; set a canonical full URL server-side.
-    liveUrl: buildLiveUrlFromSlug(p?.pageSlug),
+    liveUrl: buildLiveUrlFromSlug(p?.pageSlug, p?.pageType ?? p?.type),
   }));
   return {
     ...payload,

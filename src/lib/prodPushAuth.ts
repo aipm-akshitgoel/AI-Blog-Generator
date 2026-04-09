@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 
+const DEFAULT_FIXED_PASSWORD = "aifaq@2026";
+
 const PROD_PUSH_PASSWORD_ENV_KEYS = [
   "PROD_PUSH_PASSWORD",
   "FAQ_PROD_PUSH_PASSWORD",
@@ -34,7 +36,7 @@ function getFirstConfiguredEnv(keys: readonly string[]): string | null {
 }
 
 function getFixedPassword(): string | null {
-  return getFirstConfiguredEnv(PROD_PUSH_PASSWORD_ENV_KEYS);
+  return getFirstConfiguredEnv(PROD_PUSH_PASSWORD_ENV_KEYS) ?? DEFAULT_FIXED_PASSWORD;
 }
 
 function getOtpSecret(): string | null {
