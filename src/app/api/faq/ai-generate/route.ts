@@ -20,6 +20,8 @@ type PageInput = {
   title?: string;
   slug?: string;
   liveUrl?: string;
+  type?: string;
+  apiPageType?: string;
   faqs?: FaqRow[];
 };
 
@@ -317,6 +319,49 @@ function fillMustacheTemplate(template: string, values: Record<string, string>):
   });
 }
 
+function getFaqPagePromptScope(page: PageInput): "main" | "intent" {
+  const pageType = String(page.apiPageType || page.type || "")
+    .trim()
+    .toLowerCase();
+
+  if (pageType === "landing" || pageType === "program" || pageType === "main") {
+    return "main";
+  }
+
+  return "intent";
+}
+
+function extractTaggedPromptBlock(
+  prompt: string,
+  scope: "main" | "intent",
+): { selectedPrompt: string; hasTaggedBlocks: boolean } {
+  const src = String(prompt || "");
+  const tagRegex = /\{\{\s*(Main Pages|Intent Pages)\s*\}\}/gi;
+  const matches = [...src.matchAll(tagRegex)];
+
+  if (matches.length === 0) {
+    return { selectedPrompt: src.trim(), hasTaggedBlocks: false };
+  }
+
+  const wantedTag = scope === "main" ? "main pages" : "intent pages";
+  for (let i = 0; i < matches.length; i += 1) {
+    const match = matches[i];
+    const rawTag = String(match[1] || "")
+      .trim()
+      .toLowerCase();
+    if (rawTag !== wantedTag) continue;
+
+    const start = match.index! + match[0].length;
+    const end = i + 1 < matches.length ? matches[i + 1].index! : src.length;
+    return {
+      selectedPrompt: src.slice(start, end).trim(),
+      hasTaggedBlocks: true,
+    };
+  }
+
+  return { selectedPrompt: "", hasTaggedBlocks: true };
+}
+
 function hasReferToOfficialFlag(value: unknown): boolean {
   const text = String(value ?? "");
   return (
@@ -547,9 +592,13 @@ export async function POST(req: Request) {
         });
 
         const rawBusinessPrompt = (businessPrompt || "").trim();
+        const { selectedPrompt, hasTaggedBlocks } = extractTaggedPromptBlock(
+          rawBusinessPrompt,
+          getFaqPagePromptScope(page),
+        );
         const filledBusinessPrompt =
-          rawBusinessPrompt.length > 0
-            ? fillMustacheTemplate(rawBusinessPrompt, placeholderMap)
+          selectedPrompt.length > 0
+            ? fillMustacheTemplate(selectedPrompt, placeholderMap)
             : "";
         const normalizedBusinessPrompt = trimToSystemRole(filledBusinessPrompt);
 
@@ -557,9 +606,7 @@ export async function POST(req: Request) {
           ? `\n\nGenerate FAQs specifically for the "${targetCategory}" category when relevant.\n`
           : "";
 
-        const basePrompt =
-          normalizedBusinessPrompt ||
-          `
+        const fallbackPrompt = `
 You are an expert FAQ generator for a university website.
 
 Page Title: ${page.title || ""}
@@ -573,6 +620,9 @@ Return ONLY a valid JSON array of FAQ objects with:
 - answer
 - priority
           `.trim();
+        const basePrompt =
+          normalizedBusinessPrompt ||
+          (hasTaggedBlocks ? "" : fallbackPrompt);
 
         const jsonOutputGuard = `
 
