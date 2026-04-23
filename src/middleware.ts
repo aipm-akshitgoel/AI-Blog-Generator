@@ -11,6 +11,24 @@ const FAQ_TENANT_COOKIE_NAME = "faq_tenant_session";
 export default clerkMiddleware(async (auth, req) => {
   const { pathname } = req.nextUrl;
   if (pathname === "/ai-faq" || pathname.startsWith("/ai-faq/app")) {
+    const cacheControl = (req.headers.get("cache-control") || "").toLowerCase();
+    const pragma = (req.headers.get("pragma") || "").toLowerCase();
+    const isHardReload = cacheControl.includes("no-cache") || pragma.includes("no-cache");
+
+    if (isHardReload) {
+      const response =
+        pathname === "/ai-faq"
+          ? NextResponse.next()
+          : NextResponse.redirect(new URL("/ai-faq", req.url));
+      response.cookies.set({
+        name: FAQ_TENANT_COOKIE_NAME,
+        value: "",
+        path: "/",
+        maxAge: 0,
+      });
+      return response;
+    }
+
     const hasFaqSession = Boolean(req.cookies.get(FAQ_TENANT_COOKIE_NAME)?.value);
     if (pathname.startsWith("/ai-faq/app") && !hasFaqSession) {
       const to = new URL("/ai-faq", req.url);
