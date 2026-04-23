@@ -17,6 +17,25 @@ function isBlogPageType(pageType: unknown): boolean {
   return String(pageType || "").trim().toLowerCase() === "blog";
 }
 
+function stableStringHash(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function resolvePageId(page: any, index: number): number {
+  const direct = [page?.id, page?.pageId, page?.blogId, page?.programId];
+  for (const candidate of direct) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
+    if (typeof candidate === "string" && /^\d+$/.test(candidate)) return Number(candidate);
+  }
+  const key = `${page?.universityId ?? "u"}:${page?.pageType ?? page?.type ?? "t"}:${page?.pageSlug ?? index}`;
+  const hashed = stableStringHash(key);
+  return hashed > 0 ? hashed : index + 1;
+}
+
 function buildLiveUrlFromSlug(tenantId: FaqTenantId, slug: unknown, pageType?: unknown): string {
   const tenantEnvBase =
     tenantId === "cu" ? process.env.FAQ_CU_LIVE_BASE_URL : process.env.FAQ_KGP_LIVE_BASE_URL;
@@ -36,8 +55,11 @@ function buildLiveUrlFromSlug(tenantId: FaqTenantId, slug: unknown, pageType?: u
 function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId): any {
   const pages = payload?.data?.pages;
   if (!Array.isArray(pages)) return payload;
-  const nextPages = pages.map((p: any) => ({
+  const nextPages = pages.map((p: any, idx: number) => ({
     ...p,
+    id: resolvePageId(p, idx),
+    title: String(p?.title || p?.pageName || "").trim(),
+    type: String(p?.type || p?.pageType || "").trim().toLowerCase(),
     // The static FAQ admin bundle only retains `programId` for prod push payloads.
     // Preserve blog identifiers there so blog pages can still be pushed without
     // rebuilding the external frontend bundle.
