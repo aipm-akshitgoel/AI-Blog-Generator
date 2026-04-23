@@ -12,8 +12,8 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
-        // Next does not map /ai-faq → public/ai-faq/index.html by default; serve the SPA explicitly.
-        { source: "/ai-faq", destination: "/ai-faq/index.html" },
+        // Keep /ai-faq for tenant login page; serve the static FAQ SPA at /ai-faq/app.
+        { source: "/ai-faq/app", destination: "/ai-faq/index.html" },
       ],
     };
   },

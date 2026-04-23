@@ -3,10 +3,25 @@
  * Uses clerkMiddleware() from @clerk/nextjs/server per official App Router quickstart.
  */
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/setup(.*)", "/test(.*)"]);
+const FAQ_TENANT_COOKIE_NAME = "faq_tenant_session";
 
 export default clerkMiddleware(async (auth, req) => {
+  const { pathname } = req.nextUrl;
+  if (pathname === "/ai-faq" || pathname.startsWith("/ai-faq/app")) {
+    const hasFaqSession = Boolean(req.cookies.get(FAQ_TENANT_COOKIE_NAME)?.value);
+    if (pathname.startsWith("/ai-faq/app") && !hasFaqSession) {
+      const to = new URL("/ai-faq", req.url);
+      return NextResponse.redirect(to);
+    }
+    if (pathname === "/ai-faq" && hasFaqSession) {
+      const to = new URL("/ai-faq/app", req.url);
+      return NextResponse.redirect(to);
+    }
+  }
+
   if (isProtectedRoute(req)) {
     const { userId, redirectToSignIn } = await auth();
     if (!userId) {
@@ -17,8 +32,8 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: [
-    // Skip Next.js internals, /ai-faq static SPA, and extensioned static files.
-    "/((?!_next|ai-faq|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Skip Next.js internals and extensioned static files.
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     // Ensure Clerk middleware runs on API/trpc routes where auth() is used.
     "/(api|trpc)(.*)",
   ],

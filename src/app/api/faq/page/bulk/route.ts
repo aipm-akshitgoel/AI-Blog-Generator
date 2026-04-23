@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { faqUpstreamFetch } from "@/lib/faqUpstreamFetch";
 import { getFaqUpstreamBase } from "@/lib/faqUpstreamConfig";
 import { buildFaqUpstreamHeaders } from "@/lib/faqUpstreamHeaders";
+import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
 import {
   extractProdPushCredential,
   stripProdPushCredential,
@@ -60,11 +61,11 @@ function findMatchingPage(pages: any[], body: any): any | null {
   }) ?? null;
 }
 
-async function inferMissingCategoryIds(body: any, req: Request): Promise<any> {
+async function inferMissingCategoryIds(body: any, req: Request, upstreamBase: string): Promise<any> {
   if (!needsCategoryIdInference(body)) return body;
 
   try {
-    const upstreamRes = await faqUpstreamFetch(`${getFaqUpstreamBase()}/api/faq/page`, {
+    const upstreamRes = await faqUpstreamFetch(`${upstreamBase}/api/faq/page`, {
       method: "GET",
       headers: buildFaqUpstreamHeaders(req),
     });
@@ -119,6 +120,18 @@ async function inferMissingCategoryIds(body: any, req: Request): Promise<any> {
 }
 
 export async function POST(req: Request) {
+  const tenantId = getTenantIdFromRequest(req);
+  if (!tenantId) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Please sign in to access AI FAQ.",
+      },
+      { status: 401 },
+    );
+  }
+
+  const upstreamBase = getFaqUpstreamBase(tenantId);
   const body = await req.json();
   if (requiresProdPushPassword(body)) {
     const credential = extractProdPushCredential(body);
@@ -136,11 +149,11 @@ export async function POST(req: Request) {
   }
 
   const normalizedBody = normalizeBulkProdPushBody(stripProdPushCredential(body));
-  const upstreamBody = await inferMissingCategoryIds(normalizedBody, req);
+  const upstreamBody = await inferMissingCategoryIds(normalizedBody, req, upstreamBase);
 
   let upstreamRes: Response;
   try {
-    upstreamRes = await faqUpstreamFetch(`${getFaqUpstreamBase()}/api/faq/page/bulk`, {
+    upstreamRes = await faqUpstreamFetch(`${upstreamBase}/api/faq/page/bulk`, {
       method: "POST",
       headers: {
         "content-type": "application/json",

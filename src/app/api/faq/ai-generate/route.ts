@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { AzureOpenAI } from "openai";
+import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
 
 export const runtime = "nodejs";
 
@@ -495,6 +496,11 @@ Rules:
 }
 
 export async function POST(req: Request) {
+  const tenantId = getTenantIdFromRequest(req);
+  if (!tenantId) {
+    return NextResponse.json({ error: "Please sign in to access AI FAQ." }, { status: 401 });
+  }
+
   const body = (await req.json().catch(() => null)) as GenerateRequestBody | null;
   if (!body || !Array.isArray(body.pages)) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });

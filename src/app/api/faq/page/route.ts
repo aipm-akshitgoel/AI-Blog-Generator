@@ -2,18 +2,25 @@ import { NextResponse } from "next/server";
 import { faqUpstreamFetch } from "@/lib/faqUpstreamFetch";
 import { getFaqUpstreamBase } from "@/lib/faqUpstreamConfig";
 import { buildFaqUpstreamHeaders } from "@/lib/faqUpstreamHeaders";
+import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
+import { FaqTenantId } from "@/lib/faqTenantConfig";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const DEFAULT_LIVE_BASE = "https://online.iitkgp.ac.in";
+const DEFAULT_LIVE_BASES: Record<FaqTenantId, string> = {
+  kgp: "https://online.iitkgp.ac.in",
+  cu: "https://www.cuonlineedu.in",
+};
 
 function isBlogPageType(pageType: unknown): boolean {
   return String(pageType || "").trim().toLowerCase() === "blog";
 }
 
-function buildLiveUrlFromSlug(slug: unknown, pageType?: unknown): string {
-  const base = String(process.env.FAQ_LIVE_BASE_URL || DEFAULT_LIVE_BASE)
+function buildLiveUrlFromSlug(tenantId: FaqTenantId, slug: unknown, pageType?: unknown): string {
+  const tenantEnvBase =
+    tenantId === "cu" ? process.env.FAQ_CU_LIVE_BASE_URL : process.env.FAQ_KGP_LIVE_BASE_URL;
+  const base = String(tenantEnvBase || process.env.FAQ_LIVE_BASE_URL || DEFAULT_LIVE_BASES[tenantId])
     .trim()
     .replace(/\/+$/, "");
   const cleanSlug = String(slug || "")
@@ -26,7 +33,7 @@ function buildLiveUrlFromSlug(slug: unknown, pageType?: unknown): string {
   return `${base}${pathPrefix}/${cleanSlug}`;
 }
 
-function enrichPagesWithLiveUrl(payload: any): any {
+function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId): any {
   const pages = payload?.data?.pages;
   if (!Array.isArray(pages)) return payload;
   const nextPages = pages.map((p: any) => ({
@@ -37,8 +44,11 @@ function enrichPagesWithLiveUrl(payload: any): any {
     programId: isBlogPageType(p?.pageType ?? p?.type)
       ? (p?.blogId ?? p?.programId ?? null)
       : (p?.programId ?? null),
-    // UI prefers page.liveUrl when present; set a canonical full URL server-side.
-    liveUrl: buildLiveUrlFromSlug(p?.pageSlug, p?.pageType ?? p?.type),
+    // Prefer upstream-provided liveUrl; otherwise build a canonical URL by tenant + slug.
+    liveUrl:
+      typeof p?.liveUrl === "string" && /^https?:\/\//i.test(p.liveUrl)
+        ? p.liveUrl
+        : buildLiveUrlFromSlug(tenantId, p?.pageSlug, p?.pageType ?? p?.type),
   }));
   return {
     ...payload,
@@ -50,8 +60,19 @@ function enrichPagesWithLiveUrl(payload: any): any {
 }
 
 export async function GET(req: Request) {
+  const tenantId = getTenantIdFromRequest(req);
+  if (!tenantId) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Please sign in to access AI FAQ.",
+      },
+      { status: 401 },
+    );
+  }
+
   const incomingUrl = new URL(req.url);
-  const upstreamUrl = new URL(`${getFaqUpstreamBase()}/api/faq/page`);
+  const upstreamUrl = new URL(`${getFaqUpstreamBase(tenantId)}/api/faq/page`);
   upstreamUrl.search = incomingUrl.search;
 
   let upstreamRes: Response;
@@ -78,7 +99,7 @@ export async function GET(req: Request) {
 
   try {
     const json = text ? JSON.parse(text) : null;
-    const enriched = enrichPagesWithLiveUrl(json);
+    const enriched = enrichPagesWithLiveUrl(json, tenantId);
     return NextResponse.json(enriched, {
       status: upstreamRes.status,
       headers: { "content-type": contentType },
