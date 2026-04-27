@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-const DEFAULT_FIXED_PASSWORD = "aifaq@2026";
+const DEFAULT_FIXED_PASSWORD = "aifaq@2027";
 
 const PROD_PUSH_PASSWORD_ENV_KEYS = [
   "PROD_PUSH_PASSWORD",
@@ -76,6 +76,34 @@ function parseOtpToken(token: string): { issuedAtMs: number; nonce: string; sign
   if (!/^[a-f0-9]{16}$/i.test(signature)) return null;
 
   return { issuedAtMs, nonce: nonce.toLowerCase(), signature: signature.toLowerCase() };
+}
+
+function normalizeCredentialInput(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+
+  // Allow pasting wrapped values like "pp...." or 'pp....'.
+  const unquoted =
+    (trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      ? trimmed.slice(1, -1).trim()
+      : trimmed;
+
+  // Allow pasting JSON output from the OTP generation script.
+  if (unquoted.startsWith("{") && unquoted.includes("\"otp\"")) {
+    try {
+      const parsed = JSON.parse(unquoted) as { otp?: unknown };
+      if (typeof parsed.otp === "string" && parsed.otp.trim()) {
+        return parsed.otp.trim();
+      }
+    } catch {
+      // Fall through to regex extraction.
+    }
+  }
+
+  const otpMatch = unquoted.match(/pp\.[0-9a-z]+\.[a-f0-9]{8}\.[a-f0-9]{16}/i);
+  if (otpMatch?.[0]) return otpMatch[0];
+
+  return unquoted;
 }
 
 function validateOtpToken(token: string, nowMs = Date.now()): ProdPushAuthResult {
@@ -207,7 +235,9 @@ export function validateProdPushCredential(candidate: string | null, nowMs = Dat
     };
   }
 
-  if (!candidate) {
+  const normalizedCandidate = typeof candidate === "string" ? normalizeCredentialInput(candidate) : null;
+
+  if (!normalizedCandidate) {
     return {
       ok: false,
       status: 400,
@@ -215,9 +245,9 @@ export function validateProdPushCredential(candidate: string | null, nowMs = Dat
     };
   }
 
-  if (safeEqual(candidate, fixedPassword)) {
+  if (safeEqual(normalizedCandidate, fixedPassword)) {
     return { ok: true, method: "fixed_password" };
   }
 
-  return validateOtpToken(candidate, nowMs);
+  return validateOtpToken(normalizedCandidate, nowMs);
 }
