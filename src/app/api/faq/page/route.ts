@@ -4,6 +4,7 @@ import { getFaqUpstreamBase } from "@/lib/faqUpstreamConfig";
 import { buildFaqUpstreamHeaders } from "@/lib/faqUpstreamHeaders";
 import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
 import { FaqTenantId } from "@/lib/faqTenantConfig";
+import { buildDemoFaqPagePayload } from "@/lib/faqDemoData";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -11,6 +12,7 @@ export const revalidate = 0;
 const DEFAULT_LIVE_BASES: Record<FaqTenantId, string> = {
   kgp: "https://online.iitkgp.ac.in",
   cu: "https://www.cuonlineedu.in",
+  demo: "https://online-university.demo",
 };
 
 function isBlogPageType(pageType: unknown): boolean {
@@ -38,7 +40,11 @@ function resolvePageId(page: any, index: number): number {
 
 function buildLiveUrlFromSlug(tenantId: FaqTenantId, slug: unknown, pageType?: unknown): string {
   const tenantEnvBase =
-    tenantId === "cu" ? process.env.FAQ_CU_LIVE_BASE_URL : process.env.FAQ_KGP_LIVE_BASE_URL;
+    tenantId === "cu"
+      ? process.env.FAQ_CU_LIVE_BASE_URL
+      : tenantId === "demo"
+        ? process.env.FAQ_DEMO_LIVE_BASE_URL
+        : process.env.FAQ_KGP_LIVE_BASE_URL;
   const base = String(tenantEnvBase || process.env.FAQ_LIVE_BASE_URL || DEFAULT_LIVE_BASES[tenantId])
     .trim()
     .replace(/\/+$/, "");
@@ -91,6 +97,10 @@ export async function GET(req: Request) {
       },
       { status: 401 },
     );
+  }
+
+  if (tenantId === "demo") {
+    return NextResponse.json(buildDemoFaqPagePayload(), { status: 200 });
   }
 
   const incomingUrl = new URL(req.url);

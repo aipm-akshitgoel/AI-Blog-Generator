@@ -17,6 +17,10 @@ const TENANT_CREDENTIALS: Record<FaqTenantId, TenantCredential> = {
     username: "cuonline@aifaq.com",
     password: "pass@cu345",
   },
+  demo: {
+    username: "onlineuniversity@aifaq.com",
+    password: "pass@demo123",
+  },
 };
 
 function safeEqual(left: string, right: string): boolean {

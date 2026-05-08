@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
       beforeFiles: [
         // Keep /ai-faq for tenant login page; serve the static FAQ SPA at /ai-faq/app.
         { source: "/ai-faq/app", destination: "/ai-faq/index.html" },
+        // Mirror the same SPA for dummy tenant demo route.
+        { source: "/ai-faq-test/app", destination: "/ai-faq/index.html" },
       ],
     };
   },

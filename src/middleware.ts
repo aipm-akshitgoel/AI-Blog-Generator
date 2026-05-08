@@ -10,16 +10,23 @@ const FAQ_TENANT_COOKIE_NAME = "faq_tenant_session";
 
 export default clerkMiddleware(async (auth, req) => {
   const { pathname } = req.nextUrl;
-  if (pathname === "/ai-faq" || pathname.startsWith("/ai-faq/app")) {
+  if (
+    pathname === "/ai-faq" ||
+    pathname.startsWith("/ai-faq/app") ||
+    pathname === "/ai-faq-test" ||
+    pathname.startsWith("/ai-faq-test/app")
+  ) {
+    const loginPath = pathname.startsWith("/ai-faq-test") ? "/ai-faq-test" : "/ai-faq";
+    const appPath = pathname.startsWith("/ai-faq-test") ? "/ai-faq-test/app" : "/ai-faq/app";
     const cacheControl = (req.headers.get("cache-control") || "").toLowerCase();
     const pragma = (req.headers.get("pragma") || "").toLowerCase();
     const isHardReload = cacheControl.includes("no-cache") || pragma.includes("no-cache");
 
     if (isHardReload) {
       const response =
-        pathname === "/ai-faq"
+        pathname === loginPath
           ? NextResponse.next()
-          : NextResponse.redirect(new URL("/ai-faq", req.url));
+          : NextResponse.redirect(new URL(loginPath, req.url));
       response.cookies.set({
         name: FAQ_TENANT_COOKIE_NAME,
         value: "",
@@ -30,12 +37,12 @@ export default clerkMiddleware(async (auth, req) => {
     }
 
     const hasFaqSession = Boolean(req.cookies.get(FAQ_TENANT_COOKIE_NAME)?.value);
-    if (pathname.startsWith("/ai-faq/app") && !hasFaqSession) {
-      const to = new URL("/ai-faq", req.url);
+    if (pathname.startsWith(appPath) && !hasFaqSession) {
+      const to = new URL(loginPath, req.url);
       return NextResponse.redirect(to);
     }
-    if (pathname === "/ai-faq" && hasFaqSession) {
-      const to = new URL("/ai-faq/app", req.url);
+    if (pathname === loginPath && hasFaqSession) {
+      const to = new URL(appPath, req.url);
       return NextResponse.redirect(to);
     }
   }

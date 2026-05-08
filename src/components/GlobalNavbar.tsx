@@ -10,7 +10,7 @@ export function GlobalNavbar() {
 
     // Hide global navbar on public blog pages and test templates to avoid double-headers
     const isPublicPage =
-        pathname.startsWith("/blog") || pathname === "/test-template" || pathname.startsWith("/ai-faq");
+        pathname.startsWith("/blog") || pathname === "/test-template" || pathname.startsWith("/ai-faq") || pathname.startsWith("/ai-faq-test");
     if (isPublicPage) return null;
 
     const isDashboard = pathname === "/dashboard";

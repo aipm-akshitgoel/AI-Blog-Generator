@@ -1,4 +1,4 @@
-export type FaqTenantId = "kgp" | "cu";
+export type FaqTenantId = "kgp" | "cu" | "demo";
 
 type FaqTenantConfig = {
   id: FaqTenantId;
@@ -8,6 +8,7 @@ type FaqTenantConfig = {
 
 const DEFAULT_KGP_UPSTREAM = "https://iitkgp-portal-server.upgrad.com";
 const DEFAULT_CU_UPSTREAM = "https://portal-server.cuonlineedu.in";
+const DEFAULT_DEMO_UPSTREAM = "https://demo.onlineuniversity.local";
 
 export const FAQ_TENANT_CONFIG: Record<FaqTenantId, FaqTenantConfig> = {
   kgp: {
@@ -20,10 +21,15 @@ export const FAQ_TENANT_CONFIG: Record<FaqTenantId, FaqTenantConfig> = {
     label: "CUOnline",
     upstreamBase: (process.env.FAQ_CU_UPSTREAM_BASE || DEFAULT_CU_UPSTREAM).trim().replace(/\/+$/, ""),
   },
+  demo: {
+    id: "demo",
+    label: "Online University",
+    upstreamBase: (process.env.FAQ_DEMO_UPSTREAM_BASE || DEFAULT_DEMO_UPSTREAM).trim().replace(/\/+$/, ""),
+  },
 };
 
 export function isFaqTenantId(value: unknown): value is FaqTenantId {
-  return value === "kgp" || value === "cu";
+  return value === "kgp" || value === "cu" || value === "demo";
 }
 
 export function getFaqUpstreamBaseForTenant(tenantId: FaqTenantId): string {

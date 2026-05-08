@@ -133,6 +133,15 @@ export async function POST(req: Request) {
 
   const upstreamBase = getFaqUpstreamBase(tenantId);
   const body = await req.json();
+
+  if (tenantId === "demo") {
+    return NextResponse.json({
+      success: true,
+      message: "Demo mode: changes accepted in simulation.",
+      data: body,
+    });
+  }
+
   if (requiresProdPushPassword(body)) {
     const credential = extractProdPushCredential(body);
     const authResult = validateProdPushCredential(credential);
