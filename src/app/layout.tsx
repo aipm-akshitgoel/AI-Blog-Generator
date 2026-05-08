@@ -30,23 +30,34 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim();
+
+  const shell = (
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" />
+      </head>
+      <body className="antialiased min-h-screen" suppressHydrationWarning>
+        <Suspense>
+          <GlobalNavbar />
+        </Suspense>
+        {children}
+      </body>
+    </html>
+  );
+
+  if (!publishableKey) {
+    return shell;
+  }
+
   return (
     <ClerkProvider
+      publishableKey={publishableKey}
       appearance={{ elements: { footer: "hidden", footerAction: "hidden", userButtonPopoverFooter: "hidden" } }}
     >
-      <html lang="en" suppressHydrationWarning>
-        <head>
-          <link rel="preconnect" href="https://fonts.googleapis.com" />
-          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-          <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" />
-        </head>
-        <body className="antialiased min-h-screen" suppressHydrationWarning>
-          <Suspense>
-            <GlobalNavbar />
-          </Suspense>
-          {children}
-        </body>
-      </html>
+      {shell}
     </ClerkProvider>
   );
 }
