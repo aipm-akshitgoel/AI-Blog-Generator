@@ -1,7 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-
-const SOURCE_ASSET_ROOT = "/Users/akshitgoel/Downloads/YD Online MBA_files";
+import { resolveMirrorAssetPath } from "@/lib/ydOnlineMbaMirror";
 
 function getContentType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
@@ -43,12 +42,11 @@ export async function GET(
   { params }: { params: Promise<{ assetPath: string[] }> },
 ) {
   const { assetPath } = await params;
-  const unsafePath = assetPath.join("/");
-  const normalizedPath = path.normalize(unsafePath).replace(/^(\.\.[/\\])+/, "");
-  const fullPath = path.join(SOURCE_ASSET_ROOT, normalizedPath);
+  const relative = assetPath.join("/");
 
-  if (!fullPath.startsWith(SOURCE_ASSET_ROOT)) {
-    return new Response("Invalid asset path.", { status: 400 });
+  const fullPath = await resolveMirrorAssetPath(relative);
+  if (!fullPath) {
+    return new Response("Asset not found.", { status: 404 });
   }
 
   try {
@@ -64,4 +62,3 @@ export async function GET(
     return new Response("Asset not found.", { status: 404 });
   }
 }
-
