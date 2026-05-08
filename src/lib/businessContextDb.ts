@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseServer as supabase } from "@/lib/supabaseServerClient";
 import type { BusinessContext } from "@/lib/types/businessContext";
 
 export interface BusinessContextRow {

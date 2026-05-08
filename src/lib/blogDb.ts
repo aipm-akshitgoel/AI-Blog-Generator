@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseServer as supabase } from "@/lib/supabaseServerClient";
 import type { PublishPayload } from "@/lib/types/publish";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { CTAData } from "@/lib/types/cta";

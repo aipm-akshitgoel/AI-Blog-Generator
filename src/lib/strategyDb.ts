@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabaseClient";
+import { supabaseServer as supabase } from "@/lib/supabaseServerClient";
 import type { StrategySession, KeywordStrategy, TopicOption } from "@/lib/types/strategy";
 
 export interface StrategySessionRow {

@@ -16,6 +16,21 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
 
   // Form Editing State
   const [editServicesStr, setEditServicesStr] = useState("");
+  const [editDefaultCategory, setEditDefaultCategory] = useState("Guide");
+  const [editSchemaType, setEditSchemaType] = useState<"Article" | "BlogPosting">("BlogPosting");
+  const [editCanonicalBaseUrl, setEditCanonicalBaseUrl] = useState("");
+  const [editIncludeFaqSchema, setEditIncludeFaqSchema] = useState(true);
+
+  const createEmptyDraftContext = (): BusinessContextType => ({
+    businessName: "",
+    domain: "",
+    businessType: "",
+    location: { city: "", region: "", country: "" },
+    services: [],
+    targetAudience: "",
+    positioning: "",
+    platform,
+  });
 
   const handleScrape = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,6 +70,10 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
         location: contextData.location || { city: "", region: "", country: "" },
       });
       setEditServicesStr((contextData.services || []).join(", "));
+      setEditDefaultCategory(contextData.seoDefaults?.defaultPostCategory || "Guide");
+      setEditSchemaType(contextData.seoDefaults?.defaultSchemaType || "BlogPosting");
+      setEditCanonicalBaseUrl(contextData.seoDefaults?.canonicalBaseUrl || "");
+      setEditIncludeFaqSchema(contextData.seoDefaults?.includeFaqSchemaByDefault ?? true);
       setStep("verify");
 
     } catch (err: any) {
@@ -63,16 +82,30 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
     }
   };
 
-  const handleSave = async () => {
-    if (!draftContext) return;
+  const persistContext = async (contextToSave: BusinessContextType, allowLocalFallback = false) => {
     setError(null);
     setIsSaving(true);
 
-    // Parse the comma-separated services back to an array
-    const finalDeps = {
-      ...draftContext,
+    const parsedServices = editServicesStr.split(",").map(s => s.trim()).filter(Boolean);
+    const finalDeps: BusinessContextType = {
+      ...contextToSave,
       platform,
-      services: editServicesStr.split(",").map(s => s.trim()).filter(Boolean)
+      businessName: contextToSave.businessName?.trim() || "My Business",
+      businessType: contextToSave.businessType?.trim() || "General Business",
+      targetAudience: contextToSave.targetAudience?.trim() || "Prospective customers searching online",
+      positioning: contextToSave.positioning?.trim() || "Helpful and trustworthy",
+      location: {
+        city: contextToSave.location?.city?.trim() || "",
+        region: contextToSave.location?.region?.trim() || "",
+        country: contextToSave.location?.country?.trim() || "",
+      },
+      services: parsedServices.length > 0 ? parsedServices : (contextToSave.services || []),
+      seoDefaults: {
+        defaultPostCategory: editDefaultCategory || "Guide",
+        defaultSchemaType: editSchemaType,
+        includeFaqSchemaByDefault: editIncludeFaqSchema,
+        canonicalBaseUrl: editCanonicalBaseUrl.trim() || "",
+      },
     };
 
     try {
@@ -84,13 +117,55 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Save failed");
 
-      setSaved(data);
-      if (onComplete) onComplete(data);
+      const hydratedSaved = { ...data, seoDefaults: finalDeps.seoDefaults };
+      setSaved(hydratedSaved);
+      if (onComplete) onComplete(hydratedSaved);
     } catch (e: any) {
-      setError(e.message);
+      const errorMessage = typeof e?.message === "string" ? e.message : "";
+      const normalizedError = errorMessage.toLowerCase();
+      const isNetworkIssue =
+        normalizedError.includes("fetch failed") ||
+        normalizedError.includes("failed to fetch") ||
+        normalizedError.includes("network");
+
+      if (allowLocalFallback || isNetworkIssue) {
+        const localContext: BusinessContextType = {
+          ...finalDeps,
+          id: undefined,
+        };
+        setSaved(localContext);
+        if (onComplete) onComplete(localContext);
+        setError(null);
+      } else {
+        const message = e?.message || "Save failed";
+        setError(message);
+      }
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    if (!draftContext) return;
+    await persistContext(draftContext);
+  };
+
+  const handleManualEntry = () => {
+    setError(null);
+    const emptyContext = createEmptyDraftContext();
+    setDraftContext(emptyContext);
+    setEditServicesStr("");
+    setEditDefaultCategory("Guide");
+    setEditSchemaType("BlogPosting");
+    setEditCanonicalBaseUrl("");
+    setEditIncludeFaqSchema(true);
+    setStep("verify");
+  };
+
+  const handleSkipForNow = async () => {
+    setDraftContext(createEmptyDraftContext());
+    setEditServicesStr("");
+    await persistContext(createEmptyDraftContext(), true);
   };
 
   const handleRestart = () => {
@@ -99,6 +174,11 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
     setStep("input");
     setError(null);
     setUrl("");
+  };
+
+  const handleBackToInput = () => {
+    setError(null);
+    setStep("input");
   };
 
   if (saved) {
@@ -137,7 +217,7 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
           </div>
-          <h2 className="text-2xl font-black text-white mb-2 uppercase tracking-tighter">Enter Your Website</h2>
+          <h2 className="text-2xl font-black text-white mb-2 uppercase tracking-tighter">Set Up Business Context</h2>
           <p className="text-neutral-400 mb-8 max-w-sm mx-auto italic">
             {platform === "linkedin" ? "Our platform" : "AI Organic Growth Platform"} will scan your website to automatically extract your services, brand tone, and target audience. No long forms required.
           </p>
@@ -159,6 +239,24 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
               Scan
             </button>
           </form>
+
+          <div className="mx-auto mt-4 max-w-md space-y-3">
+            <button
+              type="button"
+              onClick={handleManualEntry}
+              className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-5 py-3 text-xs font-black uppercase tracking-widest text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-white"
+            >
+              Enter Details Manually
+            </button>
+            <button
+              type="button"
+              onClick={handleSkipForNow}
+              disabled={isSaving}
+              className="w-full rounded-xl border border-neutral-800 bg-transparent px-5 py-3 text-xs font-black uppercase tracking-widest text-neutral-500 transition-colors hover:border-neutral-700 hover:text-neutral-300 disabled:opacity-60"
+            >
+              {isSaving ? "Skipping..." : "Skip For Now"}
+            </button>
+          </div>
 
           {error && <p className="mt-4 text-sm text-red-400 font-medium bg-red-900/20 inline-block px-4 py-2 rounded-lg border border-red-900/50">{error}</p>}
         </div>
@@ -191,7 +289,13 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
               <h2 className="text-xl font-black text-white uppercase tracking-tighter">Verify Business Profile</h2>
               <p className="text-sm text-neutral-400 mt-1">Review the AI extraction. Correct any mistakes or fill out missing data.</p>
             </div>
-            <button onClick={handleRestart} className="text-xs text-neutral-500 hover:text-white uppercase tracking-widest font-bold">Start Over</button>
+            <button
+              onClick={handleBackToInput}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-black uppercase tracking-widest text-emerald-300 transition-all hover:bg-emerald-500/20 hover:text-emerald-200 hover:border-emerald-500/50"
+            >
+              <span aria-hidden>←</span>
+              Back
+            </button>
           </div>
 
           {error && <p className="mb-6 text-sm text-red-400 font-medium bg-red-900/20 px-4 py-3 rounded-xl border border-red-900/50">{error}</p>}
@@ -288,9 +392,56 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
             </div>
           </div>
 
+          <div className="mb-8 rounded-xl border border-neutral-800 bg-neutral-950/40 p-4">
+            <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 mb-3">SEO Defaults (Account-Level)</h3>
+            <p className="text-[11px] text-neutral-500 mb-4">These are defaults. You can still review and override on each blog.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Default Post Category</label>
+                <input
+                  type="text"
+                  value={editDefaultCategory}
+                  onChange={(e) => setEditDefaultCategory(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  placeholder="Guide"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Default Schema Type</label>
+                <select
+                  value={editSchemaType}
+                  onChange={(e) => setEditSchemaType(e.target.value as "Article" | "BlogPosting")}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="BlogPosting">BlogPosting</option>
+                  <option value="Article">Article</option>
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Canonical Base URL (Optional)</label>
+                <input
+                  type="text"
+                  value={editCanonicalBaseUrl}
+                  onChange={(e) => setEditCanonicalBaseUrl(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  placeholder="https://bloggieai.com/blog"
+                />
+              </div>
+              <label className="md:col-span-2 inline-flex items-center gap-2 text-xs text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={editIncludeFaqSchema}
+                  onChange={(e) => setEditIncludeFaqSchema(e.target.checked)}
+                  className="h-4 w-4 rounded border-neutral-700 bg-neutral-950"
+                />
+                Include FAQ schema by default when FAQs exist
+              </label>
+            </div>
+          </div>
+
           <button
             onClick={handleSave}
-            disabled={isSaving || !draftContext.businessName}
+            disabled={isSaving}
             className="w-full flex items-center justify-center gap-3 rounded-xl bg-amber-500 px-6 py-4 font-black text-neutral-900 transition-all hover:bg-amber-400 disabled:opacity-50 uppercase tracking-widest shadow-xl shadow-amber-900/30"
           >
             {isSaving ? "Saving Identity..." : "Confirm & Setup Strategy Session"}
