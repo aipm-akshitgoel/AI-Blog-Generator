@@ -18,10 +18,22 @@ export default clerkMiddleware(async (auth, req) => {
   ) {
     const loginPath = pathname.startsWith("/ai-faq-test") ? "/ai-faq-test" : "/ai-faq";
     const appPath = pathname.startsWith("/ai-faq-test") ? "/ai-faq-test/app" : "/ai-faq/app";
+    const cacheControl = (req.headers.get("cache-control") || "").toLowerCase();
+    const pragma = (req.headers.get("pragma") || "").toLowerCase();
+    const isHardRefresh =
+      cacheControl.includes("no-cache") || cacheControl.includes("max-age=0") || pragma.includes("no-cache");
 
-    // Do not clear `faq_tenant_session` on `Cache-Control: no-cache` / hard reload.
-    // Browsers (and some flows after prod push) send no-cache on document requests; wiping
-    // the cookie while the user stays on `/ai-faq/app` breaks the SPA (blank shell).
+    if (isHardRefresh) {
+      const to = new URL(loginPath, req.url);
+      const response = NextResponse.redirect(to);
+      response.cookies.set({
+        name: FAQ_TENANT_COOKIE_NAME,
+        value: "",
+        path: "/",
+        maxAge: 0,
+      });
+      return response;
+    }
 
     const hasFaqSession = Boolean(req.cookies.get(FAQ_TENANT_COOKIE_NAME)?.value);
     if (pathname.startsWith(appPath) && !hasFaqSession) {
