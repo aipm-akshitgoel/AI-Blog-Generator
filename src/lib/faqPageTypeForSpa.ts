@@ -1,4 +1,28 @@
 /**
+ * The FAQ SPA (`public/ai-faq`) buckets tabs with
+ * `apiPageType ?? type` — **apiPageType is checked first**. Upstreams often set
+ * `apiPageType: "intent"` while the real surface is `pageType: "specialization"`.
+ * Prefer programme-facing fields before falling back to `apiPageType`.
+ */
+export function pickRawFaqPageType(page: unknown): unknown {
+  const p = page as Record<string, unknown> | null | undefined;
+  if (!p || typeof p !== "object") return undefined;
+  const ordered = [
+    p.pageType,
+    p.type,
+    p.page_type,
+    p.PageType,
+    p.faqPageType,
+    p.screenType,
+    p.entityType,
+  ];
+  for (const c of ordered) {
+    if (c != null && String(c).trim() !== "") return c;
+  }
+  return p.apiPageType;
+}
+
+/**
  * The FAQ SPA (`public/ai-faq`) treats a page as **main** only when
  * `pageType`/`type` is one of: `landing`, `program`, `main` (else **intent**).
  *
@@ -22,6 +46,9 @@ export function normalizeFaqPageTypeForSpa(raw: unknown): string {
     n === "speciality" ||
     n === "spec" ||
     n === "subprogram" ||
+    n === "sub_program" ||
+    n === "child_program" ||
+    n === "specialization_page" ||
     n === "track"
   ) {
     return "program";

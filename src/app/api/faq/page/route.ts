@@ -5,7 +5,7 @@ import { buildFaqUpstreamHeaders } from "@/lib/faqUpstreamHeaders";
 import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
 import { FaqTenantId } from "@/lib/faqTenantConfig";
 import { buildDemoFaqPagePayload } from "@/lib/faqDemoData";
-import { normalizeFaqPageTypeForSpa } from "@/lib/faqPageTypeForSpa";
+import { normalizeFaqPageTypeForSpa, pickRawFaqPageType } from "@/lib/faqPageTypeForSpa";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -321,7 +321,7 @@ function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId): any {
   if (!Array.isArray(pages)) return payload;
   const nextPages = pages.map((p: any, idx: number) => {
     const pathSlug = resolveLivePathSlug(p);
-    const rawPageType = p?.pageType ?? p?.type;
+    const rawPageType = pickRawFaqPageType(p);
     const pageType = normalizeFaqPageTypeForSpa(rawPageType);
     const existingSlug = normalizePathSegment(p?.pageSlug);
     const upgradedSlug =
@@ -336,6 +336,8 @@ function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId): any {
       title: String(p?.title || p?.pageName || "").trim(),
       type: pageType,
       pageType,
+      // SPA tab filter reads `apiPageType` before `type`; must match canonical pageType.
+      apiPageType: pageType,
       faqCategories: normalizePageFaqCategories(p),
       // Keep pageSlug aligned with resolved live path when tiered slugs add segments (DYP).
       ...(pathSlug ? { pageSlug: upgradedSlug } : {}),
