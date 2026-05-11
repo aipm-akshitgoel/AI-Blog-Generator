@@ -316,10 +316,21 @@ function buildLiveUrlFromSlug(tenantId: FaqTenantId, slug: unknown, pageType?: u
   return `${base}${pathPrefix}/${cleanSlug}`;
 }
 
+/** Stable list order so the FAQ SPA (ids = index + 1) keeps the same page id after refetch/push. */
+function stableFaqPageSortKey(p: any): string {
+  const uni = p?.universityId ?? "";
+  const pid = p?.programId ?? p?.pageId ?? p?.id ?? p?.blogId ?? "";
+  const slug = String(p?.pageSlug ?? "").toLowerCase();
+  return `${uni}\0${pid}\0${slug}`;
+}
+
 function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId): any {
   const pages = payload?.data?.pages;
   if (!Array.isArray(pages)) return payload;
-  const nextPages = pages.map((p: any, idx: number) => {
+  const ordered = [...pages].sort((a, b) =>
+    stableFaqPageSortKey(a).localeCompare(stableFaqPageSortKey(b)),
+  );
+  const nextPages = ordered.map((p: any, idx: number) => {
     const pathSlug = resolveLivePathSlug(p);
     const rawPageType = pickRawFaqPageType(p);
     const pageType = normalizeFaqPageTypeForSpa(rawPageType);
