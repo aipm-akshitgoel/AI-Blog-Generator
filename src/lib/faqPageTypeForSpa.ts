@@ -37,18 +37,23 @@ export function normalizeFaqPageTypeForSpa(raw: unknown): string {
   if (n === "home" || n === "homepage" || n === "index" || n === "root" || n === "main") return "main";
   if (n === "landing" || n === "intent" || n === "career" || n === "lp" || n === "campaign") return "landing";
   if (
-    n === "program" ||
-    n === "degree" ||
-    n === "course" ||
-    n === "programme" ||
     n === "specialization" ||
     n === "specialisation" ||
     n === "speciality" ||
     n === "spec" ||
+    n === "specialization_page"
+  ) {
+    return "specialization";
+  }
+
+  if (
+    n === "program" ||
+    n === "degree" ||
+    n === "course" ||
+    n === "programme" ||
     n === "subprogram" ||
     n === "sub_program" ||
     n === "child_program" ||
-    n === "specialization_page" ||
     n === "track"
   ) {
     return "program";
