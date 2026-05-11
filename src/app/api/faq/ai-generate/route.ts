@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { AzureOpenAI } from "openai";
 import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
+import { isFaqIntentOnlyPageType, normalizeFaqPageTypeForSpa } from "@/lib/faqPageTypeForSpa";
 
 export const runtime = "nodejs";
 
@@ -321,15 +322,8 @@ function fillMustacheTemplate(template: string, values: Record<string, string>):
 }
 
 function getFaqPagePromptScope(page: PageInput): "main" | "intent" {
-  const pageType = String(page.apiPageType || page.type || "")
-    .trim()
-    .toLowerCase();
-
-  if (pageType === "landing" || pageType === "program" || pageType === "main") {
-    return "main";
-  }
-
-  return "intent";
+  const mapped = normalizeFaqPageTypeForSpa(page.apiPageType || page.type);
+  return isFaqIntentOnlyPageType(mapped) ? "intent" : "main";
 }
 
 function extractTaggedPromptBlock(

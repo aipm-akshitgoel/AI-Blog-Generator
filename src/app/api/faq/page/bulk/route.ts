@@ -8,10 +8,12 @@ import {
   stripProdPushCredential,
   validateProdPushCredential,
 } from "@/lib/prodPushAuth";
+import { isFaqIntentOnlyPageType } from "@/lib/faqPageTypeForSpa";
 
 function requiresProdPushPassword(body: any): boolean {
   const pageType = String(body?.pageType || "").trim().toLowerCase();
-  if (pageType === "intent" || pageType === "blog") return false;
+  // Legacy bodies may still send `intent`; only blog/auxiliary skip prod-push password.
+  if (pageType === "intent" || isFaqIntentOnlyPageType(pageType)) return false;
   return true;
 }
 

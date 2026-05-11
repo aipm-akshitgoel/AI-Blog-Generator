@@ -1,0 +1,36 @@
+/**
+ * The FAQ SPA (`public/ai-faq`) treats a page as **main** only when
+ * `pageType`/`type` is one of: `landing`, `program`, `main` (else **intent**).
+ *
+ * Product rule: only **blog** and **auxiliary** pages belong in intent; home,
+ * landing, program, specialization, and former "intent" marketing pages are main.
+ */
+export function normalizeFaqPageTypeForSpa(raw: unknown): string {
+  const n = String(raw ?? "").trim().toLowerCase();
+  if (n === "blog" || n === "blog-post" || n === "article") return "blog";
+  if (n === "auxiliary" || n === "aux") return "auxiliary";
+
+  if (n === "home" || n === "homepage" || n === "index" || n === "root" || n === "main") return "main";
+  if (n === "landing" || n === "intent" || n === "career" || n === "lp" || n === "campaign") return "landing";
+  if (
+    n === "program" ||
+    n === "degree" ||
+    n === "course" ||
+    n === "programme" ||
+    n === "specialization" ||
+    n === "specialisation" ||
+    n === "speciality" ||
+    n === "spec" ||
+    n === "subprogram" ||
+    n === "track"
+  ) {
+    return "program";
+  }
+
+  return "program";
+}
+
+export function isFaqIntentOnlyPageType(raw: unknown): boolean {
+  const t = normalizeFaqPageTypeForSpa(raw);
+  return t === "blog" || t === "auxiliary";
+}
