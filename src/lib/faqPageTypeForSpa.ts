@@ -34,7 +34,8 @@ export function normalizeFaqPageTypeForSpa(raw: unknown): string {
   if (n === "blog" || n === "blog-post" || n === "article") return "blog";
   if (n === "auxiliary" || n === "aux") return "auxiliary";
 
-  if (n === "home" || n === "homepage" || n === "index" || n === "root" || n === "main") return "main";
+  if (n === "home" || n === "homepage" || n === "index" || n === "root") return "home";
+  if (n === "main") return "main";
   if (n === "landing" || n === "intent" || n === "career" || n === "lp" || n === "campaign") return "landing";
   if (
     n === "specialization" ||
