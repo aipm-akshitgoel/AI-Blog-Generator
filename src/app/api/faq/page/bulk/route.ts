@@ -10,6 +10,16 @@ import {
 } from "@/lib/prodPushAuth";
 import { isFaqIntentOnlyPageType } from "@/lib/faqPageTypeForSpa";
 
+function normalizePageTypeForUpstream(raw: unknown): string {
+  const pageType = String(raw || "").trim().toLowerCase();
+  if (!pageType) return "";
+  if (pageType === "blog") return "blog";
+  if (pageType === "intent" || pageType === "auxiliary" || pageType === "aux") return "intent";
+  if (pageType === "program" || pageType === "specialization") return "program";
+  if (pageType === "landing" || pageType === "home" || pageType === "main") return "landing";
+  return pageType;
+}
+
 function requiresProdPushPassword(body: any): boolean {
   const pageType = String(body?.pageType || "").trim().toLowerCase();
   // Legacy bodies may still send `intent`; only blog/auxiliary skip prod-push password.
@@ -20,13 +30,17 @@ function requiresProdPushPassword(body: any): boolean {
 function normalizeBulkProdPushBody(body: any): any {
   if (!body || typeof body !== "object") return body;
 
-  const pageType = String(body.pageType || "").trim().toLowerCase();
-  if (pageType !== "blog") return body;
-
   const nextBody = { ...body };
-  if (nextBody.blogId == null && nextBody.programId != null) {
-    nextBody.blogId = nextBody.programId;
-    nextBody.programId = null;
+  const pageType = normalizePageTypeForUpstream(nextBody.pageType);
+  if (pageType) {
+    nextBody.pageType = pageType;
+  }
+
+  if (pageType === "blog") {
+    if (nextBody.blogId == null && nextBody.programId != null) {
+      nextBody.blogId = nextBody.programId;
+      nextBody.programId = null;
+    }
   }
 
   return nextBody;
@@ -48,13 +62,13 @@ function needsCategoryIdInference(body: any): boolean {
 }
 
 function findMatchingPage(pages: any[], body: any): any | null {
-  const targetPageType = String(body?.pageType || "").trim().toLowerCase();
+  const targetPageType = normalizePageTypeForUpstream(body?.pageType);
   const targetUniversityId = body?.universityId ?? null;
   const targetProgramId = body?.programId ?? null;
   const targetBlogId = body?.blogId ?? null;
 
   return pages.find((page: any) => {
-    const pageType = String(page?.pageType || page?.type || "").trim().toLowerCase();
+    const pageType = normalizePageTypeForUpstream(page?.pageType || page?.type);
     if (targetPageType && pageType !== targetPageType) return false;
     if (targetUniversityId != null && page?.universityId !== targetUniversityId) return false;
     if (targetBlogId != null) return page?.blogId === targetBlogId;
