@@ -28,13 +28,25 @@ function stableStringHash(input: string): number {
   return hash;
 }
 
+/** Slug fields vary by upstream (e.g. DYP uses slug_1 / slug_2 / slug_3). */
+function resolveLivePathSlug(page: any): string {
+  const candidates = [page?.pageSlug, page?.slug, page?.slug_1, page?.slug_2, page?.slug_3];
+  for (const c of candidates) {
+    if (typeof c !== "string") continue;
+    const s = c.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+    if (s) return s;
+  }
+  return "";
+}
+
 function resolvePageId(page: any, index: number): number {
   const direct = [page?.id, page?.pageId, page?.blogId, page?.programId];
   for (const candidate of direct) {
     if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
     if (typeof candidate === "string" && /^\d+$/.test(candidate)) return Number(candidate);
   }
-  const key = `${page?.universityId ?? "u"}:${page?.pageType ?? page?.type ?? "t"}:${page?.pageSlug ?? index}`;
+  const slugKey = resolveLivePathSlug(page) || String(index);
+  const key = `${page?.universityId ?? "u"}:${page?.pageType ?? page?.type ?? "t"}:${slugKey}`;
   const hashed = stableStringHash(key);
   return hashed > 0 ? hashed : index + 1;
 }
@@ -70,23 +82,29 @@ function buildLiveUrlFromSlug(tenantId: FaqTenantId, slug: unknown, pageType?: u
 function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId): any {
   const pages = payload?.data?.pages;
   if (!Array.isArray(pages)) return payload;
-  const nextPages = pages.map((p: any, idx: number) => ({
-    ...p,
-    id: resolvePageId(p, idx),
-    title: String(p?.title || p?.pageName || "").trim(),
-    type: String(p?.type || p?.pageType || "").trim().toLowerCase(),
-    // The static FAQ admin bundle only retains `programId` for prod push payloads.
-    // Preserve blog identifiers there so blog pages can still be pushed without
-    // rebuilding the external frontend bundle.
-    programId: isBlogPageType(p?.pageType ?? p?.type)
-      ? (p?.blogId ?? p?.programId ?? null)
-      : (p?.programId ?? null),
-    // Prefer upstream-provided liveUrl; otherwise build a canonical URL by tenant + slug.
-    liveUrl:
-      typeof p?.liveUrl === "string" && /^https?:\/\//i.test(p.liveUrl)
-        ? p.liveUrl
-        : buildLiveUrlFromSlug(tenantId, p?.pageSlug, p?.pageType ?? p?.type),
-  }));
+  const nextPages = pages.map((p: any, idx: number) => {
+    const pathSlug = resolveLivePathSlug(p);
+    const pageType = p?.pageType ?? p?.type;
+    return {
+      ...p,
+      id: resolvePageId(p, idx),
+      title: String(p?.title || p?.pageName || "").trim(),
+      type: String(p?.type || pageType || "").trim().toLowerCase(),
+      // Normalize slug onto pageSlug so clients that only read pageSlug still work (e.g. DYP).
+      ...(pathSlug && !String(p?.pageSlug || "").trim() ? { pageSlug: pathSlug } : {}),
+      // The static FAQ admin bundle only retains `programId` for prod push payloads.
+      // Preserve blog identifiers there so blog pages can still be pushed without
+      // rebuilding the external frontend bundle.
+      programId: isBlogPageType(pageType)
+        ? (p?.blogId ?? p?.programId ?? null)
+        : (p?.programId ?? null),
+      // Prefer upstream-provided liveUrl; otherwise build a canonical URL by tenant + slug.
+      liveUrl:
+        typeof p?.liveUrl === "string" && /^https?:\/\//i.test(p.liveUrl)
+          ? p.liveUrl
+          : buildLiveUrlFromSlug(tenantId, pathSlug || p?.pageSlug, pageType),
+    };
+  });
   return {
     ...payload,
     data: {
