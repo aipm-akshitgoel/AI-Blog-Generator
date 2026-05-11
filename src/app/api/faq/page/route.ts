@@ -12,6 +12,7 @@ export const revalidate = 0;
 const DEFAULT_LIVE_BASES: Record<FaqTenantId, string> = {
   kgp: "https://online.iitkgp.ac.in",
   cu: "https://www.cuonlineedu.in",
+  dyp: "https://www.dypatiledu.com",
   demo: "https://online-university.demo",
 };
 
@@ -38,13 +39,21 @@ function resolvePageId(page: any, index: number): number {
   return hashed > 0 ? hashed : index + 1;
 }
 
+function tenantLiveBaseEnv(tenantId: FaqTenantId): string | undefined {
+  switch (tenantId) {
+    case "cu":
+      return process.env.FAQ_CU_LIVE_BASE_URL;
+    case "dyp":
+      return process.env.FAQ_DYP_LIVE_BASE_URL;
+    case "demo":
+      return process.env.FAQ_DEMO_LIVE_BASE_URL;
+    case "kgp":
+      return process.env.FAQ_KGP_LIVE_BASE_URL;
+  }
+}
+
 function buildLiveUrlFromSlug(tenantId: FaqTenantId, slug: unknown, pageType?: unknown): string {
-  const tenantEnvBase =
-    tenantId === "cu"
-      ? process.env.FAQ_CU_LIVE_BASE_URL
-      : tenantId === "demo"
-        ? process.env.FAQ_DEMO_LIVE_BASE_URL
-        : process.env.FAQ_KGP_LIVE_BASE_URL;
+  const tenantEnvBase = tenantLiveBaseEnv(tenantId);
   const base = String(tenantEnvBase || process.env.FAQ_LIVE_BASE_URL || DEFAULT_LIVE_BASES[tenantId])
     .trim()
     .replace(/\/+$/, "");

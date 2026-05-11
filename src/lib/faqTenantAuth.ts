@@ -17,6 +17,10 @@ const TENANT_CREDENTIALS: Record<FaqTenantId, TenantCredential> = {
     username: "cuonline@aifaq.com",
     password: "pass@cu345",
   },
+  dyp: {
+    username: (process.env.FAQ_DYP_USERNAME || "dyp@aifaq.com").trim().toLowerCase(),
+    password: (process.env.FAQ_DYP_PASSWORD || "pass@dyp891").trim(),
+  },
   demo: {
     username: "onlineuniversity@aifaq.com",
     password: "pass@demo123",

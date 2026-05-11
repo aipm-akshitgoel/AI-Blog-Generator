@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type TenantId = "kgp" | "cu";
+type TenantId = "kgp" | "cu" | "dyp";
 
 const TENANTS: Array<{ id: TenantId; label: string; subtitle: string }> = [
   {
@@ -15,6 +15,11 @@ const TENANTS: Array<{ id: TenantId; label: string; subtitle: string }> = [
     id: "cu",
     label: "CUOnline",
     subtitle: "CUOnline FAQ Admin",
+  },
+  {
+    id: "dyp",
+    label: "DYP",
+    subtitle: "DYP Patil Online FAQ Admin",
   },
 ];
 
@@ -52,7 +57,7 @@ export default function AiFaqTenantLoginPage() {
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!tenant) {
-      setError("Please choose IIT KGP or CUOnline first.");
+      setError("Please choose a university first.");
       return;
     }
     setError("");
@@ -82,7 +87,7 @@ export default function AiFaqTenantLoginPage() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,#f5f3ff_0%,#f8fafc_45%,#f8fafc_100%)] px-6 py-10 sm:py-14">
-      <div className="mx-auto w-full max-w-3xl bg-transparent p-8">
+      <div className="mx-auto w-full max-w-5xl bg-transparent p-8">
         <div className="mb-2 inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold tracking-wide text-violet-700">
           AI FAQ
         </div>
@@ -91,7 +96,7 @@ export default function AiFaqTenantLoginPage() {
           Select your university to continue.
         </p>
 
-        <div className="mt-6 grid gap-5 sm:grid-cols-2">
+        <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {TENANTS.map((item) => {
             const active = tenant === item.id;
             return (

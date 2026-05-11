@@ -1,4 +1,4 @@
-export type FaqTenantId = "kgp" | "cu" | "demo";
+export type FaqTenantId = "kgp" | "cu" | "dyp" | "demo";
 
 type FaqTenantConfig = {
   id: FaqTenantId;
@@ -8,6 +8,7 @@ type FaqTenantConfig = {
 
 const DEFAULT_KGP_UPSTREAM = "https://iitkgp-portal-server.upgrad.com";
 const DEFAULT_CU_UPSTREAM = "https://portal-server.cuonlineedu.in";
+const DEFAULT_DYP_UPSTREAM = "https://portal-server.dypatiledu.com";
 const DEFAULT_DEMO_UPSTREAM = "https://demo.onlineuniversity.local";
 
 export const FAQ_TENANT_CONFIG: Record<FaqTenantId, FaqTenantConfig> = {
@@ -21,6 +22,11 @@ export const FAQ_TENANT_CONFIG: Record<FaqTenantId, FaqTenantConfig> = {
     label: "CUOnline",
     upstreamBase: (process.env.FAQ_CU_UPSTREAM_BASE || DEFAULT_CU_UPSTREAM).trim().replace(/\/+$/, ""),
   },
+  dyp: {
+    id: "dyp",
+    label: "DYP",
+    upstreamBase: (process.env.FAQ_DYP_UPSTREAM_BASE || DEFAULT_DYP_UPSTREAM).trim().replace(/\/+$/, ""),
+  },
   demo: {
     id: "demo",
     label: "Online University",
@@ -29,7 +35,7 @@ export const FAQ_TENANT_CONFIG: Record<FaqTenantId, FaqTenantConfig> = {
 };
 
 export function isFaqTenantId(value: unknown): value is FaqTenantId {
-  return value === "kgp" || value === "cu" || value === "demo";
+  return value === "kgp" || value === "cu" || value === "dyp" || value === "demo";
 }
 
 export function getFaqUpstreamBaseForTenant(tenantId: FaqTenantId): string {

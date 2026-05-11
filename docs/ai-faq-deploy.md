@@ -46,14 +46,19 @@ Set `VITE_GEMINI_API_KEY` (or your env name) in the host for the client bundle i
 |----------|---------|
 | `FAQ_KGP_UPSTREAM_BASE` | Optional. KGP FAQ backend URL (no trailing slash). Default: `https://iitkgp-portal-server.upgrad.com` |
 | `FAQ_CU_UPSTREAM_BASE` | Optional. CU FAQ backend URL (no trailing slash). Default: `https://portal-server.cuonlineedu.in` |
+| `FAQ_DYP_UPSTREAM_BASE` | Optional. DYP FAQ backend URL (no trailing slash). Default: `https://portal-server.dypatiledu.com` |
 | `FAQ_KGP_LIVE_BASE_URL` | Optional. Public KGP page base for slug→live URL enrichment. Default: `https://online.iitkgp.ac.in` |
 | `FAQ_CU_LIVE_BASE_URL` | Optional. Public CU page base for slug→live URL enrichment. Default: `https://www.cuonlineedu.in` |
+| `FAQ_DYP_LIVE_BASE_URL` | Optional. Public DYP page base for slug→live URL enrichment. Default: `https://www.dypatiledu.com` |
+| `FAQ_DYP_USERNAME` / `FAQ_DYP_PASSWORD` | Optional. Override default AI FAQ login for the **dyp** tenant (see `faqTenantAuth.ts`). |
 | `FAQ_LIVE_BASE_URL` | Legacy fallback live-base override used when tenant-specific live base vars are not set |
 | `FAQ_UPSTREAM_AUTHORIZATION` | Optional. Server-only Bearer (or full `Authorization` value) sent to the upstream if the browser does not send one. Example: `Bearer your-token` |
 | `PROD_PUSH_PASSWORD` | Required for prod push. The fixed password continues to work as before. |
 | `PROD_PUSH_OTP_SECRET` | Optional. Secret used to sign 10-minute OTPs. Falls back to `PROD_PUSH_PASSWORD` if omitted. |
 
 If the default host returns **502** or **504**, point `FAQ_UPSTREAM_BASE` at the FAQ service your team actually runs (VPN/staging/production as appropriate).
+
+**DYP upstream:** list pages with `GET https://portal-server.dypatiledu.com/api/faq/page`, publish with `POST …/api/faq/page/bulk` (body shape may use `pageId` and `faqCategories` per DYP’s API). This repo’s Next proxy forwards the SPA’s JSON as-is; if the bundled FAQ admin expects KGP/CU field names only, update **fusion-parsec** and run `npm run sync:ai-faq` so the client matches DYP’s bulk contract.
 
 ### 10-minute OTPs
 
