@@ -20,6 +20,13 @@ export interface IntegrationCredentials {
   crmWebhookUrl?: string;
 }
 
+export interface SeoDefaults {
+  defaultPostCategory?: string;
+  defaultSchemaType?: "Article" | "BlogPosting";
+  includeFaqSchemaByDefault?: boolean;
+  canonicalBaseUrl?: string;
+}
+
 export interface BusinessContext {
   id?: string;
   platform?: "blog" | "linkedin";
@@ -32,6 +39,7 @@ export interface BusinessContext {
   positioning: string;
   internalLinks?: { href: string; anchorText: string; target: "blog" | "service" | "page" }[];
   integrations?: IntegrationCredentials;
+  seoDefaults?: SeoDefaults;
   confirmedAt?: string; // ISO timestamp when user confirmed
   createdAt?: string;
   updatedAt?: string;
