@@ -33,8 +33,10 @@ export default clerkMiddleware(async (auth, req) => {
     // Only clear tenant session on explicit browser document reload/navigation.
     // Background fetches during prod push may include no-cache hints and must not log the user out.
     if (isHardRefreshHint && isDocumentNavigation && isFaqPageRoute) {
-      const to = new URL(loginPath, req.url);
-      const response = NextResponse.redirect(to);
+      const response =
+        pathname === loginPath
+          ? NextResponse.next()
+          : NextResponse.redirect(new URL(loginPath, req.url));
       response.cookies.set({
         name: FAQ_TENANT_COOKIE_NAME,
         value: "",
