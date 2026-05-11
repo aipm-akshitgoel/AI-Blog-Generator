@@ -9,6 +9,7 @@ import {
   validateProdPushCredential,
 } from "@/lib/prodPushAuth";
 import { isFaqIntentOnlyPageType } from "@/lib/faqPageTypeForSpa";
+import type { FaqTenantId } from "@/lib/faqTenantConfig";
 
 function normalizePageTypeForUpstream(raw: unknown): string {
   const pageType = String(raw || "").trim().toLowerCase();
@@ -18,6 +19,103 @@ function normalizePageTypeForUpstream(raw: unknown): string {
   if (pageType === "program" || pageType === "specialization") return "program";
   if (pageType === "landing" || pageType === "home" || pageType === "main") return "landing";
   return pageType;
+}
+
+/** DYP bulk expects `faqCategories` + `pageId`; SPA sends `categories` and often omits `pageId`. */
+function mapFaqIdsForDypUpstream(faqCategories: unknown): unknown {
+  if (!Array.isArray(faqCategories)) return faqCategories;
+  return faqCategories.map((cat: any) => ({
+    ...cat,
+    faqs: Array.isArray(cat?.faqs)
+      ? cat.faqs.map((faq: any) => {
+          const raw = faq?.id ?? faq?.faqId ?? faq?.faqsID;
+          const idNum =
+            typeof raw === "number"
+              ? raw
+              : typeof raw === "string" && /^\d+$/.test(raw)
+                ? Number(raw)
+                : null;
+          if (idNum == null) return faq;
+          return { ...faq, id: idNum, faqId: idNum, faqsID: idNum };
+        })
+      : cat.faqs,
+  }));
+}
+
+function resolveDypBulkPageId(pages: any[], body: any): number | null {
+  const targetProgramId = body?.programId;
+  const targetBlogId = body?.blogId;
+  const targetUni = body?.universityId;
+  const rawType = String(body?.pageType || "").trim().toLowerCase();
+  const targetType = normalizePageTypeForUpstream(body?.pageType);
+
+  const withinUni = (page: any) =>
+    targetUni == null || page?.universityId == null || page.universityId === targetUni;
+
+  if (targetBlogId != null) {
+    const hit = pages.find((p) => withinUni(p) && p?.blogId === targetBlogId);
+    const id = Number(hit?.pageId ?? hit?.id);
+    return Number.isFinite(id) ? id : null;
+  }
+
+  if (targetProgramId != null) {
+    const hit = pages.find(
+      (p) =>
+        withinUni(p) &&
+        p?.programId === targetProgramId &&
+        normalizePageTypeForUpstream(p?.pageType || p?.type) === targetType,
+    );
+    const id = Number(hit?.pageId ?? hit?.id);
+    return Number.isFinite(id) ? id : null;
+  }
+
+  const homeCandidates = pages.filter((p) => {
+    if (!withinUni(p)) return false;
+    if (p?.programId != null && p.programId !== "") return false;
+    const name = String(p?.pageName || p?.title || "").trim().toLowerCase();
+    const ptn = normalizePageTypeForUpstream(p?.pageType || p?.type);
+    return name === "home" && (rawType === "home" || ptn === targetType);
+  });
+  if (homeCandidates.length === 1) {
+    const id = Number(homeCandidates[0]?.pageId ?? homeCandidates[0]?.id);
+    return Number.isFinite(id) ? id : null;
+  }
+
+  const loose = pages.find(
+    (p) => withinUni(p) && normalizePageTypeForUpstream(p?.pageType || p?.type) === targetType,
+  );
+  const id = Number(loose?.pageId ?? loose?.id);
+  return Number.isFinite(id) ? id : null;
+}
+
+async function normalizeDypBulkBody(body: any, req: Request, upstreamBase: string): Promise<any> {
+  let next = { ...body };
+
+  if (Array.isArray(next.categories) && !Array.isArray(next.faqCategories)) {
+    next.faqCategories = next.categories;
+    delete next.categories;
+  }
+
+  next.faqCategories = mapFaqIdsForDypUpstream(next.faqCategories) as any;
+
+  const pageId = Number(next.pageId ?? next.pageID);
+  if (Number.isFinite(pageId) && pageId > 0) return next;
+
+  try {
+    const upstreamRes = await faqUpstreamFetch(`${upstreamBase}/api/faq/page`, {
+      method: "GET",
+      headers: buildFaqUpstreamHeaders(req),
+    });
+    const text = await upstreamRes.text();
+    const payload = text ? JSON.parse(text) : null;
+    const pages = Array.isArray(payload?.data?.pages) ? payload.data.pages : [];
+    const resolved = resolveDypBulkPageId(pages, next);
+    if (resolved != null) next.pageId = resolved;
+  } catch {
+    /* leave pageId unset */
+  }
+
+  return next;
 }
 
 function requiresProdPushPassword(body: any): boolean {
@@ -47,7 +145,7 @@ function normalizeBulkProdPushBody(body: any): any {
 }
 
 function needsCategoryIdInference(body: any): boolean {
-  const categories = body?.categories;
+  const categories = body?.categories ?? body?.faqCategories;
   if (!Array.isArray(categories)) return false;
 
   return categories.some((category: any) => {
@@ -73,7 +171,9 @@ function findMatchingPage(pages: any[], body: any): any | null {
     if (targetUniversityId != null && page?.universityId !== targetUniversityId) return false;
     if (targetBlogId != null) return page?.blogId === targetBlogId;
     if (targetProgramId != null) return page?.programId === targetProgramId;
-    return false;
+    const name = String(page?.pageName || page?.title || "").trim().toLowerCase();
+    const programEmpty = page?.programId == null || page?.programId === "";
+    return programEmpty && name === "home";
   }) ?? null;
 }
 
@@ -104,7 +204,8 @@ async function inferMissingCategoryIds(body: any, req: Request, upstreamBase: st
       }
     }
 
-    const nextCategories = (body.categories as any[]).map((category: any) => {
+    const srcCategories = (body.categories ?? body.faqCategories) as any[];
+    const nextCategories = srcCategories.map((category: any) => {
       if (category?.categoryId != null || !Array.isArray(category?.faqs)) return category;
 
       const matchedCategoryIds = new Set<number>();
@@ -129,14 +230,15 @@ async function inferMissingCategoryIds(body: any, req: Request, upstreamBase: st
       return { ...category, categoryId };
     });
 
-    return { ...body, categories: nextCategories };
+    const key = Array.isArray(body.categories) ? "categories" : "faqCategories";
+    return { ...body, [key]: nextCategories };
   } catch {
     return body;
   }
 }
 
 export async function POST(req: Request) {
-  const tenantId = getTenantIdFromRequest(req);
+  const tenantId = getTenantIdFromRequest(req) as FaqTenantId | null;
   if (!tenantId) {
     return NextResponse.json(
       {
@@ -174,7 +276,9 @@ export async function POST(req: Request) {
   }
 
   const normalizedBody = normalizeBulkProdPushBody(stripProdPushCredential(body));
-  const upstreamBody = await inferMissingCategoryIds(normalizedBody, req, upstreamBase);
+  const withCategories = await inferMissingCategoryIds(normalizedBody, req, upstreamBase);
+  const upstreamBody =
+    tenantId === "dyp" ? await normalizeDypBulkBody(withCategories, req, upstreamBase) : withCategories;
 
   let upstreamRes: Response;
   try {
