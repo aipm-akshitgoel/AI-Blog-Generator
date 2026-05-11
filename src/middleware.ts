@@ -20,10 +20,19 @@ export default clerkMiddleware(async (auth, req) => {
     const appPath = pathname.startsWith("/ai-faq-test") ? "/ai-faq-test/app" : "/ai-faq/app";
     const cacheControl = (req.headers.get("cache-control") || "").toLowerCase();
     const pragma = (req.headers.get("pragma") || "").toLowerCase();
-    const isHardRefresh =
+    const isHardRefreshHint =
       cacheControl.includes("no-cache") || cacheControl.includes("max-age=0") || pragma.includes("no-cache");
+    const secFetchDest = (req.headers.get("sec-fetch-dest") || "").toLowerCase();
+    const secFetchMode = (req.headers.get("sec-fetch-mode") || "").toLowerCase();
+    const isDocumentNavigation =
+      req.method === "GET" &&
+      (secFetchDest === "document" || secFetchDest === "iframe") &&
+      (secFetchMode === "navigate" || secFetchMode === "nested-navigate");
+    const isFaqPageRoute = pathname === loginPath || pathname.startsWith(appPath);
 
-    if (isHardRefresh) {
+    // Only clear tenant session on explicit browser document reload/navigation.
+    // Background fetches during prod push may include no-cache hints and must not log the user out.
+    if (isHardRefreshHint && isDocumentNavigation && isFaqPageRoute) {
       const to = new URL(loginPath, req.url);
       const response = NextResponse.redirect(to);
       response.cookies.set({
