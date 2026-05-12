@@ -179,6 +179,18 @@ function parsePositiveCategoryId(raw: unknown): number | null {
   return null;
 }
 
+function parsePositiveFaqId(faq: unknown): number | null {
+  if (!faq || typeof faq !== "object") return null;
+  const f = faq as Record<string, unknown>;
+  const raw = f.faqsID ?? f.id ?? f.faqId;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === "string" && /^\d+$/.test(String(raw).trim())) {
+    const n = Number(String(raw).trim());
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
 /**
  * DYP brand (`…dypatiledu.com`) bulk appears to **merge** by `categoryId`: categories omitted from the
  * publish body stay visible on the marketing site. Re-append removed server categories with
@@ -230,6 +242,134 @@ async function appendBrandPortalRemovedCategories(
   return { ...body, faqCategories: [...clientCats, ...extras] };
 }
 
+/**
+ * FAQs removed from the editor are omitted from the body; the portal may still return them until each
+ * row is published with `status: "0"`. Skip categories that only contain brand-new FAQs without ids.
+ */
+async function appendBrandPortalRemovedFaqs(
+  body: any,
+  req: Request,
+  tenantId: FaqTenantId,
+  upstreamBase: string,
+): Promise<any> {
+  if (!usesBrandPortalBulkPayload(upstreamBase)) return body;
+  const clientCats = body?.faqCategories;
+  if (!Array.isArray(clientCats)) return body;
+
+  let pages: any[] = [];
+  try {
+    pages = await fetchPortalPageListForBulk(req, tenantId, upstreamBase);
+  } catch {
+    return body;
+  }
+  const serverPage = findMatchingPage(pages, body);
+  if (!serverPage || !Array.isArray(serverPage.faqCategories)) return body;
+
+  const nextCats = clientCats.map((cc: any) => {
+    if (String(cc?.categoryStatus ?? cc?.category_status ?? "1").trim() === "0") {
+      return cc;
+    }
+    const faqs = Array.isArray(cc?.faqs) ? [...cc.faqs] : [];
+    return { ...cc, faqs };
+  });
+
+  for (let ci = 0; ci < nextCats.length; ci += 1) {
+    const cc = nextCats[ci];
+    if (String(cc?.categoryStatus ?? cc?.category_status ?? "1").trim() === "0") continue;
+
+    const clientCatId = parsePositiveCategoryId(cc?.categoryId);
+    const clientLabel = categoryLabelNorm(cc);
+
+    const serverCat = serverPage.faqCategories.find((sc: any) => {
+      const sid = parsePositiveCategoryId(sc?.categoryId);
+      if (clientCatId != null && sid != null) return sid === clientCatId;
+      return clientLabel.length > 0 && categoryLabelNorm(sc) === clientLabel;
+    });
+    if (!serverCat || !Array.isArray(serverCat.faqs)) continue;
+
+    const clientFaqs = Array.isArray(cc.faqs) ? cc.faqs : [];
+    const retained = new Set<number>();
+    let anyClientFaqId = false;
+    for (const f of clientFaqs) {
+      const id = parsePositiveFaqId(f);
+      if (id != null) {
+        retained.add(id);
+        anyClientFaqId = true;
+      }
+    }
+    if (!anyClientFaqId && clientFaqs.length > 0) continue;
+
+    const extras: any[] = [];
+    for (const sf of serverCat.faqs) {
+      const fid = parsePositiveFaqId(sf);
+      if (fid == null) continue;
+      if (retained.has(fid)) continue;
+      const st = String(sf?.status ?? sf?.faq_status ?? "1").trim();
+      if (st === "0") continue;
+      extras.push({
+        ...sf,
+        id: fid,
+        faqId: fid,
+        faqsID: fid,
+        status: "0",
+        question: String(sf?.question ?? "").trim(),
+        answer: String(sf?.answer ?? "").trim(),
+        priority: Number(sf?.priority ?? sf?.orderNo ?? sf?.order_index ?? 999) || 999,
+      });
+    }
+    if (extras.length === 0) continue;
+    nextCats[ci] = { ...cc, faqs: [...clientFaqs, ...extras] };
+  }
+
+  return { ...body, faqCategories: nextCats };
+}
+
+function normalizePathSegmentForBulk(v: unknown): string {
+  if (typeof v !== "string") return "";
+  return v.trim().replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
+}
+
+/** Path the SPA sends when publishing (e.g. `home-lp` for `/home-lp`). */
+function primarySlugFromBulkBody(body: any): string {
+  return normalizePathSegmentForBulk(
+    body?.pageSlug ?? body?.slug ?? body?.path ?? body?.urlPath ?? body?.pagePath ?? "",
+  );
+}
+
+function slugCandidatesFromPortalPage(page: any): Set<string> {
+  const s = new Set<string>();
+  const add = (x: unknown) => {
+    const n = normalizePathSegmentForBulk(x);
+    if (n) s.add(n);
+  };
+  add(page?.pageSlug);
+  add(page?.slug);
+  add(page?.path);
+  add(page?.pagePath);
+  add(page?.urlPath);
+  const tier = [page?.slug_1, page?.slug_2, page?.slug_3]
+    .map((x) => normalizePathSegmentForBulk(x))
+    .filter(Boolean)
+    .join("/");
+  if (tier) s.add(tier);
+  const title = String(page?.pageName || page?.title || "").trim();
+  if (title) {
+    add(title.replace(/\s+/g, "-").toLowerCase());
+    add(title.replace(/\s+/g, "").toLowerCase());
+  }
+  return s;
+}
+
+function portalPageMatchesBodySlug(page: any, body: any): boolean {
+  const want = primarySlugFromBulkBody(body);
+  if (!want) return false;
+  for (const h of slugCandidatesFromPortalPage(page)) {
+    if (h === want) return true;
+    if (h.startsWith(`${want}/`) || want.startsWith(`${h}/`)) return true;
+  }
+  return false;
+}
+
 function resolveDypBulkPageId(pages: any[], body: any): number | null {
   const targetProgramId = body?.programId;
   const targetBlogId = body?.blogId;
@@ -262,6 +402,29 @@ function resolveDypBulkPageId(pages: any[], body: any): number | null {
     );
     const id = Number(hit?.pageId ?? hit?.id);
     return Number.isFinite(id) ? id : null;
+  }
+
+  const bodySlug = primarySlugFromBulkBody(body);
+  if (bodySlug) {
+    let slugHits = pages.filter(
+      (p) =>
+        withinUni(p) &&
+        (!targetType || normalizePageTypeForUpstream(p?.pageType || p?.type) === targetType) &&
+        portalPageMatchesBodySlug(p, body),
+    );
+    if (slugHits.length === 0) {
+      slugHits = pages.filter((p) => withinUni(p) && portalPageMatchesBodySlug(p, body));
+    }
+    if (slugHits.length === 1) {
+      const id = Number(slugHits[0]?.pageId ?? slugHits[0]?.id);
+      return Number.isFinite(id) ? id : null;
+    }
+    if (slugHits.length > 1) {
+      const exact = slugHits.find((p) => slugCandidatesFromPortalPage(p).has(bodySlug));
+      const pick = exact ?? slugHits[0];
+      const id = Number(pick?.pageId ?? pick?.id);
+      return Number.isFinite(id) ? id : null;
+    }
   }
 
   const homeCandidates = pages.filter((p) => {
@@ -383,18 +546,50 @@ function findMatchingPage(pages: any[], body: any): any | null {
   const targetProgramId = body?.programId ?? null;
   const targetBlogId = body?.blogId ?? null;
 
-  return pages.find((page: any) => {
-    const pageType = normalizePageTypeForUpstream(page?.pageType || page?.type);
-    if (targetPageType && pageType !== targetPageType) return false;
-    if (targetUniversityId != null && String(page?.universityId ?? "") !== String(targetUniversityId)) {
-      return false;
+  const withinUni = (page: any) =>
+    targetUniversityId == null || String(page?.universityId ?? "") === String(targetUniversityId);
+
+  const typeMatches = (page: any) => {
+    if (!targetPageType) return true;
+    return normalizePageTypeForUpstream(page?.pageType || page?.type) === targetPageType;
+  };
+
+  if (targetBlogId != null) {
+    const hit = pages.find(
+      (p) => withinUni(p) && typeMatches(p) && String(p?.blogId ?? "") === String(targetBlogId),
+    );
+    if (hit) return hit;
+  }
+
+  if (targetProgramId != null) {
+    const hit = pages.find(
+      (p) => withinUni(p) && typeMatches(p) && String(p?.programId ?? "") === String(targetProgramId),
+    );
+    if (hit) return hit;
+  }
+
+  const bodySlug = primarySlugFromBulkBody(body);
+  if (bodySlug) {
+    let slugHits = pages.filter((p) => withinUni(p) && typeMatches(p) && portalPageMatchesBodySlug(p, body));
+    if (slugHits.length === 0) {
+      slugHits = pages.filter((p) => withinUni(p) && portalPageMatchesBodySlug(p, body));
     }
-    if (targetBlogId != null) return String(page?.blogId ?? "") === String(targetBlogId);
-    if (targetProgramId != null) return String(page?.programId ?? "") === String(targetProgramId);
-    const name = String(page?.pageName || page?.title || "").trim().toLowerCase();
-    const programEmpty = page?.programId == null || page?.programId === "";
-    return programEmpty && name === "home";
-  }) ?? null;
+    if (slugHits.length === 1) return slugHits[0];
+    if (slugHits.length > 1) {
+      const exact = slugHits.find((p) => slugCandidatesFromPortalPage(p).has(bodySlug));
+      return exact ?? slugHits[0];
+    }
+  }
+
+  const homeHit = pages.find((p) => {
+    if (!withinUni(p) || !typeMatches(p)) return false;
+    if (p?.programId != null && p.programId !== "") return false;
+    const name = String(p?.pageName || p?.title || "").trim().toLowerCase();
+    return name === "home";
+  });
+  if (homeHit) return homeHit;
+
+  return pages.find((p) => withinUni(p) && typeMatches(p)) ?? null;
 }
 
 function collectServerFaqIds(currentPage: any): Set<number> {
@@ -576,6 +771,7 @@ export async function POST(req: Request) {
 
   if (usesPortalV2BulkNormalization(tenantId) && usesBrandPortalBulkPayload(upstreamBase)) {
     upstreamBody = await appendBrandPortalRemovedCategories(upstreamBody, req, tenantId, upstreamBase);
+    upstreamBody = await appendBrandPortalRemovedFaqs(upstreamBody, req, tenantId, upstreamBase);
     upstreamBody = toBrandPortalBulkBody(upstreamBody);
   }
 

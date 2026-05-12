@@ -322,7 +322,9 @@ function normalizePageFaqCategories(page: any): any[] {
       .filter((row) => !isDeactivated(row))
       .map((row) => ({
         ...row,
-        faqs: Array.isArray(row?.faqs) ? row.faqs : [],
+        faqs: Array.isArray(row?.faqs)
+          ? row.faqs.filter((f: any) => String(f?.status ?? f?.faq_status ?? "1").trim() !== "0")
+          : [],
       }));
   const picked = finalize(
     pickCategoryArrayFromPage(page).map((c, i) => normalizeCategoryRow(c, i)),
