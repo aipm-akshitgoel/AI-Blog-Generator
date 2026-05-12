@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { MetaSeoPayload } from "@/lib/types/meta";
+import type { SeoDefaults } from "@/lib/types/businessContext";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
@@ -21,14 +22,14 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Azure OpenAI is not configured on the server", debug: azureConfigDebug() }, { status: 500 });
     }
 
-    let body: { optimizedContent?: OptimizedContent };
+    let body: { optimizedContent?: OptimizedContent; seoDefaults?: SeoDefaults };
     try {
         body = await req.json();
     } catch {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { optimizedContent } = body;
+    const { optimizedContent, seoDefaults } = body;
     if (!optimizedContent) {
         return NextResponse.json({ error: "Missing optimizedContent" }, { status: 400 });
     }
@@ -60,11 +61,12 @@ Choose ONLY from this list: Tips, Guide, Trends, How-To, Case Study, Opinion, Ne
 - Use "Listicle" for numbered list posts
 - Use "Trends" for industry trend posts
 - Do NOT use the business's industry (e.g. never use "hair", "salon", "construction" as category)
+${seoDefaults?.defaultPostCategory ? `- Prefer this default category when it fits naturally: "${seoDefaults.defaultPostCategory}".` : ""}
 
 OUTPUT ONLY a valid JSON object: { "options": [{ "title": "...", "description": "...", "explanation": "...", "category": "..." }] }
 No markdown, no extra text, no code fences.`;
 
-        const prompt = `Blog Post Content:\nTitle: ${optimizedContent.title}\nDescription: ${optimizedContent.metaDescription}\n\n${optimizedContent.contentMarkdown}`;
+        const prompt = `Blog Post Content:\nTitle: ${optimizedContent.title}\nDescription: ${optimizedContent.metaDescription}\n\n${optimizedContent.contentMarkdown}\n\nSEO Defaults:\n${JSON.stringify(seoDefaults || {}, null, 2)}`;
         const response = await client.chat.completions.create({
             model: azure.deployment,
             max_completion_tokens: 1800,

@@ -36,8 +36,21 @@ function isStrategySession(value: unknown): value is StrategySession {
   return !!value && typeof value === "object" && "topicOptions" in value;
 }
 
+async function fetchWithTimeout(url: string, ms: number, init?: RequestInit): Promise<Response> {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 // ── Internal component (needs useSearchParams inside Suspense) ──────────────
 function SetupPageInner() {
+  const LOCAL_CONTEXT_KEY = "bloggieai_local_business_context";
+  const LOCAL_STRATEGY_KEY = "bloggieai_local_strategy_session";
+  const LOCAL_SEO_DEFAULTS_KEY = "bloggieai_local_seo_defaults";
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -193,47 +206,98 @@ function SetupPageInner() {
     };
 
     setContext(enriched);
-
-    // Save to database immediately so it's persisted for the dashboard
-    try {
-      const res = await fetch("/api/business-context", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(enriched),
-      });
-      const savedContext = await res.json();
-      if (res.ok && savedContext && !savedContext.error) {
-        setContext(savedContext); // Update with DB ID if needed
-      } else {
-        console.error("Failed to save business context:", savedContext?.error);
-      }
-    } catch (err) {
-      console.error("Network error saving business context:", err);
+    if (typeof window !== "undefined" && enriched.seoDefaults) {
+      window.sessionStorage.setItem(LOCAL_SEO_DEFAULTS_KEY, JSON.stringify(enriched.seoDefaults));
+    }
+    if (!enriched.id && typeof window !== "undefined") {
+      window.sessionStorage.setItem(LOCAL_CONTEXT_KEY, JSON.stringify(enriched));
     }
   };
 
   useEffect(() => {
+    const hydrateLocalFallback = () => {
+      if (typeof window === "undefined") return;
+      const localContextRaw = window.sessionStorage.getItem(LOCAL_CONTEXT_KEY);
+      const localStrategyRaw = window.sessionStorage.getItem(LOCAL_STRATEGY_KEY);
+
+      if (localContextRaw) {
+        try {
+          const parsedContext = JSON.parse(localContextRaw) as BusinessContext;
+          setContext(parsedContext);
+        } catch { }
+      }
+
+      if (localStrategyRaw) {
+        try {
+          const parsedStrategy = JSON.parse(localStrategyRaw) as StrategySession;
+          if (isStrategySession(parsedStrategy)) setStrategySession(parsedStrategy);
+        } catch { }
+      }
+    };
+
     async function loadSavedData() {
+      const CONTEXT_FETCH_MS = 12_000;
+      const STRATEGY_FETCH_MS = 15_000;
+
       try {
-        const contextRes = await fetch("/api/business-context?platform=blog");
+        let contextRes: Response;
+        try {
+          contextRes = await fetchWithTimeout("/api/business-context?platform=blog", CONTEXT_FETCH_MS);
+        } catch (e) {
+          console.warn("Business context fetch timed out or failed", e);
+          hydrateLocalFallback();
+          return;
+        }
+
         const contexts = await parseJsonSafely<BusinessContext[] | { error?: string }>(contextRes);
 
         if (!contextRes.ok) {
           console.warn("Failed to fetch business context", contexts);
+          hydrateLocalFallback();
           return;
         }
 
         if (Array.isArray(contexts) && contexts.length > 0) {
           // Existing profile should be loaded, not re-saved.
-          setContext(contexts[0]);
-          const strategyRes = await fetch(`/api/strategy-session?businessContextId=${contexts[0].id}&platform=blog`);
-          const strategy = await parseJsonSafely<StrategySession | { error?: string }>(strategyRes);
-          if (strategyRes.ok && isStrategySession(strategy) && strategy.topicOptions) {
-            setStrategySession(strategy);
+          let mergedContext = contexts[0];
+          if (typeof window !== "undefined") {
+            const localSeoDefaultsRaw = window.sessionStorage.getItem(LOCAL_SEO_DEFAULTS_KEY);
+            if (localSeoDefaultsRaw) {
+              try {
+                mergedContext = { ...mergedContext, seoDefaults: JSON.parse(localSeoDefaultsRaw) };
+              } catch { }
+            }
           }
+          setContext(mergedContext);
+          if (typeof window !== "undefined") {
+            window.sessionStorage.removeItem(LOCAL_CONTEXT_KEY);
+            window.sessionStorage.removeItem(LOCAL_STRATEGY_KEY);
+          }
+
+          // Strategy fetch must NOT block first paint — it can hang on slow DB/DNS.
+          const bcId = contexts[0].id;
+          if (bcId) {
+            void (async () => {
+              try {
+                const strategyRes = await fetchWithTimeout(
+                  `/api/strategy-session?businessContextId=${bcId}&platform=blog`,
+                  STRATEGY_FETCH_MS,
+                );
+                const strategy = await parseJsonSafely<StrategySession | { error?: string }>(strategyRes);
+                if (strategyRes.ok && isStrategySession(strategy) && strategy.topicOptions) {
+                  setStrategySession(strategy);
+                }
+              } catch (e) {
+                console.warn("Strategy session fetch timed out or failed", e);
+              }
+            })();
+          }
+        } else {
+          hydrateLocalFallback();
         }
       } catch (err) {
         console.error("Failed to load initial data", err);
+        hydrateLocalFallback();
       } finally {
         setIsInitialLoading(false);
       }
@@ -243,6 +307,24 @@ function SetupPageInner() {
 
   const handleStrategyApprove = async (session: StrategySession) => {
     try {
+      // Local fallback mode: continue setup even when context could not be persisted.
+      if (!context?.id) {
+        const localSession: StrategySession = {
+          ...session,
+          id: session.id || `local-${Date.now()}`,
+          businessContextId: "",
+          platform: "blog",
+          status: "approved",
+        };
+        setStrategySession(localSession);
+        if (typeof window !== "undefined") {
+          if (context) window.sessionStorage.setItem(LOCAL_CONTEXT_KEY, JSON.stringify(context));
+          window.sessionStorage.setItem(LOCAL_STRATEGY_KEY, JSON.stringify(localSession));
+        }
+        if (!isBlogMode) setStrategySaved(true);
+        return;
+      }
+
       // Ensure we have a valid UUID for the businessContextId
       if (!session.businessContextId || session.businessContextId === context?.businessName) {
         if (context?.id) {
@@ -264,6 +346,10 @@ function SetupPageInner() {
       }
 
       setStrategySession(savedSession);
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem(LOCAL_CONTEXT_KEY);
+        window.sessionStorage.removeItem(LOCAL_STRATEGY_KEY);
+      }
 
       // In account setup mode: show the "saved" confirmation screen
       if (!isBlogMode) setStrategySaved(true);
@@ -515,7 +601,7 @@ function SetupPageInner() {
               )}
               {optimizedPost && !selectedMeta && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <MetaSeoAgentUI optimized={optimizedPost!} onComplete={setSelectedMeta} />
+                  <MetaSeoAgentUI optimized={optimizedPost!} businessContext={context!} onComplete={setSelectedMeta} />
                 </div>
               )}
               {selectedMeta && !generatedSchema && (

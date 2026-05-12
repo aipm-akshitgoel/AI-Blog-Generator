@@ -217,8 +217,12 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, platform
                     <h3 className="mb-3 text-[10px] font-black uppercase tracking-widest text-neutral-500">Refined Post Directions</h3>
                     <div className="space-y-3">
                         {strategy.topicOptions.map((topic, i) => (
-                            <div key={i} className="relative rounded-xl border border-neutral-800 bg-neutral-950/50 p-4">
-                                <h4 className="font-bold text-neutral-200 text-sm">{topic.title}</h4>
+                            <div
+                                key={i}
+                                className="relative rounded-xl border border-neutral-900 bg-neutral-950/35 p-4 cursor-default select-text"
+                                aria-label={`Suggested topic ${i + 1}`}
+                            >
+                                <h4 className="font-bold text-neutral-300 text-sm">{topic.title}</h4>
                                 <p className="mt-1 text-xs text-neutral-400 leading-relaxed font-medium">{topic.description}</p>
                             </div>
                         ))}

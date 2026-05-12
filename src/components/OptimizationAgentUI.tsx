@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BlogPost } from "@/lib/types/content";
@@ -42,6 +42,26 @@ function getHeuristic(markdown: string) {
     return { read, struct };
 }
 
+function applyHeadingStructureForEditor(contentMarkdown: string, post: BlogPost): string {
+    let markdown = String(contentMarkdown || "").trim();
+    const hasH1 = /^#\s+/m.test(markdown);
+    const hasH2 = /^##\s+/m.test(markdown);
+
+    if (!hasH1 && post.h1Title) {
+        markdown = `# ${post.h1Title}\n\n${markdown}`;
+    }
+
+    if (!hasH2 && Array.isArray(post.h2Suggestions) && post.h2Suggestions.length > 0) {
+        const normalized = post.h2Suggestions.map((h) => h.trim()).filter(Boolean).slice(0, 6);
+        if (normalized.length > 0) {
+            const h2Scaffold = normalized.map((h2) => `## ${h2}\n\n`).join("");
+            markdown = `${markdown}\n\n${h2Scaffold}`.trim();
+        }
+    }
+
+    return markdown;
+}
+
 export function OptimizationAgentUI({ post, businessContext, onComplete }: OptimizationAgentProps) {
     const [optimizedData, setOptimizedData] = useState<OptimizedContent | null>(null);
     const [loading, setLoading] = useState(true);
@@ -50,6 +70,7 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
     const [isEditing, setIsEditing] = useState(false);
     const [editedContent, setEditedContent] = useState("");
     const [liveScores, setLiveScores] = useState<any>(null);
+    const latestRequestRef = useRef(0);
 
     // Compute highlighted markdown for plagiarism safely
     const highlightedMarkdown = useMemo(() => {
@@ -107,7 +128,9 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
 
     useEffect(() => {
         const fetchOptimization = async () => {
+            const requestId = ++latestRequestRef.current;
             setLoading(true);
+            setError(null);
             try {
                 // Build enriched context: start with existing links then append sister blog posts
                 let enrichedContext = { ...businessContext };
@@ -141,11 +164,16 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                 }
 
                 const data = await res.json();
+                if (latestRequestRef.current !== requestId) return;
                 setOptimizedData(data.optimized);
+                setError(null);
             } catch (err) {
+                if (latestRequestRef.current !== requestId) return;
                 setError(err instanceof Error ? err.message : "Unknown error occurred.");
             } finally {
-                setLoading(false);
+                if (latestRequestRef.current === requestId) {
+                    setLoading(false);
+                }
             }
         };
 
@@ -397,7 +425,10 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                             {!isEditing && (
                                 <button
                                     type="button"
-                                    onClick={() => { setEditedContent(optimizedData.contentMarkdown); setIsEditing(true); }}
+                                    onClick={() => {
+                                        setEditedContent(applyHeadingStructureForEditor(optimizedData.contentMarkdown, post));
+                                        setIsEditing(true);
+                                    }}
                                     className="inline-flex items-center gap-2 rounded-lg border-2 border-amber-600 bg-amber-500/10 px-5 py-2.5 text-sm font-bold text-amber-800 transition-colors hover:bg-amber-500/20 shadow-sm"
                                 >
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -446,7 +477,10 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                                     </div>
                                 </div>
                                 <button
-                                    onClick={() => { setEditedContent(optimizedData.contentMarkdown); setIsEditing(false); }}
+                                    onClick={() => {
+                                        setEditedContent(applyHeadingStructureForEditor(optimizedData.contentMarkdown, post));
+                                        setIsEditing(false);
+                                    }}
                                     className="rounded-lg px-4 py-2 text-sm font-bold text-neutral-400 transition-colors hover:text-white"
                                 >
                                     Cancel

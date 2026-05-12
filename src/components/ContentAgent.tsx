@@ -122,7 +122,6 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
                 </div>
 
                 {/* Removed early SEO Metadata Box - Handled by Meta SEO Agent later */}
-
                 {/* Blog Post Content Body (read-only preview) */}
                 <div className="relative mb-8 rounded-lg border border-neutral-800 bg-neutral-950 overflow-hidden">
                     <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-neutral-950 to-transparent z-10 pointer-events-none" />

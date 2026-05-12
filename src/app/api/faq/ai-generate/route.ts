@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { AzureOpenAI } from "openai";
 import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
+import { getRequestHost, isCampusOnlyFaqHost } from "@/lib/faqCampusHostTenantKey";
+import { isProgrammeCampusUniId } from "@/lib/faqProgrammeCampusUnis";
 import { isFaqIntentOnlyPageType, normalizeFaqPageTypeForSpa, pickRawFaqPageType } from "@/lib/faqPageTypeForSpa";
 
 export const runtime = "nodejs";
@@ -493,6 +495,17 @@ export async function POST(req: Request) {
   const tenantId = getTenantIdFromRequest(req);
   if (!tenantId) {
     return NextResponse.json({ error: "Please sign in to access AI FAQ." }, { status: 401 });
+  }
+
+  const host = getRequestHost(req);
+  if (isCampusOnlyFaqHost(host) && tenantId !== "dyp" && !isProgrammeCampusUniId(tenantId)) {
+    return NextResponse.json(
+      {
+        error:
+          "This domain uses the Campus FAQ portal. Open AI FAQ and sign in with the Campus (DYP) FAQ account.",
+      },
+      { status: 403 },
+    );
   }
 
   const body = (await req.json().catch(() => null)) as GenerateRequestBody | null;

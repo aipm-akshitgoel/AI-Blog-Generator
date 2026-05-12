@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { TenantTileLogo } from "@/components/TenantTileLogo";
 
 const DEMO_TENANT = "demo";
 
@@ -19,8 +20,12 @@ export default function AiFaqTestLoginPage() {
       try {
         const res = await fetch("/api/faq/auth/session", { cache: "no-store" });
         const json = await res.json().catch(() => null);
-        if (!cancelled && json?.authenticated && json?.tenant?.id === DEMO_TENANT) {
-          router.replace("/ai-faq-test/app");
+        if (!cancelled && json?.authenticated) {
+          if (json?.tenant?.id === DEMO_TENANT) {
+            router.replace("/ai-faq-test/app");
+          } else {
+            router.replace("/ai-faq/app");
+          }
           return;
         }
       } finally {
@@ -71,11 +76,12 @@ export default function AiFaqTestLoginPage() {
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
           <button
             type="button"
-            className="min-h-[152px] rounded-2xl border border-violet-400 bg-gradient-to-br from-violet-50 to-indigo-50 px-6 py-6 text-left shadow-[0_16px_30px_-16px_rgba(124,58,237,0.55)]"
+            className="flex min-h-[112px] items-start gap-4 rounded-2xl border border-violet-400 bg-gradient-to-br from-violet-50 to-indigo-50 px-6 py-6 text-left shadow-[0_16px_30px_-16px_rgba(124,58,237,0.55)]"
           >
-            <div className="text-[1.95rem] leading-none">🎓</div>
-            <div className="mt-5 text-3xl font-semibold tracking-tight text-slate-900">Online University</div>
-            <div className="mt-2 text-base text-slate-600">Online University FAQ Admin (Demo)</div>
+            <TenantTileLogo logoHost="www.upgrad.com" />
+            <div className="min-w-0 pt-0.5 text-3xl font-semibold leading-tight tracking-tight text-slate-900">
+              Online University
+            </div>
           </button>
         </div>
 

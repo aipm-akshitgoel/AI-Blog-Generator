@@ -2,9 +2,20 @@
 
 import { useState } from "react";
 import type { SavedBlog } from "@/lib/blogDb";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, isValid } from "date-fns";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+
+function formatCreatedRelative(createdAt: string | undefined): string {
+    if (!createdAt) return "Unknown date";
+    const d = new Date(createdAt);
+    if (!isValid(d)) return "Unknown date";
+    try {
+        return formatDistanceToNow(d, { addSuffix: true });
+    } catch {
+        return "Unknown date";
+    }
+}
 
 export function DashboardClient({ initialBlogs }: { initialBlogs: SavedBlog[] }) {
     const router = useRouter();
@@ -183,7 +194,7 @@ export function DashboardClient({ initialBlogs }: { initialBlogs: SavedBlog[] })
                             {/* Image Header */}
                             <div
                                 className="h-40 w-full bg-cover bg-center border-b border-neutral-800 relative"
-                                style={{ backgroundImage: `url('${blog.payload.images?.bannerImageUrl || ''}')` }}
+                                style={{ backgroundImage: `url('${blog.payload?.images?.bannerImageUrl || ""}')` }}
                             >
                                 <div className="absolute top-3 right-4 flex gap-2">
                                     {blog.status === "published" && (
@@ -222,7 +233,7 @@ export function DashboardClient({ initialBlogs }: { initialBlogs: SavedBlog[] })
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
-                                    {formatDistanceToNow(new Date(blog.createdAt), { addSuffix: true })}
+                                    {formatCreatedRelative(blog.createdAt)}
                                 </p>
 
                                 <div className="flex items-center gap-2 mt-4 pt-4 border-t border-neutral-800/60">

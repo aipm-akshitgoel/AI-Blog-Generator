@@ -3,6 +3,7 @@ import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import type { MetaOption } from "@/lib/types/meta";
 import type { SchemaData } from "@/lib/types/schema";
+import type { SeoDefaults } from "@/lib/types/businessContext";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
@@ -12,21 +13,21 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Azure OpenAI is not configured on the server", debug: azureConfigDebug() }, { status: 500 });
     }
 
-    let body: { optimizedContent?: OptimizedContent, businessContext?: BusinessContext, meta?: MetaOption };
+    let body: { optimizedContent?: OptimizedContent, businessContext?: BusinessContext, meta?: MetaOption, seoDefaults?: SeoDefaults };
     try {
         body = await req.json();
     } catch {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { optimizedContent, businessContext, meta } = body;
+    const { optimizedContent, businessContext, meta, seoDefaults } = body;
     if (!optimizedContent || !businessContext || !meta) {
         return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
     }
 
     try {
         const client = createAzureClient(azure);
-        const systemPrompt = `You are an expert technical SEO specialist. Generate a strict JSON-LD representation (as a string) for the provided blog post, incorporating LocalBusiness/Organization data and Article/BlogPosting schema. If there are FAQs, include FAQPage schema.
+        const systemPrompt = `You are an expert technical SEO specialist. Generate a strict JSON-LD representation (as a string) for the provided blog post, incorporating LocalBusiness/Organization data and Article/BlogPosting schema. If there are FAQs, include FAQPage schema unless explicitly disabled in SEO defaults.
 Return ONLY valid JSON matching the SchemaData schema: 
 { 
   "type": "Article", 
@@ -35,7 +36,7 @@ Return ONLY valid JSON matching the SchemaData schema:
 }
 Do NOT include any explanatory text outside the JSON. Ensure the jsonLd field contains an escaped string representation of the JSON-LD object.`;
 
-        const prompt = `Business Name: ${businessContext.businessName}\nIndustry: ${businessContext.businessType}\nTarget Audience: ${businessContext.targetAudience}\n\nBlog Title: ${meta.title}\nMeta Description: ${meta.description}\n\nContent:\n${optimizedContent.contentMarkdown}\n\nFAQs:\n${JSON.stringify(optimizedContent.faqs)}`;
+        const prompt = `Business Name: ${businessContext.businessName}\nIndustry: ${businessContext.businessType}\nTarget Audience: ${businessContext.targetAudience}\n\nBlog Title: ${meta.title}\nMeta Description: ${meta.description}\n\nContent:\n${optimizedContent.contentMarkdown}\n\nFAQs:\n${JSON.stringify(optimizedContent.faqs)}\n\nSEO Defaults:\n${JSON.stringify(seoDefaults || {}, null, 2)}\n\nPreferred schema type: ${seoDefaults?.defaultSchemaType || "BlogPosting"}\nInclude FAQ schema by default: ${seoDefaults?.includeFaqSchemaByDefault ?? true}\nCanonical base URL (if available): ${seoDefaults?.canonicalBaseUrl || ""}`;
 
         const response = await client.chat.completions.create({
             model: azure.deployment,

@@ -3,6 +3,111 @@ import type { BlogPost } from "@/lib/types/content";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
+import { jsonrepair } from "jsonrepair";
+
+function extractFirstJsonObject(input: string): string | null {
+    const text = String(input || "");
+    let start = -1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch === "\\") {
+                escaped = true;
+            } else if (ch === "\"") {
+                inString = false;
+            }
+            continue;
+        }
+
+        if (ch === "\"") {
+            inString = true;
+            continue;
+        }
+
+        if (ch === "{") {
+            if (depth === 0) start = i;
+            depth++;
+            continue;
+        }
+
+        if (ch === "}") {
+            if (depth > 0) {
+                depth--;
+                if (depth === 0 && start >= 0) {
+                    return text.slice(start, i + 1);
+                }
+            }
+        }
+    }
+    return null;
+}
+
+function buildFallbackOptimized(blogPost: BlogPost): OptimizedContent {
+    return {
+        title: blogPost.title,
+        slug: blogPost.slug,
+        metaDescription: blogPost.metaDescription,
+        contentMarkdown: blogPost.contentMarkdown,
+        faqs: Array.isArray(blogPost.faqs) ? blogPost.faqs : [],
+        internalLinks: [],
+        seoScores: {
+            overall: 80,
+            contentStructure: 80,
+            readability: 80,
+            targetKeywords: [],
+            actionableInsights: [
+                "The optimizer could not parse the AI response. Your draft is unchanged below — use Edit Content, then retry Optimize, or continue manually.",
+            ],
+        },
+        plagiarismReport: {
+            isSafe: true,
+            overallSimilarity: 0,
+            flaggedSections: [],
+        },
+    };
+}
+
+function tryParseOptimizedJson(raw: string): Partial<OptimizedContent> | null {
+    const trimmed = String(raw || "").trim().replace(/^\uFEFF/, "");
+    const deFenced = stripOuterMarkdownFence(trimmed);
+
+    const tryParse = (s: string): Partial<OptimizedContent> | null => {
+        const candidates = [s, sanitizeJsonString(s)];
+        for (const candidate of candidates) {
+            try {
+                return JSON.parse(candidate) as Partial<OptimizedContent>;
+            } catch { }
+            const extracted = extractFirstJsonObject(candidate);
+            if (extracted) {
+                for (const ex of [extracted, sanitizeJsonString(extracted)]) {
+                    try {
+                        return JSON.parse(ex) as Partial<OptimizedContent>;
+                    } catch { }
+                }
+            }
+        }
+        return null;
+    };
+
+    let parsed = tryParse(deFenced);
+    if (parsed) return parsed;
+
+    try {
+        const repaired = jsonrepair(deFenced);
+        parsed = tryParse(repaired);
+        if (parsed) return parsed;
+    } catch {
+        /* ignore */
+    }
+
+    return null;
+}
 
 export async function POST(req: Request) {
     const azure = getAzureConfig();
@@ -51,8 +156,34 @@ Do NOT include any explanatory text.
             ],
         });
         const text = assistantMessageText((response as any)?.choices?.[0]?.message?.content);
-        const clean = sanitizeJsonString(stripOuterMarkdownFence(text));
-        const optimized: OptimizedContent = JSON.parse(clean);
+        const parsed = tryParseOptimizedJson(text);
+
+        if (!parsed) {
+            console.warn("[optimize-content] Model JSON parse failed; returning pass-through fallback.");
+            const optimized = buildFallbackOptimized(blogPost);
+            return NextResponse.json({ optimized, parseWarning: "fallback" }, { status: 200 });
+        }
+
+        const optimized: OptimizedContent = {
+            title: String(parsed.title || blogPost.title || "Untitled Post"),
+            slug: String(parsed.slug || blogPost.slug || "untitled-post"),
+            metaDescription: String(parsed.metaDescription || blogPost.metaDescription || ""),
+            contentMarkdown: String(parsed.contentMarkdown || blogPost.contentMarkdown || ""),
+            faqs: Array.isArray(parsed.faqs) ? parsed.faqs : (blogPost.faqs || []),
+            internalLinks: Array.isArray(parsed.internalLinks) ? parsed.internalLinks : [],
+            seoScores: {
+                overall: Number(parsed.seoScores?.overall ?? 80),
+                contentStructure: Number(parsed.seoScores?.contentStructure ?? 80),
+                readability: Number(parsed.seoScores?.readability ?? 80),
+                targetKeywords: Array.isArray(parsed.seoScores?.targetKeywords) ? parsed.seoScores!.targetKeywords : [],
+                actionableInsights: Array.isArray(parsed.seoScores?.actionableInsights) ? parsed.seoScores!.actionableInsights : [],
+            },
+            plagiarismReport: (parsed.plagiarismReport as any) ?? {
+                isSafe: true,
+                overallSimilarity: 0,
+                flaggedSections: [],
+            },
+        };
 
         // Fix for Gemini over-escaping newlines into literal "\n" strings
         if (optimized.contentMarkdown) {

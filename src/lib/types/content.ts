@@ -1,5 +1,7 @@
 export interface BlogPost {
     title: string;
+    h1Title?: string;
+    h2Suggestions?: string[];
     slug: string;
     metaDescription: string;
     contentMarkdown: string;

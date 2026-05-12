@@ -15,9 +15,10 @@ import type { BusinessContext } from "@/lib/types/businessContext";
 
 export const dynamic = 'force-dynamic';
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function DashboardPage({ searchParams }: { searchParams?: Promise<{ tab?: string }> }) {
     const { userId } = await auth();
-    const { tab = "content" } = await searchParams;
+    const sp = searchParams != null ? await searchParams : {};
+    const tab = typeof sp.tab === "string" ? sp.tab : "content";
 
     if (!userId) {
         redirect("/");
@@ -31,7 +32,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         blogs = await getBlogsByUserId(userId);
     } catch (error) {
         dataLoadError = true;
-        console.error("Dashboard failed to load blogs", error);
+    console.warn("Dashboard could not load blogs", error);
     }
 
     try {
@@ -39,7 +40,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         businessContext = contexts?.[0] ?? null;
     } catch (error) {
         dataLoadError = true;
-        console.error("Dashboard failed to load business contexts", error);
+    console.warn("Dashboard could not load business contexts", error);
     }
 
     const hasBlogs = blogs.length > 0;

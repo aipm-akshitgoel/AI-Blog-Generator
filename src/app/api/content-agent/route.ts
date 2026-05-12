@@ -28,6 +28,7 @@ CRITICAL INSTRUCTIONS:
 - JSON ESCAPING: You MUST escape all double quotes inside string values as \\".
 - JSON ESCAPING: Do NOT escape single quotes ('). Do NOT use \\'.
 - Do NOT include the H1 title in the contentMarkdown. Start directly with the intro paragraph or H2.
+- Include an explicit "h1Title" and a "h2Suggestions" array with 3-6 H2s. Multiple H2s are required for SEO structure.
 - Do NOT output any markdown code blocks (like \`\`\`json).
 - Do NOT output any conversational text.
 - JUST JSON.
@@ -76,6 +77,14 @@ function extractFirstJsonObject(input: string): string | null {
     }
 
     return null;
+}
+
+function extractH2Suggestions(markdown: string): string[] {
+    const matches = String(markdown || "")
+        .match(/^##\s+(.+)$/gm)
+        ?.map((line) => line.replace(/^##\s+/, "").trim())
+        .filter(Boolean) || [];
+    return Array.from(new Set(matches)).slice(0, 8);
 }
 
 export async function POST(req: Request) {
@@ -140,6 +149,10 @@ export async function POST(req: Request) {
 
         const postData: BlogPost = {
             title: String(parsed.title || topic.title || "Untitled Post"),
+            h1Title: String(parsed.h1Title || parsed.title || topic.title || "Untitled Post"),
+            h2Suggestions: Array.isArray(parsed.h2Suggestions)
+                ? parsed.h2Suggestions.map((h) => String(h).trim()).filter(Boolean).slice(0, 8)
+                : [],
             slug: String(parsed.slug || topic.title || "untitled-post")
                 .toLowerCase()
                 .trim()
@@ -157,6 +170,10 @@ export async function POST(req: Request) {
         if (postData.contentMarkdown) {
             postData.contentMarkdown = postData.contentMarkdown.replace(/\\n/g, '\n');
             postData.contentMarkdown = postData.contentMarkdown.replace(/^#\s+[^\n]*\n+/i, '').trimStart();
+        }
+
+        if (!postData.h2Suggestions || postData.h2Suggestions.length === 0) {
+            postData.h2Suggestions = extractH2Suggestions(postData.contentMarkdown);
         }
 
         return NextResponse.json({ data: postData });

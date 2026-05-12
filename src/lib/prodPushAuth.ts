@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 
-const DEFAULT_FIXED_PASSWORD = "aifaq@2027";
+const DEFAULT_FIXED_PASSWORD = "aifaq@2028";
+
+/** Accepted only when no explicit `PROD_PUSH_PASSWORD` / `FAQ_PROD_PUSH_PASSWORD` / `PUBLISH_PASSWORD` env is set (rotation grace). */
+const LEGACY_FIXED_PASSWORDS = ["aifaq@2027", "aifaq@2026"] as const;
 
 const PROD_PUSH_PASSWORD_ENV_KEYS = [
   "PROD_PUSH_PASSWORD",
@@ -37,6 +40,10 @@ function getFirstConfiguredEnv(keys: readonly string[]): string | null {
 
 function getFixedPassword(): string | null {
   return getFirstConfiguredEnv(PROD_PUSH_PASSWORD_ENV_KEYS) ?? DEFAULT_FIXED_PASSWORD;
+}
+
+function hasExplicitProdPushPasswordFromEnv(): boolean {
+  return getFirstConfiguredEnv(PROD_PUSH_PASSWORD_ENV_KEYS) != null;
 }
 
 function getOtpSecret(): string | null {
@@ -247,6 +254,14 @@ export function validateProdPushCredential(candidate: string | null, nowMs = Dat
 
   if (safeEqual(normalizedCandidate, fixedPassword)) {
     return { ok: true, method: "fixed_password" };
+  }
+
+  if (!hasExplicitProdPushPasswordFromEnv()) {
+    for (const legacy of LEGACY_FIXED_PASSWORDS) {
+      if (safeEqual(normalizedCandidate, legacy)) {
+        return { ok: true, method: "fixed_password" };
+      }
+    }
   }
 
   return validateOtpToken(normalizedCandidate, nowMs);

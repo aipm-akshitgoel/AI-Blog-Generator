@@ -1,20 +1,43 @@
 import { NextResponse } from "next/server";
 import { faqUpstreamFetch } from "@/lib/faqUpstreamFetch";
-import { getFaqUpstreamBase } from "@/lib/faqUpstreamConfig";
+import {
+  getFaqUpstreamBaseForRequest,
+  getFaqUpstreamBaseEnvVarName,
+} from "@/lib/faqUpstreamConfig";
 import { buildFaqUpstreamHeaders } from "@/lib/faqUpstreamHeaders";
 import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
 import { FaqTenantId } from "@/lib/faqTenantConfig";
+import {
+  getProgrammeCampusUniMeta,
+  isProgrammeCampusUniId,
+  PROGRAMME_CAMPUS_UNIS,
+  programmeUniEnvKey,
+} from "@/lib/faqProgrammeCampusUnis";
+import {
+  getCampusTenantKeyForHost,
+  getPublicOrigin,
+  getRequestHost,
+  isCampusOnlyFaqHost,
+} from "@/lib/faqCampusHostTenantKey";
 import { buildDemoFaqPagePayload } from "@/lib/faqDemoData";
 import { normalizeFaqPageTypeForSpa, pickRawFaqPageType } from "@/lib/faqPageTypeForSpa";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const programmeDefaultLiveBases = Object.fromEntries(
+  PROGRAMME_CAMPUS_UNIS.map((u) => [u.id, `https://${u.wwwHost}`]),
+) as Record<(typeof PROGRAMME_CAMPUS_UNIS)[number]["id"], string>;
+
 const DEFAULT_LIVE_BASES: Record<FaqTenantId, string> = {
   kgp: "https://online.iitkgp.ac.in",
   cu: "https://www.cuonlineedu.in",
   dyp: "https://www.dypatiledu.com",
+  svu: "https://www.svuonline.in",
+  cutn: "https://www.cutnonline.in",
+  vistas: "https://www.vistasonlineedu.in",
   demo: "https://online-university.demo",
+  ...programmeDefaultLiveBases,
 };
 
 function isBlogPageType(pageType: unknown): boolean {
@@ -143,16 +166,35 @@ function resolvePageId(page: any, index: number): number {
 }
 
 function tenantLiveBaseEnv(tenantId: FaqTenantId): string | undefined {
+  if (isProgrammeCampusUniId(tenantId)) {
+    return process.env[`FAQ_${programmeUniEnvKey(tenantId)}_LIVE_BASE_URL`];
+  }
   switch (tenantId) {
     case "cu":
       return process.env.FAQ_CU_LIVE_BASE_URL;
     case "dyp":
       return process.env.FAQ_DYP_LIVE_BASE_URL;
+    case "svu":
+      return process.env.FAQ_SVU_LIVE_BASE_URL;
+    case "cutn":
+      return process.env.FAQ_CUTN_LIVE_BASE_URL;
+    case "vistas":
+      return process.env.FAQ_VISTAS_LIVE_BASE_URL;
     case "demo":
       return process.env.FAQ_DEMO_LIVE_BASE_URL;
     case "kgp":
       return process.env.FAQ_KGP_LIVE_BASE_URL;
   }
+}
+
+/** Portal v2 / some tenants send category buckets as plain objects; the FAQ SPA expects arrays (otherwise `re()` / render throws). */
+function coerceToCategoryArray(value: unknown): any[] {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).filter((x) => x != null && typeof x === "object");
+  }
+  return [];
 }
 
 /** Some portals (e.g. DYP) use `categories` or snake_case instead of `faqCategories`. */
@@ -164,11 +206,10 @@ function pickCategoryArrayFromPage(page: any): any[] {
     page?.FAQCategories,
     page?.faqCategoryList,
     page?.FaqCategories,
-  ];
-  const nonEmpty = candidates.find((a) => Array.isArray(a) && a.length > 0);
+  ].map(coerceToCategoryArray);
+  const nonEmpty = candidates.find((a) => a.length > 0);
   if (nonEmpty) return nonEmpty;
-  const first = candidates.find((a) => Array.isArray(a));
-  return first ?? [];
+  return [];
 }
 
 /** When FAQs are flat on the page, build categories the SPA can group by (`faqCategory`). */
@@ -228,6 +269,17 @@ function normalizeFaqRow(f: any, index: number): any {
 }
 
 function normalizeCategoryRow(cat: any, catIndex: number): any {
+  if (!cat || typeof cat !== "object") {
+    return {
+      categoryId: catIndex + 1,
+      categoryName: `Category ${catIndex + 1}`,
+      faqCategory: `Category ${catIndex + 1}`,
+      categoryStatus: "1",
+      order_index: catIndex + 1,
+      categoryPriority: catIndex + 1,
+      faqs: [],
+    };
+  }
   const categoryId = cat?.categoryId ?? cat?.category_id ?? cat?.id;
   const categoryName =
     cat?.categoryName ?? cat?.category_name ?? cat?.name ?? cat?.faqCategory ?? `Category ${catIndex + 1}`;
@@ -237,6 +289,9 @@ function normalizeCategoryRow(cat: any, catIndex: number): any {
   const categoryPriority = cat?.categoryPriority ?? cat?.category_priority ?? order_index;
 
   let faqRows = cat?.faqs ?? cat?.faqList ?? cat?.FAQList ?? cat?.items ?? cat?.questions;
+  if (faqRows != null && !Array.isArray(faqRows)) {
+    faqRows = typeof faqRows === "object" ? Object.values(faqRows as Record<string, unknown>) : [];
+  }
   if (!Array.isArray(faqRows) || faqRows.length === 0) {
     const hasInlineFaq =
       typeof cat?.question === "string" ||
@@ -260,20 +315,38 @@ function normalizeCategoryRow(cat: any, catIndex: number): any {
 }
 
 function normalizePageFaqCategories(page: any): any[] {
-  const picked = pickCategoryArrayFromPage(page).map((c, i) => normalizeCategoryRow(c, i));
+  const isDeactivated = (row: any) => String(row?.categoryStatus ?? row?.category_status ?? "1").trim() === "0";
+
+  const finalize = (rows: any[]) =>
+    rows
+      .filter((row) => !isDeactivated(row))
+      .map((row) => ({
+        ...row,
+        faqs: Array.isArray(row?.faqs) ? row.faqs : [],
+      }));
+  const picked = finalize(
+    pickCategoryArrayFromPage(page).map((c, i) => normalizeCategoryRow(c, i)),
+  );
   if (picked.length > 0) return picked;
-  return synthesizeCategoriesFromFlatFaqs(page).map((c, i) => normalizeCategoryRow(c, i));
+  return finalize(synthesizeCategoriesFromFlatFaqs(page).map((c, i) => normalizeCategoryRow(c, i)));
 }
 
 /**
  * SPA (`public/ai-faq`) resolves display URL with `pageUrl || liveUrl || …` before `liveBase + pageSlug`.
  * Short upstream `pageUrl` wins over our enriched `liveUrl` unless we align every slot to the canonical URL.
  */
-function pickFinalLiveUrl(page: any, tenantId: FaqTenantId, pathSlug: string, pageType: unknown): string {
+function pickFinalLiveUrl(
+  page: any,
+  tenantId: FaqTenantId,
+  pathSlug: string,
+  pageType: unknown,
+  liveBaseOverride?: string,
+): string {
   const computed = buildLiveUrlFromSlug(
     tenantId,
     pathSlug || normalizePathSegment(page?.pageSlug),
     pageType,
+    liveBaseOverride,
   );
   const upstreamKeys = ["pageUrl", "liveUrl", "pageLiveUrl", "url", "pageLink"] as const;
   let upstream: string | null = null;
@@ -301,9 +374,17 @@ function pickFinalLiveUrl(page: any, tenantId: FaqTenantId, pathSlug: string, pa
   return upstream;
 }
 
-function buildLiveUrlFromSlug(tenantId: FaqTenantId, slug: unknown, pageType?: unknown): string {
+function buildLiveUrlFromSlug(
+  tenantId: FaqTenantId,
+  slug: unknown,
+  pageType?: unknown,
+  liveBaseOverride?: string,
+): string {
+  const fromOverride = liveBaseOverride?.trim().replace(/\/+$/, "");
   const tenantEnvBase = tenantLiveBaseEnv(tenantId);
-  const base = String(tenantEnvBase || process.env.FAQ_LIVE_BASE_URL || DEFAULT_LIVE_BASES[tenantId])
+  const base = String(
+    fromOverride || tenantEnvBase || process.env.FAQ_LIVE_BASE_URL || DEFAULT_LIVE_BASES[tenantId],
+  )
     .trim()
     .replace(/\/+$/, "");
   const cleanSlug = String(slug || "")
@@ -324,12 +405,44 @@ function stableFaqPageSortKey(p: any): string {
   return `${uni}\0${pid}\0${slug}`;
 }
 
-function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId): any {
+/** Some portals nest `pages` differently; always expose `data.pages` as an array for the FAQ SPA. */
+function normalizeUpstreamFaqPageJson(json: unknown): any {
+  if (json == null || typeof json !== "object") {
+    return { success: false, error: "Invalid FAQ API response", data: { pages: [] } };
+  }
+  const root = json as Record<string, unknown>;
+  const dataObj =
+    root.data != null && typeof root.data === "object"
+      ? ({ ...(root.data as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+  const fromData = dataObj.pages;
+  const fromRoot = root.pages;
+  const nestedResult =
+    dataObj.result != null && typeof dataObj.result === "object"
+      ? ((dataObj.result as Record<string, unknown>).pages as unknown)
+      : undefined;
+  const pagesRaw =
+    (Array.isArray(fromData) ? fromData : null) ??
+    (Array.isArray(fromRoot) ? fromRoot : null) ??
+    (Array.isArray(nestedResult) ? nestedResult : null) ??
+    [];
+  const success = root.success !== false && root.success !== 0 && root.success !== "false";
+  return {
+    ...root,
+    success,
+    data: {
+      ...dataObj,
+      pages: pagesRaw,
+    },
+  };
+}
+
+function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId, liveBaseOverride?: string): any {
   const pages = payload?.data?.pages;
   if (!Array.isArray(pages)) return payload;
-  const ordered = [...pages].sort((a, b) =>
-    stableFaqPageSortKey(a).localeCompare(stableFaqPageSortKey(b)),
-  );
+  const ordered = [...pages]
+    .filter((p) => p != null && typeof p === "object")
+    .sort((a, b) => stableFaqPageSortKey(a).localeCompare(stableFaqPageSortKey(b)));
   const nextPages = ordered.map((p: any, idx: number) => {
     const pathSlug = resolveLivePathSlug(p);
     const rawPageType = pickRawFaqPageType(p);
@@ -340,7 +453,8 @@ function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId): any {
       (!existingSlug || pathSegmentCount(pathSlug) > pathSegmentCount(existingSlug))
         ? pathSlug
         : existingSlug || pathSlug;
-    const finalLiveUrl = pickFinalLiveUrl(p, tenantId, pathSlug, pageType);
+    const finalLiveUrl = pickFinalLiveUrl(p, tenantId, pathSlug, pageType, liveBaseOverride);
+    const faqCategories = normalizePageFaqCategories(p);
     return {
       ...p,
       id: resolvePageId(p, idx),
@@ -349,7 +463,9 @@ function enrichPagesWithLiveUrl(payload: any, tenantId: FaqTenantId): any {
       pageType,
       // SPA tab filter reads `apiPageType` before `type`; must match canonical pageType.
       apiPageType: pageType,
-      faqCategories: normalizePageFaqCategories(p),
+      faqCategories,
+      // Flattened list so any consumer that reads `page.faqs` always gets an array (avoids blank UI after push).
+      faqs: faqCategories.flatMap((c: any) => (Array.isArray(c?.faqs) ? c.faqs : [])),
       // Keep pageSlug aligned with resolved live path when tiered slugs add segments (DYP).
       ...(pathSlug ? { pageSlug: upgradedSlug } : {}),
       // The static FAQ admin bundle only retains `programId` for prod push payloads.
@@ -391,9 +507,34 @@ export async function GET(req: Request) {
     return NextResponse.json(buildDemoFaqPagePayload(), { status: 200 });
   }
 
+  const host = getRequestHost(req);
+  if (isCampusOnlyFaqHost(host) && tenantId !== "dyp" && !isProgrammeCampusUniId(tenantId)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "This domain uses the Campus FAQ portal. Open AI FAQ and sign in with the Campus (DYP) FAQ account.",
+      },
+      { status: 403 },
+    );
+  }
+
   const incomingUrl = new URL(req.url);
-  const upstreamUrl = new URL(`${getFaqUpstreamBase(tenantId)}/api/faq/page`);
+  const upstreamUrl = new URL(`${getFaqUpstreamBaseForRequest(tenantId, host)}/api/faq/page`);
   upstreamUrl.search = incomingUrl.search;
+
+  const campusKey = getCampusTenantKeyForHost(host);
+  let liveBaseOverride: string | undefined;
+  if (tenantId === "dyp" && (campusKey || process.env.FAQ_DYP_X_TENANT_KEY?.trim())) {
+    liveBaseOverride = getPublicOrigin(req);
+  } else if (isProgrammeCampusUniId(tenantId)) {
+    const meta = getProgrammeCampusUniMeta(tenantId);
+    liveBaseOverride = (
+      process.env[`FAQ_${programmeUniEnvKey(tenantId)}_LIVE_BASE_URL`] || `https://${meta.wwwHost}`
+    )
+      .trim()
+      .replace(/\/+$/, "");
+  }
 
   let upstreamRes: Response;
   try {
@@ -401,14 +542,25 @@ export async function GET(req: Request) {
       method: "GET",
       cache: "no-store",
       next: { revalidate: 0 },
-      headers: buildFaqUpstreamHeaders(req),
+      headers: buildFaqUpstreamHeaders(req, { faqTenantId: tenantId }),
     });
   } catch (e) {
     const aborted = e instanceof Error && e.name === "AbortError";
+    const upstreamBase = getFaqUpstreamBaseForRequest(tenantId, host);
+    const envVar = getFaqUpstreamBaseEnvVarName(tenantId);
+    const detail =
+      e instanceof Error && e.message && !aborted
+        ? ` (${e.message})`
+        : "";
+    const error = aborted
+      ? "Upstream timeout"
+      : `Upstream request failed${detail}. Target: ${upstreamBase}. If the host is wrong, set ${envVar} in .env.local. If the API needs auth, set FAQ_UPSTREAM_AUTHORIZATION. Ensure this machine can reach the portal (DNS/VPN/firewall).`;
     return NextResponse.json(
       {
         success: false,
-        error: aborted ? "Upstream timeout" : "Upstream request failed",
+        error,
+        upstreamBase,
+        upstreamEnvVar: envVar,
       },
       { status: aborted ? 504 : 502 },
     );
@@ -418,8 +570,9 @@ export async function GET(req: Request) {
   const text = await upstreamRes.text();
 
   try {
-    const json = text ? JSON.parse(text) : null;
-    const enriched = enrichPagesWithLiveUrl(json, tenantId);
+    const raw = text ? JSON.parse(text) : null;
+    const json = normalizeUpstreamFaqPageJson(raw);
+    const enriched = enrichPagesWithLiveUrl(json, tenantId, liveBaseOverride);
     return NextResponse.json(enriched, {
       status: upstreamRes.status,
       headers: { "content-type": contentType },

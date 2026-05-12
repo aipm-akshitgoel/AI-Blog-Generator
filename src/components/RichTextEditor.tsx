@@ -1,18 +1,14 @@
 "use client";
 
-import React, { useCallback, useState } from "react";
-import dynamic from "next/dynamic";
-import rehypeSanitize from "rehype-sanitize";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { BusinessContext } from "@/lib/types/businessContext";
-import "@uiw/react-md-editor/markdown-editor.css";
-import "@uiw/react-markdown-preview/markdown.css";
-
-const MDEditor = dynamic(
-    () => import("@uiw/react-md-editor"),
-    { ssr: false, loading: () => <div className="h-96 w-full animate-pulse bg-neutral-900 rounded-lg border border-neutral-800"></div> }
-);
-
-import * as commands from "@uiw/react-md-editor/commands";
+import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Link from "@tiptap/extension-link";
+import Image from "@tiptap/extension-image";
+import Placeholder from "@tiptap/extension-placeholder";
+import { marked } from "marked";
+import TurndownService from "turndown";
 
 interface RichTextEditorProps {
     value: string;
@@ -21,14 +17,17 @@ interface RichTextEditorProps {
 }
 
 /** Inline link insert modal */
-function LinkModal({ internalLinks, onInsert, onClose }: {
+function LinkModal({ internalLinks, selectedAnchorText, onInsert, onClose }: {
     internalLinks: BusinessContext["internalLinks"];
+    /** Non-empty when user opened the modal with a text selection (anchor = selection; no separate prompt). */
+    selectedAnchorText?: string;
     onInsert: (text: string, url: string) => void;
     onClose: () => void;
 }) {
     const [tab, setTab] = useState<"internal" | "custom">("internal");
     const [customUrl, setCustomUrl] = useState("https://");
     const [customText, setCustomText] = useState("");
+    const hasSelectionAnchor = Boolean(selectedAnchorText?.trim());
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" onClick={onClose}>
@@ -85,16 +84,25 @@ function LinkModal({ internalLinks, onInsert, onClose }: {
                         </div>
                     ) : tab === "custom" ? (
                         <div className="space-y-3">
-                            <div>
-                                <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5">Link Text</label>
-                                <input
-                                    type="text"
-                                    value={customText}
-                                    onChange={e => setCustomText(e.target.value)}
-                                    placeholder="Enter anchor text..."
-                                    className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500 transition-colors"
-                                />
-                            </div>
+                            {hasSelectionAnchor ? (
+                                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-1">Selected text (anchor)</p>
+                                    <p className="text-sm text-neutral-200 line-clamp-4 whitespace-pre-wrap break-words">{selectedAnchorText}</p>
+                                    <p className="text-[10px] text-neutral-500 mt-1.5">Only the URL is needed — the link wraps your selection.</p>
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5">Link text</label>
+                                    <input
+                                        type="text"
+                                        value={customText}
+                                        onChange={e => setCustomText(e.target.value)}
+                                        placeholder="Text to show for this link"
+                                        className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                                    />
+                                    <p className="text-[10px] text-neutral-500 mt-1">Or select text in the editor first, then open Link — anchor text is optional here.</p>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-xs font-bold text-neutral-400 uppercase tracking-wider mb-1.5">URL</label>
                                 <input
@@ -106,7 +114,13 @@ function LinkModal({ internalLinks, onInsert, onClose }: {
                                 />
                             </div>
                             <button
-                                onClick={() => { if (customUrl && customUrl !== "https://") onInsert(customText || customUrl, customUrl); }}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                    if (!customUrl || customUrl === "https://") return;
+                                    const anchor = hasSelectionAnchor ? (selectedAnchorText || "") : (customText.trim() || customUrl);
+                                    onInsert(anchor, customUrl);
+                                }}
                                 disabled={!customUrl || customUrl === "https://"}
                                 className="w-full py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-bold text-white transition-colors"
                             >
@@ -120,88 +134,223 @@ function LinkModal({ internalLinks, onInsert, onClose }: {
     );
 }
 
+/** Prevent toolbar clicks from stealing focus from ProseMirror (fixes list/bold/etc. on selection). */
+function toolbarPointerDown(e: React.MouseEvent) {
+    e.preventDefault();
+}
+
 export function RichTextEditor({ value, onChange, internalLinks = [] }: RichTextEditorProps) {
     const [showLinkModal, setShowLinkModal] = useState(false);
-    const [pendingApi, setPendingApi] = useState<any>(null);
-    const [pendingState, setPendingState] = useState<any>(null);
+    const [pendingSelectionText, setPendingSelectionText] = useState("");
+    const [pendingLinkRange, setPendingLinkRange] = useState<{ from: number; to: number } | null>(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const lastMarkdownFromEditorRef = useRef("");
+    const turndown = useMemo(() => new TurndownService({ headingStyle: "atx", bulletListMarker: "-" }), []);
+
+    useEffect(() => {
+        if (typeof document === "undefined") return;
+        document.body.style.overflow = isFullscreen ? "hidden" : "";
+        return () => {
+            document.body.style.overflow = "";
+        };
+    }, [isFullscreen]);
+
+    const editor = useEditor({
+        extensions: [
+            StarterKit.configure({
+                heading: { levels: [1, 2, 3] },
+            }),
+            Link.configure({
+                openOnClick: false,
+                autolink: true,
+            }),
+            Image,
+            Placeholder.configure({
+                placeholder: "Start editing your optimized content here...",
+            }),
+        ],
+        content: "",
+        immediatelyRender: false,
+        onUpdate: ({ editor: tiptapEditor }) => {
+            const html = tiptapEditor.getHTML();
+            const markdown = turndown.turndown(html);
+            lastMarkdownFromEditorRef.current = markdown;
+            onChange(markdown);
+        },
+    });
+
+    useEffect(() => {
+        if (!editor) return;
+        const nextValue = value || "";
+        if (nextValue === lastMarkdownFromEditorRef.current) return;
+        let alive = true;
+        (async () => {
+            const html = await marked.parse(nextValue || "");
+            if (!alive) return;
+            editor.commands.setContent(String(html || "<p></p>"), { emitUpdate: false });
+        })();
+        return () => {
+            alive = false;
+        };
+    }, [value, editor]);
 
     const handleInsertLink = (text: string, url: string) => {
-        if (pendingApi && pendingState) {
-            const md = pendingState.selectedText
-                ? `[${pendingState.selectedText}](${url})`
-                : `[${text}](${url})`;
-            pendingApi.replaceSelection(md);
+        if (!editor) return;
+        const range = pendingLinkRange;
+        if (range && range.from < range.to) {
+            editor.chain().focus().setTextSelection({ from: range.from, to: range.to }).setLink({ href: url }).run();
+        } else {
+            const label = (text || "").trim() || url;
+            editor.chain().focus().insertContent({
+                type: "text",
+                text: label,
+                marks: [{ type: "link", attrs: { href: url } }],
+            }).run();
         }
         setShowLinkModal(false);
-        setPendingApi(null);
-        setPendingState(null);
+        setPendingSelectionText("");
+        setPendingLinkRange(null);
     };
 
-    const smartLinksCommand = internalLinks.length > 0 ? {
-        name: "smart-links",
-        keyCommand: "smart-links",
-        buttonProps: { "aria-label": "Insert Internal Link" },
-        icon: (
-            <div className="flex items-center gap-1 text-xs font-bold px-1 text-emerald-400">
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                </svg>
-                Links
-            </div>
-        ),
-        execute: (state: any, api: any) => {
-            setPendingState(state);
-            setPendingApi(api);
-            setShowLinkModal(true);
-        },
-    } : null;
-
-    const getCommands = useCallback(() => {
-        const heading2 = { ...commands.title2, icon: <span className="font-bold text-xs px-1">H2</span> };
-        const heading3 = { ...commands.title3, icon: <span className="font-bold text-xs px-1">H3</span> };
-        const imageCommand = {
-            ...commands.image,
-            execute: (state: any, api: any) => {
-                const modifyText = state.selectedText
-                    ? `![${state.selectedText}](https://...)`
-                    : `![Enter descriptive alt text here](https://...)`;
-                api.replaceSelection(modifyText);
-            }
-        };
-
-        const defaultCommands = [
-            commands.bold, commands.italic, commands.strikethrough, commands.hr,
-            commands.divider, heading2, heading3, commands.divider,
-            commands.link, imageCommand, commands.quote, commands.code, commands.codeBlock,
-            commands.divider, commands.unorderedListCommand, commands.orderedListCommand, commands.checkedListCommand,
-        ];
-        if (smartLinksCommand) {
-            return [...defaultCommands, commands.divider, smartLinksCommand];
-        }
-        return defaultCommands;
-    }, [smartLinksCommand]);
+    const openLinkModal = () => {
+        if (!editor) return;
+        const { from, to } = editor.state.selection;
+        setPendingLinkRange(from < to ? { from, to } : null);
+        setPendingSelectionText(editor.state.doc.textBetween(from, to, " "));
+        setShowLinkModal(true);
+    };
 
     return (
         <>
             {showLinkModal && (
                 <LinkModal
                     internalLinks={internalLinks}
+                    selectedAnchorText={pendingSelectionText}
                     onInsert={handleInsertLink}
-                    onClose={() => { setShowLinkModal(false); setPendingApi(null); setPendingState(null); }}
+                    onClose={() => {
+                        setShowLinkModal(false);
+                        setPendingSelectionText("");
+                        setPendingLinkRange(null);
+                    }}
                 />
             )}
-            <div data-color-mode="dark" className="rich-text-wrapper overflow-hidden rounded-xl border border-neutral-800 focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/50 transition-all">
-                <MDEditor
-                    value={value}
-                    onChange={(val) => onChange(val || "")}
-                    previewOptions={{ rehypePlugins: [[rehypeSanitize]] }}
-                    commands={getCommands()}
-                    height={500}
-                    preview="edit"
-                    className="w-full"
-                    textareaProps={{ placeholder: "Start editing your optimized content here..." }}
-                />
+            <div
+                className={`rich-text-wrapper relative overflow-visible rounded-xl border border-neutral-800 focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/50 transition-all ${isFullscreen ? "fixed inset-4 z-[250] mt-0 bg-neutral-950 p-3" : "mt-9"}`}
+            >
+                <div className={`absolute right-2 z-30 ${isFullscreen ? "-top-10" : "-top-10"}`}>
+                    <button
+                        type="button"
+                        onMouseDown={toolbarPointerDown}
+                        onClick={() => setIsFullscreen((prev) => !prev)}
+                        className="inline-flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-bold uppercase tracking-widest text-neutral-200 hover:border-emerald-500/60 hover:text-emerald-300 transition-colors"
+                    >
+                        {isFullscreen ? "Exit Editor" : "Expand Editor"}
+                    </button>
+                </div>
+
+                <div className="flex items-center flex-wrap gap-1 border-b border-neutral-800 bg-[#060b14] px-3 py-2">
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleBold().run()} className="toolbar-btn"><b>B</b></button>
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleItalic().run()} className="toolbar-btn italic">I</button>
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleStrike().run()} className="toolbar-btn line-through">S</button>
+                    <span className="mx-1 h-4 w-px bg-neutral-700" />
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleHeading({ level: 1 }).run()} className="toolbar-btn">H1</button>
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} className="toolbar-btn">H2</button>
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleHeading({ level: 3 }).run()} className="toolbar-btn">H3</button>
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().setHorizontalRule().run()} className="toolbar-btn">HR</button>
+                    <span className="mx-1 h-4 w-px bg-neutral-700" />
+                    <button
+                        type="button"
+                        onMouseDown={toolbarPointerDown}
+                        onClick={() => openLinkModal()}
+                        className="toolbar-btn"
+                    >
+                        Link
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={toolbarPointerDown}
+                        onClick={() => {
+                            const imageUrl = window.prompt("Enter image URL");
+                            if (imageUrl) editor?.chain().focus().setImage({ src: imageUrl }).run();
+                        }}
+                        className="toolbar-btn"
+                    >
+                        Img
+                    </button>
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleBlockquote().run()} className="toolbar-btn">"</button>
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleCodeBlock().run()} className="toolbar-btn">{"</>"}</button>
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleBulletList().run()} className="toolbar-btn">• List</button>
+                    <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleOrderedList().run()} className="toolbar-btn">1. List</button>
+                    {internalLinks.length > 0 && (
+                        <button
+                            type="button"
+                            onMouseDown={toolbarPointerDown}
+                            onClick={() => openLinkModal()}
+                            className="toolbar-btn !text-emerald-400"
+                        >
+                            Links
+                        </button>
+                    )}
+                </div>
+
+                <div className="tiptap-shell min-h-[500px] bg-[#111827] p-6 text-neutral-100">
+                    <EditorContent editor={editor} />
+                </div>
             </div>
+            <style jsx global>{`
+                .toolbar-btn {
+                    border: 1px solid rgba(82, 82, 91, 0.8);
+                    background: rgba(10, 10, 10, 0.4);
+                    color: #d4d4d8;
+                    border-radius: 0.35rem;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 0.06em;
+                    padding: 0.2rem 0.45rem;
+                    text-transform: uppercase;
+                }
+                .toolbar-btn:hover {
+                    border-color: rgba(52, 211, 153, 0.6);
+                    color: #86efac;
+                }
+                .tiptap-shell .ProseMirror {
+                    min-height: 460px;
+                    outline: none;
+                    line-height: 1.65;
+                }
+                .tiptap-shell .ProseMirror h1,
+                .tiptap-shell .ProseMirror h2,
+                .tiptap-shell .ProseMirror h3 {
+                    color: #f5f5f5;
+                    font-weight: 800;
+                    margin-top: 1rem;
+                    margin-bottom: 0.6rem;
+                }
+                .tiptap-shell .ProseMirror p,
+                .tiptap-shell .ProseMirror li,
+                .tiptap-shell .ProseMirror blockquote {
+                    color: #d4d4d8;
+                }
+                .tiptap-shell .ProseMirror ul,
+                .tiptap-shell .ProseMirror ol {
+                    margin: 0.5rem 0 0.75rem 1.25rem;
+                    padding-left: 0.5rem;
+                }
+                .tiptap-shell .ProseMirror ul {
+                    list-style-type: disc;
+                }
+                .tiptap-shell .ProseMirror ol {
+                    list-style-type: decimal;
+                }
+                .tiptap-shell .ProseMirror li {
+                    margin: 0.2rem 0;
+                    display: list-item;
+                }
+                .tiptap-shell .ProseMirror a {
+                    color: #34d399;
+                    text-decoration: underline;
+                }
+            `}</style>
         </>
     );
 }

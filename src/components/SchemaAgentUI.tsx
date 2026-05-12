@@ -26,7 +26,7 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
                 const res = await fetch("/api/schema-gen", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ optimizedContent, businessContext, meta }),
+                    body: JSON.stringify({ optimizedContent, businessContext, meta, seoDefaults: businessContext.seoDefaults }),
                 });
 
                 if (!res.ok) {

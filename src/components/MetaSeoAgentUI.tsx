@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { MetaOption, MetaSeoPayload } from "@/lib/types/meta";
+import type { BusinessContext } from "@/lib/types/businessContext";
 import { HelpTip } from "./HelpTip";
 
 interface MetaSeoAgentProps {
     optimized: OptimizedContent;
+    businessContext?: BusinessContext;
     onComplete: (selectedOption: MetaOption) => void;
 }
 
@@ -21,12 +23,12 @@ const CATEGORIES = [
     "Review"
 ];
 
-export function MetaSeoAgentUI({ optimized, onComplete }: MetaSeoAgentProps) {
+export function MetaSeoAgentUI({ optimized, businessContext, onComplete }: MetaSeoAgentProps) {
     const [payload, setPayload] = useState<MetaSeoPayload | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedIdx, setSelectedIdx] = useState<number>(0);
-    const [selectedCategory, setSelectedCategory] = useState<string>(CATEGORIES[0]);
+    const [selectedCategory, setSelectedCategory] = useState<string>(businessContext?.seoDefaults?.defaultPostCategory || CATEGORIES[0]);
 
     // Manual editing states
     const [editedTitle, setEditedTitle] = useState("");
@@ -39,7 +41,7 @@ export function MetaSeoAgentUI({ optimized, onComplete }: MetaSeoAgentProps) {
             const res = await fetch("/api/meta-seo", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ optimizedContent: optimized }),
+                body: JSON.stringify({ optimizedContent: optimized, seoDefaults: businessContext?.seoDefaults }),
             });
 
             if (!res.ok) {
@@ -58,6 +60,8 @@ export function MetaSeoAgentUI({ optimized, onComplete }: MetaSeoAgentProps) {
             // Set category based on AI suggestion if it's in our valid list
             if (firstOption.category && CATEGORIES.includes(firstOption.category)) {
                 setSelectedCategory(firstOption.category);
+            } else if (businessContext?.seoDefaults?.defaultPostCategory) {
+                setSelectedCategory(businessContext.seoDefaults.defaultPostCategory);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : "An error occurred.");
@@ -68,7 +72,7 @@ export function MetaSeoAgentUI({ optimized, onComplete }: MetaSeoAgentProps) {
 
     useEffect(() => {
         fetchMetaOptions();
-    }, [optimized]);
+    }, [optimized, businessContext?.seoDefaults?.defaultPostCategory]);
 
     const handleSelectOption = (idx: number) => {
         setSelectedIdx(idx);
