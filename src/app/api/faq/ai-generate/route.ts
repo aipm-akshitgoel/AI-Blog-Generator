@@ -24,8 +24,10 @@ type PageInput = {
   title?: string;
   slug?: string;
   liveUrl?: string;
+  /** SPA bucket (`main` / `intent`); do not use for tagged prompt scope — prefer `apiPageType`. */
   type?: string;
   apiPageType?: string;
+  pageType?: string;
   faqs?: FaqRow[];
 };
 
@@ -324,7 +326,8 @@ function fillMustacheTemplate(template: string, values: Record<string, string>):
 }
 
 function getFaqPagePromptScope(page: PageInput): "main" | "intent" {
-  const mapped = normalizeFaqPageTypeForSpa(pickRawFaqPageType(page));
+  const raw = page.apiPageType ?? page.pageType ?? pickRawFaqPageType(page);
+  const mapped = normalizeFaqPageTypeForSpa(raw);
   return isFaqIntentOnlyPageType(mapped) ? "intent" : "main";
 }
 
@@ -633,9 +636,7 @@ Return ONLY a valid JSON array of FAQ objects with:
 - answer
 - priority
           `.trim();
-        const basePrompt =
-          normalizedBusinessPrompt ||
-          (hasTaggedBlocks ? "" : fallbackPrompt);
+        const basePrompt = normalizedBusinessPrompt || fallbackPrompt;
 
         const jsonOutputGuard = `
 
