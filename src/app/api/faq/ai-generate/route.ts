@@ -2,9 +2,15 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { AzureOpenAI } from "openai";
 import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
+import type { FaqTenantId } from "@/lib/faqTenantConfig";
 import { getRequestHost, isCampusOnlyFaqHost } from "@/lib/faqCampusHostTenantKey";
-import { isProgrammeCampusUniId } from "@/lib/faqProgrammeCampusUnis";
-import { isFaqIntentOnlyPageType, normalizeFaqPageTypeForSpa, pickRawFaqPageType } from "@/lib/faqPageTypeForSpa";
+import {
+  getProgrammeCampusUniMeta,
+  isProgrammeCampusUniId,
+  PROGRAMME_CAMPUS_UNIS,
+  programmeUniEnvKey,
+} from "@/lib/faqProgrammeCampusUnis";
+import { isFaqIntentOnlyPageType, normalizeFaqPageTypeForSpa } from "@/lib/faqPageTypeForSpa";
 
 export const runtime = "nodejs";
 
@@ -23,6 +29,7 @@ type PageInput = {
   id: number;
   title?: string;
   slug?: string;
+  pageSlug?: string;
   liveUrl?: string;
   /** SPA bucket (`main` / `intent`); do not use for tagged prompt scope — prefer `apiPageType`. */
   type?: string;
@@ -326,40 +333,123 @@ function fillMustacheTemplate(template: string, values: Record<string, string>):
 }
 
 function getFaqPagePromptScope(page: PageInput): "main" | "intent" {
-  const raw = page.apiPageType ?? page.pageType ?? pickRawFaqPageType(page);
+  const raw = page.apiPageType ?? page.pageType ?? page.type;
   const mapped = normalizeFaqPageTypeForSpa(raw);
   return isFaqIntentOnlyPageType(mapped) ? "intent" : "main";
 }
 
-function extractTaggedPromptBlock(
-  prompt: string,
-  scope: "main" | "intent",
-): { selectedPrompt: string; hasTaggedBlocks: boolean } {
+function parseTaggedBusinessPromptBlocks(prompt: string): {
+  hasTaggedBlocks: boolean;
+  preamble: string;
+  main: string;
+  intent: string;
+} {
   const src = String(prompt || "");
   const tagRegex = /\{\{\s*(Main Pages|Intent Pages)\s*\}\}/gi;
   const matches = [...src.matchAll(tagRegex)];
-
   if (matches.length === 0) {
-    return { selectedPrompt: src.trim(), hasTaggedBlocks: false };
+    return { hasTaggedBlocks: false, preamble: src.trim(), main: "", intent: "" };
   }
 
-  const wantedTag = scope === "main" ? "main pages" : "intent pages";
+  const preamble = src.slice(0, matches[0].index).trim();
+  const mainParts: string[] = [];
+  const intentParts: string[] = [];
+
   for (let i = 0; i < matches.length; i += 1) {
     const match = matches[i];
     const rawTag = String(match[1] || "")
       .trim()
       .toLowerCase();
-    if (rawTag !== wantedTag) continue;
-
     const start = match.index! + match[0].length;
     const end = i + 1 < matches.length ? matches[i + 1].index! : src.length;
-    return {
-      selectedPrompt: src.slice(start, end).trim(),
-      hasTaggedBlocks: true,
-    };
+    const body = src.slice(start, end).trim();
+    if (rawTag === "main pages") mainParts.push(body);
+    else if (rawTag === "intent pages") intentParts.push(body);
   }
 
-  return { selectedPrompt: "", hasTaggedBlocks: true };
+  return {
+    hasTaggedBlocks: true,
+    preamble,
+    main: mainParts.join("\n\n").trim(),
+    intent: intentParts.join("\n\n").trim(),
+  };
+}
+
+/** Picks the tagged section for this page, then the other section, then both, then preamble. */
+function resolveTaggedBusinessPrompt(prompt: string, scope: "main" | "intent"): string {
+  const parsed = parseTaggedBusinessPromptBlocks(prompt);
+  if (!parsed.hasTaggedBlocks) return prompt.trim();
+
+  const primary = scope === "main" ? parsed.main : parsed.intent;
+  const alternate = scope === "main" ? parsed.intent : parsed.main;
+  if (primary) return primary;
+  if (alternate) return alternate;
+
+  const merged = [parsed.main, parsed.intent].filter(Boolean).join("\n\n").trim();
+  if (merged) return merged;
+  return parsed.preamble;
+}
+
+function normalizePathSegmentForLiveUrl(v: unknown): string {
+  if (typeof v !== "string") return "";
+  return v.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+}
+
+const programmeDefaultLiveBases = Object.fromEntries(
+  PROGRAMME_CAMPUS_UNIS.map((u) => [u.id, `https://${u.wwwHost}`]),
+) as Record<(typeof PROGRAMME_CAMPUS_UNIS)[number]["id"], string>;
+
+const CORE_LIVE_BASES: Partial<Record<FaqTenantId, string>> = {
+  kgp: "https://online.iitkgp.ac.in",
+  cu: "https://www.cuonlineedu.in",
+  dyp: "https://www.dypatiledu.com",
+  svu: "https://www.svuonline.in",
+  cutn: "https://www.cutnonline.in",
+  vistas: "https://www.vistasonlineedu.in",
+  demo: "https://online-university.demo",
+  ...programmeDefaultLiveBases,
+};
+
+function tenantLiveBaseForAi(tenantId: FaqTenantId): string {
+  if (isProgrammeCampusUniId(tenantId)) {
+    const fromEnv = process.env[`FAQ_${programmeUniEnvKey(tenantId)}_LIVE_BASE_URL`]?.trim();
+    if (fromEnv) return fromEnv.replace(/\/+$/, "");
+    return `https://${getProgrammeCampusUniMeta(tenantId).wwwHost}`;
+  }
+  const envKey: Partial<Record<FaqTenantId, string | undefined>> = {
+    kgp: process.env.FAQ_KGP_LIVE_BASE_URL,
+    cu: process.env.FAQ_CU_LIVE_BASE_URL,
+    dyp: process.env.FAQ_DYP_LIVE_BASE_URL,
+    svu: process.env.FAQ_SVU_LIVE_BASE_URL,
+    cutn: process.env.FAQ_CUTN_LIVE_BASE_URL,
+    vistas: process.env.FAQ_VISTAS_LIVE_BASE_URL,
+    demo: process.env.FAQ_DEMO_LIVE_BASE_URL,
+  };
+  const fromEnv = envKey[tenantId]?.trim();
+  const fallback = CORE_LIVE_BASES[tenantId] ?? process.env.FAQ_LIVE_BASE_URL ?? "";
+  return (fromEnv || fallback).trim().replace(/\/+$/, "");
+}
+
+function buildLiveUrlFromSlugForAi(
+  tenantId: FaqTenantId,
+  slug: unknown,
+  pageType?: unknown,
+): string | null {
+  const base = tenantLiveBaseForAi(tenantId);
+  if (!base) return null;
+  const cleanSlug = normalizePathSegmentForLiveUrl(slug);
+  if (!cleanSlug) return base;
+  if (cleanSlug.toLowerCase() === "home") return base;
+  const pathPrefix = normalizeFaqPageTypeForSpa(pageType) === "blog" ? "/blog" : "";
+  return `${base}${pathPrefix}/${cleanSlug}`;
+}
+
+function resolveProgrammeWebsiteUrl(page: PageInput, tenantId: FaqTenantId): string | null {
+  const direct = String(page.liveUrl ?? "").trim();
+  if (/^https?:\/\//i.test(direct)) return direct;
+  const slug = normalizePathSegmentForLiveUrl(page.slug ?? page.pageSlug);
+  if (!slug) return null;
+  return buildLiveUrlFromSlugForAi(tenantId, slug, page.apiPageType ?? page.pageType ?? page.type);
 }
 
 function hasReferToOfficialFlag(value: unknown): boolean {
@@ -567,8 +657,8 @@ export async function POST(req: Request) {
           ),
         );
 
-        const programWebsiteUrl = String(page?.liveUrl || "").trim();
-        if (!programWebsiteUrl.startsWith("http")) {
+        const programWebsiteUrl = resolveProgrammeWebsiteUrl(page, tenantId);
+        if (!programWebsiteUrl) {
           results[i] = {
             pageId: page.id,
             suggestions: [],
@@ -608,13 +698,13 @@ export async function POST(req: Request) {
         });
 
         const rawBusinessPrompt = (businessPrompt || "").trim();
-        const { selectedPrompt, hasTaggedBlocks } = extractTaggedPromptBlock(
+        const scopedBusinessPrompt = resolveTaggedBusinessPrompt(
           rawBusinessPrompt,
           getFaqPagePromptScope(page),
         );
         const filledBusinessPrompt =
-          selectedPrompt.length > 0
-            ? fillMustacheTemplate(selectedPrompt, placeholderMap)
+          scopedBusinessPrompt.length > 0
+            ? fillMustacheTemplate(scopedBusinessPrompt, placeholderMap)
             : "";
         const normalizedBusinessPrompt = trimToSystemRole(filledBusinessPrompt);
 
@@ -707,28 +797,37 @@ ${jsonOutputGuard}`;
         const rawSuggestions = extractFaqArrayFromAnyJson(content) as Array<any>;
 
         const suggestedCatOrder: string[] = [];
-        const suggestions = rawSuggestions.map((s) => {
-          const category = resolveCategoryName(s?.category, existingCats, suggestedCatOrder);
+        const suggestions = rawSuggestions
+          .map((s) => {
+            const category = resolveCategoryName(s?.category, existingCats, suggestedCatOrder);
 
-          const needsOfficialReferenceFlag =
-            hasReferToOfficialFlag(s?.question) ||
-            hasReferToOfficialFlag(s?.answer) ||
-            hasReferToOfficialFlag(s?.category);
+            const needsOfficialReferenceFlag =
+              hasReferToOfficialFlag(s?.question) ||
+              hasReferToOfficialFlag(s?.answer) ||
+              hasReferToOfficialFlag(s?.category);
 
-          return {
-            category,
-            question: String(s?.question || ""),
-            answer: String(s?.answer || ""),
-            priority: Number(s?.priority ?? 0),
-            active: true,
-            isSuggestion: true,
-            id: s?.id ?? `sug-${randomUUID()}`,
-            referToOfficialPageFlag: needsOfficialReferenceFlag,
-            flags: needsOfficialReferenceFlag ? ["FLAG_REFER_TO_OFFICIAL_PAGE"] : [],
-          };
-        });
+            return {
+              category,
+              question: String(s?.question || ""),
+              answer: String(s?.answer || ""),
+              priority: Number(s?.priority ?? 0),
+              active: true,
+              isSuggestion: true,
+              id: s?.id ?? `sug-${randomUUID()}`,
+              referToOfficialPageFlag: needsOfficialReferenceFlag,
+              flags: needsOfficialReferenceFlag ? ["FLAG_REFER_TO_OFFICIAL_PAGE"] : [],
+            };
+          })
+          .filter((s) => s.question.trim().length > 0 || s.answer.trim().length > 0);
 
-        results[i] = { pageId: page.id, suggestions };
+        results[i] =
+          suggestions.length > 0
+            ? { pageId: page.id, suggestions }
+            : {
+                pageId: page.id,
+                suggestions: [],
+                error: "AI returned no FAQ suggestions for this page",
+              };
       }
     };
 
