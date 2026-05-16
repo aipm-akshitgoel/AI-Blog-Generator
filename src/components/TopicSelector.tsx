@@ -273,7 +273,7 @@ export function TopicSelector({ strategy, onSelect, businessContext, onAutoPubli
                         disabled={selectedIndices.length === 0 || editingIdx !== null}
                         className="flex-1 flex items-center justify-center gap-3 rounded-2xl bg-emerald-600 px-8 py-5 text-sm font-black text-white transition-all hover:bg-emerald-500 shadow-2xl shadow-emerald-900/40 active:scale-[0.98] uppercase tracking-widest"
                     >
-                        Start Writing
+                        Continue
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                         </svg>

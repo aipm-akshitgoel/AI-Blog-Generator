@@ -2,9 +2,23 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { TenantTileLogo } from "@/components/TenantTileLogo";
 
 const DEMO_TENANT = "demo";
+
+function GenericUniversityTileLogo() {
+  return (
+    <div
+      className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-2 ring-1 ring-slate-200/80"
+      aria-hidden
+    >
+      <svg viewBox="0 0 24 24" className="h-7 w-7 text-indigo-700" fill="none" stroke="currentColor" strokeWidth="1.6">
+        <path d="M12 3 3 8.5 12 14l9-5.5L12 3Z" strokeLinejoin="round" />
+        <path d="M6.5 10.5v4.5c0 1.2 2.5 2.5 5.5 2.5s5.5-1.3 5.5-2.5v-4.5" strokeLinecap="round" />
+        <path d="M20.5 8.5V16" strokeLinecap="round" />
+      </svg>
+    </div>
+  );
+}
 
 export default function AiFaqTestLoginPage() {
   const router = useRouter();
@@ -78,7 +92,7 @@ export default function AiFaqTestLoginPage() {
             type="button"
             className="flex min-h-[112px] items-start gap-4 rounded-2xl border border-violet-400 bg-gradient-to-br from-violet-50 to-indigo-50 px-6 py-6 text-left shadow-[0_16px_30px_-16px_rgba(124,58,237,0.55)]"
           >
-            <TenantTileLogo logoHost="www.upgrad.com" />
+            <GenericUniversityTileLogo />
             <div className="min-w-0 pt-0.5 text-3xl font-semibold leading-tight tracking-tight text-slate-900">
               Online University
             </div>

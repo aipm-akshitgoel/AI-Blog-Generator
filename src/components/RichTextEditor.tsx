@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -14,7 +14,14 @@ interface RichTextEditorProps {
     value: string;
     onChange: (val: string) => void;
     internalLinks?: BusinessContext["internalLinks"];
+    /** Fill parent flex column and scroll editor body (edit modal). */
+    fillHeight?: boolean;
 }
+
+export type RichTextEditorHandle = {
+    getSelectionText: () => string;
+    focus: () => void;
+};
 
 /** Inline link insert modal */
 function LinkModal({ internalLinks, selectedAnchorText, onInsert, onClose }: {
@@ -139,7 +146,10 @@ function toolbarPointerDown(e: React.MouseEvent) {
     e.preventDefault();
 }
 
-export function RichTextEditor({ value, onChange, internalLinks = [] }: RichTextEditorProps) {
+export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(function RichTextEditor(
+    { value, onChange, internalLinks = [], fillHeight = false },
+    ref,
+) {
     const [showLinkModal, setShowLinkModal] = useState(false);
     const [pendingSelectionText, setPendingSelectionText] = useState("");
     const [pendingLinkRange, setPendingLinkRange] = useState<{ from: number; to: number } | null>(null);
@@ -220,6 +230,16 @@ export function RichTextEditor({ value, onChange, internalLinks = [] }: RichText
         setShowLinkModal(true);
     };
 
+    useImperativeHandle(ref, () => ({
+        getSelectionText: () => {
+            if (!editor) return "";
+            const { from, to } = editor.state.selection;
+            if (from >= to) return "";
+            return editor.state.doc.textBetween(from, to, "\n\n").trim();
+        },
+        focus: () => editor?.chain().focus().run(),
+    }), [editor]);
+
     return (
         <>
             {showLinkModal && (
@@ -235,7 +255,7 @@ export function RichTextEditor({ value, onChange, internalLinks = [] }: RichText
                 />
             )}
             <div
-                className={`rich-text-wrapper relative overflow-visible rounded-xl border border-neutral-800 focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/50 transition-all ${isFullscreen ? "fixed inset-4 z-[250] mt-0 bg-neutral-950 p-3" : "mt-9"}`}
+                className={`rich-text-wrapper relative rounded-xl border border-neutral-800 focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/50 transition-all flex flex-col ${fillHeight ? "h-full min-h-0 overflow-hidden" : "overflow-visible mt-9"} ${isFullscreen ? "fixed inset-4 z-[250] mt-0 bg-neutral-950 p-3" : ""}`}
             >
                 <div className={`absolute right-2 z-30 ${isFullscreen ? "-top-10" : "-top-10"}`}>
                     <button
@@ -293,7 +313,9 @@ export function RichTextEditor({ value, onChange, internalLinks = [] }: RichText
                     )}
                 </div>
 
-                <div className="tiptap-shell min-h-[500px] bg-[#111827] p-6 text-neutral-100">
+                <div
+                    className={`tiptap-shell bg-[#111827] text-neutral-100 ${fillHeight || isFullscreen ? "flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 md:p-6 tiptap-shell--scroll" : "min-h-[500px] p-6"}`}
+                >
                     <EditorContent editor={editor} />
                 </div>
             </div>
@@ -317,6 +339,9 @@ export function RichTextEditor({ value, onChange, internalLinks = [] }: RichText
                     min-height: 460px;
                     outline: none;
                     line-height: 1.65;
+                }
+                .tiptap-shell--scroll .ProseMirror {
+                    min-height: 200px;
                 }
                 .tiptap-shell .ProseMirror h1,
                 .tiptap-shell .ProseMirror h2,
@@ -353,4 +378,4 @@ export function RichTextEditor({ value, onChange, internalLinks = [] }: RichText
             `}</style>
         </>
     );
-}
+});

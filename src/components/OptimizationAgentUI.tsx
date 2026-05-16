@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BlogPost } from "@/lib/types/content";
-import { RichTextEditor } from "./RichTextEditor";
+import { RichTextEditor, type RichTextEditorHandle } from "./RichTextEditor";
+import type { ContentEditMode } from "@/lib/types/contentEdit";
 import { HelpTip } from "./HelpTip";
 
 interface OptimizationAgentProps {
@@ -71,6 +72,12 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
     const [editedContent, setEditedContent] = useState("");
     const [liveScores, setLiveScores] = useState<any>(null);
     const latestRequestRef = useRef(0);
+    const editorRef = useRef<RichTextEditorHandle>(null);
+    const [contentPatches, setContentPatches] = useState<string[]>([]);
+    const [aiPrompt, setAiPrompt] = useState("");
+    const [aiEditMode, setAiEditMode] = useState<"modify" | "add">("modify");
+    const [isAiEditing, setIsAiEditing] = useState(false);
+    const [aiEditError, setAiEditError] = useState<string | null>(null);
 
     // Compute highlighted markdown for plagiarism safely
     const highlightedMarkdown = useMemo(() => {
@@ -179,6 +186,53 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
 
         fetchOptimization();
     }, [post]);
+
+    const handleAddContentPatch = () => {
+        const text = editorRef.current?.getSelectionText() ?? "";
+        if (!text.trim()) {
+            setAiEditError("Highlight text in the editor, then click Add selection.");
+            return;
+        }
+        setAiEditError(null);
+        setContentPatches((prev) => {
+            if (prev.some((p) => p === text)) return prev;
+            return [...prev, text].slice(0, 12);
+        });
+    };
+
+    const handleAiContentEdit = async () => {
+        if (!aiPrompt.trim()) {
+            setAiEditError("Enter a prompt describing what you want changed or added.");
+            return;
+        }
+        const mode: ContentEditMode =
+            contentPatches.length > 0 ? "patch" : aiEditMode;
+
+        setIsAiEditing(true);
+        setAiEditError(null);
+        try {
+            const res = await fetch("/api/content-edit-agent", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    contentMarkdown: editedContent,
+                    prompt: aiPrompt.trim(),
+                    mode,
+                    patches: contentPatches,
+                    title: optimizedData?.title ?? post.title,
+                }),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error ?? "AI edit failed");
+            setEditedContent(json.contentMarkdown);
+            setAiPrompt("");
+            if (mode === "patch") setContentPatches([]);
+        } catch (e) {
+            setAiEditError(e instanceof Error ? e.message : "AI edit failed");
+        } finally {
+            setIsAiEditing(false);
+        }
+    };
 
     const handleRefine = async () => {
         if (!optimizedData) return;
@@ -427,6 +481,9 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                                     type="button"
                                     onClick={() => {
                                         setEditedContent(applyHeadingStructureForEditor(optimizedData.contentMarkdown, post));
+                                        setContentPatches([]);
+                                        setAiPrompt("");
+                                        setAiEditError(null);
                                         setIsEditing(true);
                                     }}
                                     className="inline-flex items-center gap-2 rounded-lg border-2 border-amber-600 bg-amber-500/10 px-5 py-2.5 text-sm font-bold text-amber-800 transition-colors hover:bg-amber-500/20 shadow-sm"
@@ -444,8 +501,8 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
 
             {/* Inline Editor for manual corrections */}
             {isEditing && (
-                <div className="fixed inset-0 z-[100] flex flex-col bg-neutral-950 p-4 md:p-8 animate-in fade-in duration-300">
-                    <div className="mx-auto flex h-full w-full max-w-5xl flex-col rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden">
+                <div className="fixed inset-0 z-[100] flex flex-col bg-neutral-950 p-4 md:p-8 animate-in fade-in duration-300 overflow-hidden">
+                    <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden">
                         <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950/50 px-6 py-4">
                             <div className="flex items-center gap-3">
                                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
@@ -455,7 +512,7 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                                 </div>
                                 <div>
                                     <h3 className="text-lg font-black text-white uppercase tracking-tighter">Edit Content</h3>
-                                    <p className="text-xs text-neutral-400">Make manual adjustments before publishing.</p>
+                                    <p className="text-xs text-neutral-400">Edit manually or use AI to modify selections / add content.</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
@@ -479,6 +536,9 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                                 <button
                                     onClick={() => {
                                         setEditedContent(applyHeadingStructureForEditor(optimizedData.contentMarkdown, post));
+                                        setContentPatches([]);
+                                        setAiPrompt("");
+                                        setAiEditError(null);
                                         setIsEditing(false);
                                     }}
                                     className="rounded-lg px-4 py-2 text-sm font-bold text-neutral-400 transition-colors hover:text-white"
@@ -497,15 +557,43 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-hidden p-6">
-                            <RichTextEditor
-                                value={editedContent}
-                                onChange={setEditedContent}
-                                internalLinks={businessContext.internalLinks}
-                            />
+                        <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/80 px-4 py-4 md:px-6">
+                            <div className="flex flex-col lg:flex-row lg:items-start gap-4">
+                                <div className="flex-1 min-w-0 space-y-3">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-neutral-500">AI edit</span>
+                                        <button type="button" onClick={handleAddContentPatch} className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-amber-400 hover:bg-amber-500/20">+ Add selection</button>
+                                        {contentPatches.length > 0 && (
+                                            <button type="button" onClick={() => setContentPatches([])} className="text-[10px] font-bold text-neutral-500 hover:text-white uppercase">Clear ({contentPatches.length})</button>
+                                        )}
+                                    </div>
+                                    {contentPatches.length > 0 ? (
+                                        <ul className="space-y-1.5 max-h-24 overflow-y-auto custom-scrollbar">
+                                            {contentPatches.map((patch, i) => (
+                                                <li key={i} className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5">
+                                                    <span className="text-[10px] font-black text-amber-500 shrink-0">{i + 1}</span>
+                                                    <p className="text-xs text-neutral-300 line-clamp-2 flex-1">{patch}</p>
+                                                    <button type="button" onClick={() => setContentPatches((p) => p.filter((_, idx) => idx !== i))} className="text-neutral-500 hover:text-red-400">×</button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => setAiEditMode("modify")} className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase ${aiEditMode === "modify" ? "bg-emerald-600 text-white" : "bg-neutral-800 text-neutral-400"}`}>Modify all</button>
+                                            <button type="button" onClick={() => setAiEditMode("add")} className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase ${aiEditMode === "add" ? "bg-emerald-600 text-white" : "bg-neutral-800 text-neutral-400"}`}>Add content</button>
+                                        </div>
+                                    )}
+                                    <textarea value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} rows={2} placeholder="Describe what to change or add…" className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-emerald-500 resize-none" />
+                                    {aiEditError && <p className="text-xs text-amber-400">{aiEditError}</p>}
+                                </div>
+                                <button type="button" onClick={handleAiContentEdit} disabled={isAiEditing || !aiPrompt.trim()} className="shrink-0 rounded-xl bg-violet-600 px-5 py-3 text-xs font-black text-white uppercase disabled:opacity-40">{isAiEditing ? "Applying…" : "Apply AI"}</button>
+                            </div>
+                        </div>
+                        <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-4 md:p-6 pt-3">
+                            <RichTextEditor ref={editorRef} fillHeight value={editedContent} onChange={setEditedContent} internalLinks={businessContext.internalLinks} />
                         </div>
 
-                        <div className="border-t border-neutral-800 bg-neutral-950/50 px-6 py-3">
+                        <div className="border-t border-neutral-800 bg-neutral-950/50 px-6 py-3 shrink-0">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-6">
                                     <div className="flex items-center gap-2">

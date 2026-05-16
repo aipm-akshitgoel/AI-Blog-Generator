@@ -5,14 +5,16 @@ import ReactMarkdown from "react-markdown";
 import { type BusinessContext } from "@/lib/types/businessContext";
 import { type TopicOption } from "@/lib/types/strategy";
 import { type BlogPost } from "@/lib/types/content";
+import type { TopicBrief } from "@/lib/types/topicBrief";
 
 interface ContentAgentProps {
     businessContext: BusinessContext;
     topic: TopicOption;
+    topicBrief?: TopicBrief;
     onComplete: (post: BlogPost) => void;
 }
 
-export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAgentProps) {
+export function ContentAgentUI({ businessContext, topic, topicBrief, onComplete }: ContentAgentProps) {
     const [post, setPost] = useState<BlogPost | null>(null);
     const [loading, setLoading] = useState(true);
     const [loadingStep, setLoadingStep] = useState(0);
@@ -37,7 +39,7 @@ export function ContentAgentUI({ businessContext, topic, onComplete }: ContentAg
             const res = await fetch("/api/content-agent", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ businessContext, topic }),
+                body: JSON.stringify({ businessContext, topic, topicBrief }),
             });
 
             const json = await res.json();

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { type BusinessContext } from "@/lib/types/businessContext";
 import { type TopicOption } from "@/lib/types/strategy";
 import { type BlogPost } from "@/lib/types/content";
+import type { TopicBrief } from "@/lib/types/topicBrief";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
@@ -9,9 +10,10 @@ const SYSTEM_PROMPT = `
 You are an elite, master-level copywriter specializing in local SEO for the beauty and wellness industry (salons, spas, barbershops).
 You write exceptional, engaging, and highly structured blog posts.
 
-Your goal is to generate a complete, publication-ready blog post based on two inputs provided by the user:
+Your goal is to generate a complete, publication-ready blog post based on inputs provided by the user:
 1. "BusinessContext" (Name, City, Audience, Positioning, Services)
 2. "TopicOption" (The specific title and description to write about)
+3. Optional "TopicBrief" — the author's notes and supplementary reference files. When present, treat these as authoritative direction: weave in their angles, opinions, and facts; do not contradict stated data.
 
 REQUIREMENTS:
 1. **Local Relevance**: Naturally weave in the city/region name and connect it to the target audience.
@@ -97,7 +99,11 @@ export async function POST(req: Request) {
     }
 
     try {
-        const { businessContext, topic }: { businessContext: BusinessContext; topic: TopicOption } = await req.json();
+        const { businessContext, topic, topicBrief }: {
+            businessContext: BusinessContext;
+            topic: TopicOption;
+            topicBrief?: TopicBrief;
+        } = await req.json();
 
         if (!businessContext || !topic) {
             return NextResponse.json(
@@ -108,7 +114,22 @@ export async function POST(req: Request) {
 
         const client = createAzureClient(azure);
 
-        const userPrompt = `Generate the blog post JSON for the following:\n\n### Business Context\n${JSON.stringify(businessContext, null, 2)}\n\n### Approved Topic\n${JSON.stringify(topic, null, 2)}`;
+        let userPrompt = `Generate the blog post JSON for the following:\n\n### Business Context\n${JSON.stringify(businessContext, null, 2)}\n\n### Approved Topic\n${JSON.stringify(topic, null, 2)}`;
+
+        const notes = topicBrief?.userNotes?.trim();
+        const files = topicBrief?.supplementaryFiles?.filter((f) => f.content?.trim()) ?? [];
+        if (notes || files.length > 0) {
+            userPrompt += "\n\n### Author Brief (MUST honor — infuse these thoughts and facts throughout the post)";
+            if (notes) {
+                userPrompt += `\n\nUser notes and direction:\n${notes}`;
+            }
+            if (files.length > 0) {
+                userPrompt += "\n\nSupplementary reference material:";
+                for (const f of files) {
+                    userPrompt += `\n\n--- ${f.name} ---\n${f.content.trim()}`;
+                }
+            }
+        }
 
         const response = await client.chat.completions.create({
             model: azure.deployment,

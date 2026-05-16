@@ -12,6 +12,9 @@ import { CtaAgentUI } from "@/components/CtaAgentUI";
 import { ImageAgentUI } from "@/components/ImageAgentUI";
 import { PublishingAgentUI } from "@/components/PublishingAgentUI";
 import { TopicSelector } from "@/components/TopicSelector";
+import { TopicBriefPanel } from "@/components/TopicBriefPanel";
+import type { TopicBrief } from "@/lib/types/topicBrief";
+import { EMPTY_TOPIC_BRIEF } from "@/lib/types/topicBrief";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import type { TopicOption, StrategySession } from "@/lib/types/strategy";
 import type { BlogPost } from "@/lib/types/content";
@@ -42,6 +45,8 @@ function SetupPageInner() {
   // ── Blog creation states ──────────────────────────────────────────────────
   const [creationMode, setCreationMode] = useState<"batch" | "manual" | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<TopicOption | null>(null);
+  const [topicBrief, setTopicBrief] = useState<TopicBrief | null>(null);
+  const [briefConfirmed, setBriefConfirmed] = useState(false);
   const [generatedPost, setGeneratedPost] = useState<BlogPost | null>(null);
   const [optimizedPost, setOptimizedPost] = useState<OptimizedContent | null>(null);
   const [selectedMeta, setSelectedMeta] = useState<MetaOption | null>(null);
@@ -55,7 +60,13 @@ function SetupPageInner() {
     if (typeof window !== "undefined") {
       window.scrollTo(0, 0);
     }
-  }, [selectedTopic, generatedPost, optimizedPost, selectedMeta, generatedSchema, ctaData, generatedImages, publishData, creationMode]);
+  }, [selectedTopic, briefConfirmed, generatedPost, optimizedPost, selectedMeta, generatedSchema, ctaData, generatedImages, publishData, creationMode]);
+
+  const handleTopicSelect = (topic: TopicOption) => {
+    setSelectedTopic(topic);
+    setTopicBrief(null);
+    setBriefConfirmed(false);
+  };
 
   // Ensure top scroll on initial load
   useEffect(() => {
@@ -493,7 +504,7 @@ function SetupPageInner() {
               </div>
               <TopicSelector
                 strategy={strategySession}
-                onSelect={setSelectedTopic}
+                onSelect={handleTopicSelect}
                 businessContext={context}
                 onAutoPublish={handleAutoPublish}
                 mode={creationMode}
@@ -501,12 +512,35 @@ function SetupPageInner() {
             </div>
           )}
 
-          {/* Step 2+: Pipeline */}
-          {selectedTopic && (
+          {/* Step 2: Optional author brief (manual flow) */}
+          {selectedTopic && creationMode === "manual" && !briefConfirmed && !generatedPost && (
+            <div className="animate-in slide-in-from-top-4 duration-500">
+              <TopicBriefPanel
+                topic={selectedTopic}
+                onConfirm={(brief) => {
+                  setTopicBrief(brief);
+                  setBriefConfirmed(true);
+                }}
+                onBack={() => {
+                  setSelectedTopic(null);
+                  setTopicBrief(null);
+                  setBriefConfirmed(false);
+                }}
+              />
+            </div>
+          )}
+
+          {/* Step 3+: Pipeline */}
+          {selectedTopic && (creationMode !== "manual" || briefConfirmed) && (
             <>
               {!generatedPost && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <ContentAgentUI businessContext={context} topic={selectedTopic} onComplete={setGeneratedPost} />
+                  <ContentAgentUI
+                    businessContext={context}
+                    topic={selectedTopic}
+                    topicBrief={topicBrief ?? EMPTY_TOPIC_BRIEF}
+                    onComplete={setGeneratedPost}
+                  />
                 </div>
               )}
               {generatedPost && !optimizedPost && (
@@ -566,6 +600,8 @@ function SetupPageInner() {
                       onClick={() => {
                         setPublishData(null);
                         setSelectedTopic(null);
+                        setTopicBrief(null);
+                        setBriefConfirmed(false);
                         setGeneratedPost(null);
                         setOptimizedPost(null);
                         setSelectedMeta(null);

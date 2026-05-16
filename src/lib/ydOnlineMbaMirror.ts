@@ -50,17 +50,25 @@ export async function tryReadLocalHtml(): Promise<ResolvedMirror | null> {
   return null;
 }
 
-export function buildFallbackIframeHtml(): string {
+export function buildFallbackMirrorHtml(): string {
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Online MBA | YourDegree (mirror)</title>
-  <style>html,body{margin:0;height:100%;overflow:hidden}</style>
+  <title>Online MBA | YourDegree</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f7f9; color: #1a1a1a; }
+    main { max-width: 32rem; padding: 2rem; text-align: center; }
+    a { color: #0b57d0; }
+  </style>
 </head>
 <body>
-  <iframe title="YourDegree Online MBA" src="${YD_ONLINE_MBA_FALLBACK_URL}" style="width:100%;height:100%;border:0" referrerpolicy="no-referrer-when-downgrade"></iframe>
+  <main>
+    <h1>Online MBA</h1>
+    <p>YourDegree blocks this page from loading inside an embedded frame. Open the live page in a new tab, or add a local mirror under <code>public/yd-online-mba-mirror/</code>.</p>
+    <p><a href="${YD_ONLINE_MBA_FALLBACK_URL}" target="_blank" rel="noopener noreferrer">Open ${YD_ONLINE_MBA_FALLBACK_URL}</a></p>
+  </main>
 </body>
 </html>`;
 }

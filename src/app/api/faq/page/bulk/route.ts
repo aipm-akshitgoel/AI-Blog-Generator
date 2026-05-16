@@ -5,11 +5,7 @@ import { buildFaqUpstreamHeaders } from "@/lib/faqUpstreamHeaders";
 import { getTenantIdFromRequest } from "@/lib/faqTenantAuth";
 import { getRequestHost, isCampusOnlyFaqHost } from "@/lib/faqCampusHostTenantKey";
 import { isProgrammeCampusUniId } from "@/lib/faqProgrammeCampusUnis";
-import {
-  extractProdPushCredential,
-  stripProdPushCredential,
-  validateProdPushCredential,
-} from "@/lib/prodPushAuth";
+import { stripProdPushCredential } from "@/lib/prodPushAuth";
 import { isFaqIntentOnlyPageType } from "@/lib/faqPageTypeForSpa";
 import type { FaqTenantId } from "@/lib/faqTenantConfig";
 
@@ -502,13 +498,6 @@ async function normalizeDypBulkBody(body: any, req: Request, upstreamBase: strin
   return next;
 }
 
-function requiresProdPushPassword(body: any): boolean {
-  const pageType = String(body?.pageType || "").trim().toLowerCase();
-  // Legacy bodies may still send `intent`; only blog/auxiliary skip prod-push password.
-  if (pageType === "intent" || isFaqIntentOnlyPageType(pageType)) return false;
-  return true;
-}
-
 function normalizeBulkProdPushBody(body: any): any {
   if (!body || typeof body !== "object") return body;
 
@@ -744,21 +733,6 @@ export async function POST(req: Request) {
       message: "Demo mode: changes accepted in simulation.",
       data: body,
     });
-  }
-
-  if (requiresProdPushPassword(body)) {
-    const credential = extractProdPushCredential(body);
-    const authResult = validateProdPushCredential(credential);
-
-    if (!authResult.ok) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: authResult.error,
-        },
-        { status: authResult.status },
-      );
-    }
   }
 
   const normalizedBody = normalizeBulkProdPushBody(stripProdPushCredential(body));
