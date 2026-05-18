@@ -192,14 +192,6 @@ export function TopicBriefPanel({ topic, onConfirm, onBack }: TopicBriefPanelPro
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                     </svg>
                 </button>
-                <button
-                    type="button"
-                    onClick={() => onConfirm({ userNotes: "", supplementaryFiles: [] })}
-                    disabled={isProcessingFiles}
-                    className="sm:w-auto w-full flex items-center justify-center rounded-2xl border border-neutral-700 bg-neutral-900 px-8 py-5 text-sm font-black text-neutral-300 transition-all hover:border-neutral-500 hover:text-white hover:bg-neutral-800 active:scale-[0.98] uppercase tracking-widest disabled:opacity-50"
-                >
-                    Skip
-                </button>
             </div>
         </div>
     );
