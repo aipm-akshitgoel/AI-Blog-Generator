@@ -1,5 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import ReactMarkdown from "react-markdown";
+import { useState, useEffect, useRef } from "react";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BlogPost } from "@/lib/types/content";
 import { RichTextEditor, type RichTextEditorHandle } from "./RichTextEditor";
@@ -78,21 +77,6 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
     const [aiEditMode, setAiEditMode] = useState<"modify" | "add">("modify");
     const [isAiEditing, setIsAiEditing] = useState(false);
     const [aiEditError, setAiEditError] = useState<string | null>(null);
-
-    // Compute highlighted markdown for plagiarism safely
-    const highlightedMarkdown = useMemo(() => {
-        if (!optimizedData) return "";
-        let md = isEditing ? editedContent : optimizedData.contentMarkdown;
-
-        if (optimizedData.plagiarismReport && !optimizedData.plagiarismReport.isSafe) {
-            optimizedData.plagiarismReport.flaggedSections?.forEach((sec: any) => {
-                if (sec.textSegment && md.includes(sec.textSegment)) {
-                    md = md.replace(sec.textSegment, `**🚩 ${sec.textSegment}**`);
-                }
-            });
-        }
-        return md;
-    }, [isEditing, editedContent, optimizedData]);
 
     // Initialize liveScores when optimizedData loads
     useEffect(() => {
@@ -615,31 +599,6 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Optimized Article Body */}
-            {!isEditing && (
-                <div className="relative mb-8 rounded-lg border border-neutral-800 bg-neutral-950 overflow-hidden">
-                    <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-neutral-950 to-transparent z-10 pointer-events-none" />
-                    <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-neutral-950 to-transparent z-10 pointer-events-none" />
-                    <div className="p-6 md:p-8 overflow-y-auto max-h-[500px] custom-scrollbar relative z-0">
-                        <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-emerald-400">
-                            <ReactMarkdown
-                                components={{
-                                    strong: ({ node, children, ...props }) => {
-                                        const text = String(children);
-                                        if (text.startsWith("🚩")) {
-                                            return <strong className="bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded border border-red-500/30" {...props}>{children}</strong>;
-                                        }
-                                        return <strong {...props}>{children}</strong>;
-                                    }
-                                }}
-                            >
-                                {highlightedMarkdown}
-                            </ReactMarkdown>
-                        </article>
                     </div>
                 </div>
             )}
