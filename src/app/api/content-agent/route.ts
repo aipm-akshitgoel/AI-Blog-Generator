@@ -4,37 +4,37 @@ import { type TopicOption } from "@/lib/types/strategy";
 import { type BlogPost } from "@/lib/types/content";
 import type { TopicBrief } from "@/lib/types/topicBrief";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
+import { extractRouteError } from "@/lib/formatApiError";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
-const SYSTEM_PROMPT = `
-You are an elite, master-level copywriter specializing in local SEO for the beauty and wellness industry (salons, spas, barbershops).
-You write exceptional, engaging, and highly structured blog posts.
+export const maxDuration = 120;
 
-Your goal is to generate a complete, publication-ready blog post based on inputs provided by the user:
-1. "BusinessContext" (Name, City, Audience, Positioning, Services)
-2. "TopicOption" (The specific title and description to write about)
-3. Optional "TopicBrief" — the author's notes and supplementary reference files. When present, treat these as authoritative direction: weave in their angles, opinions, and facts; do not contradict stated data.
+const MAX_BRIEF_CHARS = 24_000;
+
+function buildSystemPrompt(businessContext: BusinessContext): string {
+    const industry = businessContext.businessType || "the client's industry";
+    const audience = businessContext.targetAudience || "their target audience";
+    return `
+You are an elite SEO copywriter. Write for ${businessContext.businessName || "the business"} (${industry}), targeting ${audience}.
+Match the positioning and tone in BusinessContext exactly.
+
+Generate a complete, publication-ready blog post from:
+1. BusinessContext (name, location, audience, positioning, services)
+2. TopicOption (title and description)
+3. Optional TopicBrief — author notes and reference files. When present, treat as authoritative: weave in their angles and facts; do not contradict stated data.
 
 REQUIREMENTS:
-1. **Local Relevance**: Naturally weave in the city/region name and connect it to the target audience.
-2. **Structure**: Use proper H2 and H3 markdown headers. Use short paragraphs and bullet points where appropriate.
-3. **Tone**: Use the exact "Positioning" tone provided in the Business Context.
-4. **FAQs**: Include exactly 3 Frequently Asked Questions (with answers) at the end of the post formatted as H2/H3.
-5. **No Fluff**: Make it punchy, practical, and highly optimized for read time.
-6. **ZeroGPT / Humanization**: The text must read as 100% human-written. Do NOT use em-dashes (—) under any circumstances. Avoid common AI fluff phrases like "delve into", "elevate", "in today's landscape", "moreover", or "in conclusion". Use varied sentence lengths.
+1. **Relevance**: Connect to location and audience when provided in BusinessContext.
+2. **Structure**: H2 and H3 markdown headers, short paragraphs, bullets where useful.
+3. **FAQs**: Exactly 3 FAQs with answers at the end (H2/H3).
+4. **Human voice**: No em-dashes (—). Avoid "delve into", "elevate", "in today's landscape", "moreover", "in conclusion".
 
-CRITICAL INSTRUCTIONS:
-- You must ONLY output a valid JSON object matching the schema below. 
-- The contentMarkdown field must contain the full markdown string of the post.
-- JSON ESCAPING: You MUST escape all newlines within string values as \\n. NEVER output raw, unescaped newlines or tabs inside the JSON string values.
-- JSON ESCAPING: You MUST escape all double quotes inside string values as \\".
-- JSON ESCAPING: Do NOT escape single quotes ('). Do NOT use \\'.
-- Do NOT include the H1 title in the contentMarkdown. Start directly with the intro paragraph or H2.
-- Include an explicit "h1Title" and a "h2Suggestions" array with 3-6 H2s. Multiple H2s are required for SEO structure.
-- Do NOT output any markdown code blocks (like \`\`\`json).
-- Do NOT output any conversational text.
-- JUST JSON.
+OUTPUT: ONLY valid JSON with keys: title, h1Title, h2Suggestions (array 3-6 strings), slug, metaDescription, contentMarkdown, faqs (array of {question, answer}).
+- Escape newlines in strings as \\n and double quotes as \\".
+- Do NOT include H1 in contentMarkdown; start with intro or H2.
+- No markdown code fences or conversational text.
 `;
+}
 
 function extractFirstJsonObject(input: string): string | null {
     const text = String(input || "");
@@ -121,21 +121,26 @@ export async function POST(req: Request) {
         if (notes || files.length > 0) {
             userPrompt += "\n\n### Author Brief (MUST honor — infuse these thoughts and facts throughout the post)";
             if (notes) {
-                userPrompt += `\n\nUser notes and direction:\n${notes}`;
+                userPrompt += `\n\nUser notes and direction:\n${notes.slice(0, MAX_BRIEF_CHARS)}`;
             }
             if (files.length > 0) {
                 userPrompt += "\n\nSupplementary reference material:";
+                let briefUsed = notes?.length ?? 0;
                 for (const f of files) {
-                    userPrompt += `\n\n--- ${f.name} ---\n${f.content.trim()}`;
+                    const room = MAX_BRIEF_CHARS - briefUsed;
+                    if (room <= 0) break;
+                    const chunk = f.content.trim().slice(0, room);
+                    briefUsed += chunk.length;
+                    userPrompt += `\n\n--- ${f.name} ---\n${chunk}`;
                 }
             }
         }
 
         const response = await client.chat.completions.create({
             model: azure.deployment,
-            max_completion_tokens: 5000,
+            max_completion_tokens: 8000,
             messages: [
-                { role: "system", content: SYSTEM_PROMPT },
+                { role: "system", content: buildSystemPrompt(businessContext) },
                 { role: "user", content: userPrompt },
             ],
         });
@@ -199,13 +204,16 @@ export async function POST(req: Request) {
 
         return NextResponse.json({ data: postData });
     } catch (err) {
-        const message = err instanceof Error ? err.message : "Content Agent generation failed";
+        const message = extractRouteError(err, "Content Agent generation failed");
         console.error("Content Agent Error:", err);
-        const hint = message.toLowerCase().includes("rate") || message.toLowerCase().includes("429")
+        const lower = message.toLowerCase();
+        const hint = lower.includes("rate") || lower.includes("429")
             ? " Rate limit hit — wait 1 min and retry."
-            : message.toLowerCase().includes("json") || message.toLowerCase().includes("parse")
+            : lower.includes("json") || lower.includes("parse")
                 ? " LLM returned invalid JSON — retry."
-                : "";
+                : lower.includes("context") || lower.includes("token") || lower.includes("length")
+                    ? " Prompt may be too long — shorten your brief or remove large files."
+                    : "";
         return NextResponse.json({ error: message + hint }, { status: 500 });
     }
 }

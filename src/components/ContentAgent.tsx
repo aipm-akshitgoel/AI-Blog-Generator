@@ -6,6 +6,7 @@ import { type BusinessContext } from "@/lib/types/businessContext";
 import { type TopicOption } from "@/lib/types/strategy";
 import { type BlogPost } from "@/lib/types/content";
 import type { TopicBrief } from "@/lib/types/topicBrief";
+import { formatApiError } from "@/lib/formatApiError";
 
 interface ContentAgentProps {
     businessContext: BusinessContext;
@@ -42,12 +43,17 @@ export function ContentAgentUI({ businessContext, topic, topicBrief, onComplete 
                 body: JSON.stringify({ businessContext, topic, topicBrief }),
             });
 
-            const json = await res.json();
-            if (!res.ok) throw new Error(json.error ?? "Failed to generate content");
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(formatApiError(json?.error, `Generation failed (${res.status})`));
+            }
+            if (!json?.data) {
+                throw new Error(formatApiError(json?.error, "No content returned from the server. Please retry."));
+            }
 
             setPost(json.data);
         } catch (e) {
-            setError(e instanceof Error ? e.message : "Unknown error occurred");
+            setError(formatApiError(e, "Unknown error occurred"));
         } finally {
             setLoading(false);
             setLoadingStep(0);
