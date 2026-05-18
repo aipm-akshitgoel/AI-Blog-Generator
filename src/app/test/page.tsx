@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { BusinessContextSetup } from "@/components/BusinessContextSetup";
 import { StrategyAgentUI } from "@/components/StrategyAgent";
@@ -13,6 +13,8 @@ import { ImageAgentUI } from "@/components/ImageAgentUI";
 import { PublishingAgentUI } from "@/components/PublishingAgentUI";
 import { TopicSelector } from "@/components/TopicSelector";
 import { TopicBriefPanel } from "@/components/TopicBriefPanel";
+import { ManualTopicEntry } from "@/components/ManualTopicEntry";
+import { buildMinimalBusinessContext, hasTopicSuggestions } from "@/lib/strategyInputs";
 import type { TopicBrief } from "@/lib/types/topicBrief";
 import { EMPTY_TOPIC_BRIEF } from "@/lib/types/topicBrief";
 import type { BusinessContext } from "@/lib/types/businessContext";
@@ -54,6 +56,12 @@ function SetupPageInner() {
   const [ctaData, setCtaData] = useState<CTAData | null>(null);
   const [generatedImages, setGeneratedImages] = useState<ImageMetadata | null>(null);
   const [publishData, setPublishData] = useState<PublishPayload | null>(null);
+
+  const effectiveContext = useMemo(
+    () => context ?? buildMinimalBusinessContext({ platform: "blog" }),
+    [context],
+  );
+  const hasStrategyTopics = hasTopicSuggestions(strategySession);
 
   // Scroll to top when advancing to a new step
   useEffect(() => {
@@ -487,13 +495,33 @@ function SetupPageInner() {
                   ← Back to Selection
                 </button>
               </div>
-              <TopicSelector
-                strategy={strategySession}
-                onSelect={handleTopicSelect}
-                businessContext={context}
-                onAutoPublish={handleAutoPublish}
-                mode={creationMode}
-              />
+              {hasStrategyTopics && strategySession ? (
+                <TopicSelector
+                  strategy={strategySession}
+                  onSelect={handleTopicSelect}
+                  businessContext={effectiveContext}
+                  onAutoPublish={handleAutoPublish}
+                  mode={creationMode}
+                />
+              ) : creationMode === "manual" ? (
+                <ManualTopicEntry
+                  onSelect={handleTopicSelect}
+                  onBack={() => setCreationMode(null)}
+                />
+              ) : (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6 text-center">
+                  <p className="text-sm text-neutral-300 mb-4">
+                    Auto-Pilot Batch needs a saved SEO strategy with topic suggestions.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setCreationMode("manual")}
+                    className="rounded-xl bg-emerald-600 px-6 py-3 text-xs font-black text-white uppercase tracking-widest hover:bg-emerald-500"
+                  >
+                    Use Focus Review with your topic
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -521,7 +549,7 @@ function SetupPageInner() {
               {!generatedPost && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
                   <ContentAgentUI
-                    businessContext={context}
+                    businessContext={effectiveContext}
                     topic={selectedTopic}
                     topicBrief={topicBrief ?? EMPTY_TOPIC_BRIEF}
                     onComplete={setGeneratedPost}
@@ -530,7 +558,7 @@ function SetupPageInner() {
               )}
               {generatedPost && !optimizedPost && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <OptimizationAgentUI post={generatedPost} businessContext={context!} onComplete={setOptimizedPost} />
+                  <OptimizationAgentUI post={generatedPost} businessContext={effectiveContext} onComplete={setOptimizedPost} />
                 </div>
               )}
               {optimizedPost && !selectedMeta && (
@@ -540,23 +568,23 @@ function SetupPageInner() {
               )}
               {selectedMeta && !generatedSchema && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <SchemaAgentUI optimizedContent={optimizedPost!} businessContext={context!} meta={selectedMeta} onComplete={setGeneratedSchema} />
+                  <SchemaAgentUI optimizedContent={optimizedPost!} businessContext={effectiveContext} meta={selectedMeta} onComplete={setGeneratedSchema} />
                 </div>
               )}
               {generatedSchema && !ctaData && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <CtaAgentUI optimizedContent={optimizedPost!} businessContext={context!} onComplete={(fin, cta) => { setOptimizedPost(fin); setCtaData(cta); }} />
+                  <CtaAgentUI optimizedContent={optimizedPost!} businessContext={effectiveContext} onComplete={(fin, cta) => { setOptimizedPost(fin); setCtaData(cta); }} />
                 </div>
               )}
               {ctaData && !generatedImages && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <ImageAgentUI optimizedContent={optimizedPost!} businessContext={context!} onComplete={setGeneratedImages} />
+                  <ImageAgentUI optimizedContent={optimizedPost!} businessContext={effectiveContext} onComplete={setGeneratedImages} />
                 </div>
               )}
               {generatedImages && !publishData && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
                   <PublishingAgentUI
-                    optimizedContent={optimizedPost!} businessContext={context!}
+                    optimizedContent={optimizedPost!} businessContext={effectiveContext}
                     images={generatedImages} cta={ctaData!} meta={selectedMeta!}
                     schema={generatedSchema!} forcedTemplate="test-template" onComplete={setPublishData}
                   />
