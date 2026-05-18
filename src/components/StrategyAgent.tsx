@@ -2,25 +2,34 @@
 
 import { useState } from "react";
 import { type BusinessContext } from "@/lib/types/businessContext";
-import { type KeywordStrategy, type TopicOption, type StrategySession } from "@/lib/types/strategy";
-
-import Link from "next/link";
+import { type StrategySession } from "@/lib/types/strategy";
+import { canGenerateStrategy, mergeContextWithReference, normalizeDomain } from "@/lib/strategyInputs";
+import { formatApiError } from "@/lib/formatApiError";
 
 interface StrategyAgentProps {
-    businessContext: BusinessContext;
+    businessContext: BusinessContext | null;
     onApprove: (session: StrategySession) => void;
     onModify: () => void;
+    onSkip?: () => void;
     platform?: "blog" | "linkedin";
 }
 
-export function StrategyAgentUI({ businessContext, onApprove, onModify, platform = "blog" }: StrategyAgentProps) {
+export function StrategyAgentUI({ businessContext, onApprove, onModify, onSkip, platform = "blog" }: StrategyAgentProps) {
     const [strategy, setStrategy] = useState<StrategySession | null>(null);
     const [loading, setLoading] = useState(false);
     const [loadingStep, setLoadingStep] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [customPrompt, setCustomPrompt] = useState("");
+    const [referenceDomain, setReferenceDomain] = useState(businessContext?.domain || "");
+
+    const readyToGenerate = canGenerateStrategy(businessContext, referenceDomain);
 
     const generateStrategy = async () => {
+        if (!readyToGenerate) {
+            setError("Add your website domain below, or complete your business profile first.");
+            return;
+        }
+
         setLoading(true);
         setError(null);
         setLoadingStep(1);
@@ -34,18 +43,24 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, platform
         setTimeout(() => setLoadingStep(3), 3500);
 
         try {
+            const ctxForStrategy = mergeContextWithReference(businessContext, referenceDomain);
             const res = await fetch("/api/strategy-agent", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ businessContext, customPrompt, platform }),
+                body: JSON.stringify({
+                    businessContext: ctxForStrategy,
+                    referenceDomain: normalizeDomain(referenceDomain),
+                    customPrompt,
+                    platform,
+                }),
             });
 
-            const json = await res.json();
-            if (!res.ok) throw new Error(json.error ?? "Failed to generate strategy");
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(formatApiError(json?.error, "Failed to generate strategy"));
 
             setStrategy(json.data);
         } catch (e) {
-            setError(e instanceof Error ? e.message : "Unknown error occurred");
+            setError(formatApiError(e, "Unknown error occurred"));
         } finally {
             setLoading(false);
             setLoadingStep(0);
@@ -72,9 +87,42 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, platform
                 <p className="mb-6 text-sm text-neutral-400 leading-relaxed">
                     {platform === 'linkedin'
                         ? "Connecting to LinkedIn's content graph to identify trending industry topics and viral patterns for your audience."
-                        : "Using Google Ads Keyword Planner and local SERP analysis to build a data-backed SEO roadmap for your blog."
+                        : "Optional — generates topic ideas from your business profile or a reference website. Skip if you prefer to enter topics manually when writing."
                     }
                 </p>
+
+                {!readyToGenerate && (
+                    <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+                        <p className="text-xs text-amber-200/90 mb-3 leading-relaxed">
+                            Add a reference domain below, or complete your business profile first.
+                        </p>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-amber-500 mb-2">
+                            Reference website domain
+                        </label>
+                        <input
+                            type="text"
+                            value={referenceDomain}
+                            onChange={(e) => setReferenceDomain(e.target.value)}
+                            placeholder="yourdegree.com"
+                            className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                        />
+                    </div>
+                )}
+
+                {readyToGenerate && businessContext?.domain && !referenceDomain && (
+                    <div className="mb-4">
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
+                            Reference domain (optional override)
+                        </label>
+                        <input
+                            type="text"
+                            value={referenceDomain}
+                            onChange={(e) => setReferenceDomain(e.target.value)}
+                            placeholder={businessContext.domain}
+                            className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
+                        />
+                    </div>
+                )}
 
                 <div className="mb-6 relative group">
                     <label className={`text-xs font-black uppercase tracking-widest ${platform === 'linkedin' ? 'text-blue-500' : 'text-emerald-500'} mb-2 flex items-center gap-2`}>
@@ -104,12 +152,25 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, platform
                     </div>
                 )}
 
-                <button
-                    onClick={generateStrategy}
-                    className={`w-full rounded-lg px-4 py-3 font-bold uppercase tracking-widest text-xs text-white transition-all shadow-lg ${platform === 'linkedin' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20' : 'bg-emerald-600 hover:bg-emerald-50 shadow-emerald-900/20'}`}
-                >
-                    Initialize {platform === 'linkedin' ? 'Growth' : 'Strategy'} Agent
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3">
+                    <button
+                        type="button"
+                        onClick={generateStrategy}
+                        disabled={!readyToGenerate}
+                        className={`flex-1 rounded-lg px-4 py-3 font-bold uppercase tracking-widest text-xs text-white transition-all shadow-lg disabled:opacity-40 ${platform === 'linkedin' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20'}`}
+                    >
+                        Initialize {platform === 'linkedin' ? 'Growth' : 'Strategy'} Agent
+                    </button>
+                    {onSkip && (
+                        <button
+                            type="button"
+                            onClick={onSkip}
+                            className="rounded-lg border border-neutral-700 px-4 py-3 text-xs font-bold uppercase tracking-widest text-neutral-400 hover:text-white hover:border-neutral-500 transition-colors"
+                        >
+                            Skip
+                        </button>
+                    )}
+                </div>
             </div>
         );
     }
@@ -241,7 +302,7 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, platform
                         onClick={() => onApprove({
                             ...strategy,
                             platform,
-                            businessContextId: businessContext.id ?? String(businessContext.businessName),
+                            businessContextId: businessContext?.id ?? String(businessContext?.businessName ?? "local"),
                             status: "approved"
                         })}
                         className={`rounded-lg px-6 py-2.5 text-xs font-black uppercase tracking-widest text-white transition-all shadow-lg ${platform === 'linkedin' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/40'}`}

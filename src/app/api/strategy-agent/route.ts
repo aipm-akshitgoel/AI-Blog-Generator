@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
+import { canGenerateStrategy, mergeContextWithReference, normalizeDomain } from "@/lib/strategyInputs";
+import { extractRouteError } from "@/lib/formatApiError";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
 const SYSTEM_PROMPT = `
@@ -57,18 +59,30 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { businessContext, customPrompt, platform = "blog" } = await req.json();
+    const { businessContext, referenceDomain, customPrompt, platform = "blog" } = await req.json();
 
-    if (!businessContext) {
+    const refDomain = normalizeDomain(
+      typeof referenceDomain === "string" ? referenceDomain : businessContext?.domain || "",
+    );
+
+    if (!canGenerateStrategy(businessContext, refDomain)) {
       return NextResponse.json(
-        { error: "Missing businessContext payload" },
-        { status: 400 }
+        {
+          error:
+            "Provide a business profile or reference website domain (e.g. yourdegree.com) before generating strategy.",
+        },
+        { status: 400 },
       );
     }
 
+    const ctxForStrategy = mergeContextWithReference(businessContext, refDomain);
+
     const client = createAzureClient(azure);
 
-    let userPrompt = `Here is the verified BusinessContext:\n\n${JSON.stringify(businessContext, null, 2)}`;
+    let userPrompt = `Here is the verified BusinessContext:\n\n${JSON.stringify(ctxForStrategy, null, 2)}`;
+    if (refDomain) {
+      userPrompt += `\n\nReference domain for research: https://${refDomain}`;
+    }
 
     if (platform === "linkedin") {
       userPrompt += "\n\nCRITICAL LINKEDIN INSTRUCTIONS: Research trending LinkedIn topics for this industry. Find mocked high-performing posts for inspiration. Ensure topicOptions are 'hooks' and 'stories', not just articles.";
@@ -93,7 +107,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ data: strategyData });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Strategy generation failed";
+    const message = extractRouteError(err, "Strategy generation failed");
     console.error("Strategy Agent Error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }

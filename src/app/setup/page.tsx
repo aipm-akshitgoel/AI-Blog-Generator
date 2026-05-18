@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { BusinessContextSetup } from "@/components/BusinessContextSetup";
 import { StrategyAgentUI } from "@/components/StrategyAgent";
@@ -13,6 +13,8 @@ import { ImageAgentUI } from "@/components/ImageAgentUI";
 import { PublishingAgentUI } from "@/components/PublishingAgentUI";
 import { TopicSelector } from "@/components/TopicSelector";
 import { TopicBriefPanel } from "@/components/TopicBriefPanel";
+import { ManualTopicEntry } from "@/components/ManualTopicEntry";
+import { buildMinimalBusinessContext, hasTopicSuggestions } from "@/lib/strategyInputs";
 import type { TopicBrief } from "@/lib/types/topicBrief";
 import { EMPTY_TOPIC_BRIEF } from "@/lib/types/topicBrief";
 import type { BusinessContext } from "@/lib/types/businessContext";
@@ -70,6 +72,14 @@ function SetupPageInner() {
 
   // After strategy is approved in account setup mode, show a "Saved!" screen
   const [strategySaved, setStrategySaved] = useState(false);
+  const [contextSkipped, setContextSkipped] = useState(false);
+  const [strategySkipped, setStrategySkipped] = useState(false);
+
+  const effectiveContext = useMemo(
+    () => context ?? buildMinimalBusinessContext({ platform: "blog" }),
+    [context],
+  );
+  const hasStrategyTopics = hasTopicSuggestions(strategySession);
 
   // ── Blog creation states ──────────────────────────────────────────────────
   const [creationMode, setCreationMode] = useState<"batch" | "manual" | null>(null);
@@ -119,7 +129,7 @@ function SetupPageInner() {
   ];
 
   const handleAutoPublish = async (topicList: TopicOption[], count: number) => {
-    if (!context) return;
+    const ctx = effectiveContext;
 
     // Helper: run the full pipeline for ONE topic and save as draft
     const runOneTopic = async (topic: TopicOption, blogNum: number) => {
@@ -128,14 +138,14 @@ function SetupPageInner() {
 
       // 0. Content
       stepLabel(0);
-      const contentRes = await fetch("/api/content-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic, businessContext: context }) });
+      const contentRes = await fetch("/api/content-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic, businessContext: ctx }) });
       const contentJson = await contentRes.json();
       if (!contentRes.ok) throw new Error(contentJson.error || "Content generation failed");
       const post: BlogPost = contentJson.data;
 
       // 1. Optimise (enrich with existing blog links)
       stepLabel(1);
-      let enrichedCtx = { ...context };
+      let enrichedCtx = { ...ctx };
       try {
         const blogsRes = await fetch("/api/blog");
         if (blogsRes.ok) {
@@ -157,28 +167,28 @@ function SetupPageInner() {
 
       // 3. Schema
       stepLabel(3);
-      const schemaRes = await fetch("/api/schema-gen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, meta, businessContext: context }) });
+      const schemaRes = await fetch("/api/schema-gen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, meta, businessContext: ctx }) });
       const schemaJson = await schemaRes.json();
       if (!schemaRes.ok) throw new Error(schemaJson.error || "Schema generation failed");
       const schema: SchemaData = schemaJson.schemaData;
 
       // 4. CTA
       stepLabel(4);
-      const ctaRes = await fetch("/api/cta-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, businessContext: context }) });
+      const ctaRes = await fetch("/api/cta-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, businessContext: ctx }) });
       const ctaJson = await ctaRes.json();
       if (!ctaRes.ok) throw new Error(ctaJson.error || "CTA generation failed");
       const cta: CTAData = ctaJson.cta;
 
       // 5. Image
       stepLabel(5);
-      const imgRes = await fetch("/api/image-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, businessContext: context }) });
+      const imgRes = await fetch("/api/image-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, businessContext: ctx }) });
       const imgJson = await imgRes.json();
       if (!imgRes.ok) throw new Error(imgJson.error || "Image generation failed");
       const images: ImageMetadata = imgJson.images;
 
       // 6. Save as DRAFT (not published)
       stepLabel(6);
-      const publishRes = await fetch("/api/publish-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, meta, schema, cta, images, businessContext: context, saveAsDraft: true }) });
+      const publishRes = await fetch("/api/publish-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, meta, schema, cta, images, businessContext: ctx, saveAsDraft: true }) });
       const publishJson = await publishRes.json();
       if (!publishRes.ok) throw new Error(publishJson.error || "Save failed");
     };
@@ -302,12 +312,8 @@ function SetupPageInner() {
               }
             };
 
-            // Blog mode needs strategy before showing "New Blog" — await to avoid setup-screen flash.
-            if (isBlogMode) {
-              await loadStrategy();
-            } else {
-              void loadStrategy();
-            }
+            // Strategy is optional in blog mode — load in background.
+            void loadStrategy();
           }
         } else {
           hydrateLocalFallback();
@@ -393,8 +399,10 @@ function SetupPageInner() {
   // ACCOUNT SETUP MODE  (/setup  or  /setup?mode=account)
   // ═══════════════════════════════════════════════════════════════════════════
   if (!isBlogMode) {
-    // ── Strategy saved confirmation ────────────────────────────────────────
-    if (strategySaved && strategySession) {
+    const accountSetupComplete = strategySaved || strategySkipped;
+
+    // ── Setup complete (strategy saved or skipped) ───────────────────────
+    if (accountSetupComplete) {
       return (
         <main className="min-h-screen bg-neutral-950 p-6 md:p-10 flex items-center justify-center">
           <div className="mx-auto max-w-lg text-center animate-in fade-in zoom-in-95 duration-500">
@@ -403,9 +411,13 @@ function SetupPageInner() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h1 className="text-3xl font-black text-white mb-3 uppercase tracking-tighter">You're All Set!</h1>
+            <h1 className="text-3xl font-black text-white mb-3 uppercase tracking-tighter">You&apos;re All Set!</h1>
             <p className="text-neutral-400 mb-10 leading-relaxed">
-              Your business profile and SEO strategy have been saved. You're ready to start generating AI content.
+              {strategySaved && strategySession
+                ? "Your business profile and SEO strategy are saved. You're ready to generate AI content."
+                : strategySkipped && context
+                  ? "Profile saved. You can generate strategy later from account setup, or write posts with your own topics now."
+                  : "You can start writing with custom topics anytime. Add a profile and strategy later for AI-suggested topics."}
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a
@@ -435,24 +447,31 @@ function SetupPageInner() {
         <div className="mx-auto max-w-2xl">
           <div className="mb-6">
             <h1 className="text-2xl font-black text-white uppercase tracking-tighter">Account Setup</h1>
-            <p className="text-neutral-400 text-sm mt-1">Configure your business profile and generate your SEO strategy.</p>
+            <p className="text-neutral-400 text-sm mt-1">Business profile and SEO strategy are optional — skip any step and add details later.</p>
           </div>
           <div className="space-y-6">
-            {!context && (
+            {!context && !contextSkipped && (
               <div className="animate-in slide-in-from-top-4 duration-500">
-                <BusinessContextSetup onComplete={handleContextComplete} />
+                <BusinessContextSetup
+                  onComplete={handleContextComplete}
+                  onSkip={() => setContextSkipped(true)}
+                />
               </div>
             )}
-            {context && !strategySession && (
-              <div className="animate-in slide-in-from-top-4 duration-500">
+            {(context || contextSkipped) && !strategySession && !strategySkipped && (
+              <div className="animate-in slide-in-from-top-4 duration-500 space-y-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-500">
+                  SEO strategy (optional)
+                </p>
                 <StrategyAgentUI
                   businessContext={context}
                   onApprove={handleStrategyApprove}
                   onModify={() => { }}
+                  onSkip={() => setStrategySkipped(true)}
                 />
               </div>
             )}
-            {context && strategySession && !strategySaved && (
+            {context && strategySession && !strategySaved && !strategySkipped && (
               // Should not normally reach here — but handle gracefully
               <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.02] p-6 text-center">
                 <p className="text-emerald-400 font-bold mb-4">Strategy already active. Redirecting...</p>
@@ -469,28 +488,18 @@ function SetupPageInner() {
   // BLOG CREATION MODE  (/setup?mode=blog)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Guard: no account set up yet
-  if (!context || !strategySession) {
-    return (
-      <main className="min-h-screen bg-neutral-950 p-6 md:p-10 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-neutral-400 mb-6">You need to set up your business profile and strategy first.</p>
-          <a href="/setup" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-black text-white hover:bg-emerald-500 uppercase tracking-widest transition-all">
-            Set Up Account
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-          </a>
-        </div>
-      </main>
-    );
-  }
-
   return (
     <main className="min-h-screen bg-neutral-950 p-4 md:p-10">
       <div className="mx-auto max-w-2xl">
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-black text-neutral-100 uppercase tracking-tighter">New Blog Post</h1>
-            <p className="text-neutral-400">{context?.businessName || "Your Business"}</p>
+            <p className="text-neutral-400">
+              {context?.businessName || "Custom topic"}
+              {!hasStrategyTopics && (
+                <span className="text-neutral-600"> · enter your own topic</span>
+              )}
+            </p>
           </div>
         </div>
 
@@ -593,13 +602,33 @@ function SetupPageInner() {
                   ← Back to Selection
                 </button>
               </div>
-              <TopicSelector
-                strategy={strategySession}
-                onSelect={handleTopicSelect}
-                businessContext={context}
-                onAutoPublish={handleAutoPublish}
-                mode={creationMode}
-              />
+              {hasStrategyTopics && strategySession ? (
+                <TopicSelector
+                  strategy={strategySession}
+                  onSelect={handleTopicSelect}
+                  businessContext={effectiveContext}
+                  onAutoPublish={handleAutoPublish}
+                  mode={creationMode}
+                />
+              ) : creationMode === "manual" ? (
+                <ManualTopicEntry
+                  onSelect={handleTopicSelect}
+                  onBack={() => setCreationMode(null)}
+                />
+              ) : (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6 text-center">
+                  <p className="text-sm text-neutral-300 mb-4">
+                    Auto-Pilot Batch needs a saved SEO strategy with topic suggestions.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setCreationMode("manual")}
+                    className="rounded-xl bg-emerald-600 px-6 py-3 text-xs font-black text-white uppercase tracking-widest hover:bg-emerald-500"
+                  >
+                    Use Focus Review with your topic
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -627,7 +656,7 @@ function SetupPageInner() {
               {!generatedPost && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
                   <ContentAgentUI
-                    businessContext={context}
+                    businessContext={effectiveContext}
                     topic={selectedTopic}
                     topicBrief={topicBrief ?? EMPTY_TOPIC_BRIEF}
                     onComplete={setGeneratedPost}
@@ -636,33 +665,33 @@ function SetupPageInner() {
               )}
               {generatedPost && !optimizedPost && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <OptimizationAgentUI post={generatedPost} businessContext={context!} onComplete={setOptimizedPost} />
+                  <OptimizationAgentUI post={generatedPost} businessContext={effectiveContext} onComplete={setOptimizedPost} />
                 </div>
               )}
               {optimizedPost && !selectedMeta && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <MetaSeoAgentUI optimized={optimizedPost!} businessContext={context!} onComplete={setSelectedMeta} />
+                  <MetaSeoAgentUI optimized={optimizedPost!} businessContext={effectiveContext} onComplete={setSelectedMeta} />
                 </div>
               )}
               {selectedMeta && !generatedSchema && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <SchemaAgentUI optimizedContent={optimizedPost!} businessContext={context!} meta={selectedMeta} onComplete={setGeneratedSchema} />
+                  <SchemaAgentUI optimizedContent={optimizedPost!} businessContext={effectiveContext} meta={selectedMeta} onComplete={setGeneratedSchema} />
                 </div>
               )}
               {generatedSchema && !ctaData && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <CtaAgentUI optimizedContent={optimizedPost!} businessContext={context!} onComplete={(fin, cta) => { setOptimizedPost(fin); setCtaData(cta); }} />
+                  <CtaAgentUI optimizedContent={optimizedPost!} businessContext={effectiveContext} onComplete={(fin, cta) => { setOptimizedPost(fin); setCtaData(cta); }} />
                 </div>
               )}
               {ctaData && !generatedImages && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <ImageAgentUI optimizedContent={optimizedPost!} businessContext={context!} onComplete={setGeneratedImages} />
+                  <ImageAgentUI optimizedContent={optimizedPost!} businessContext={effectiveContext} onComplete={setGeneratedImages} />
                 </div>
               )}
               {generatedImages && !publishData && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
                   <PublishingAgentUI
-                    optimizedContent={optimizedPost!} businessContext={context!}
+                    optimizedContent={optimizedPost!} businessContext={effectiveContext}
                     images={generatedImages} cta={ctaData!} meta={selectedMeta!}
                     schema={generatedSchema!} onComplete={setPublishData}
                   />

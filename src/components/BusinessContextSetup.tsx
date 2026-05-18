@@ -3,7 +3,16 @@
 import { useState } from "react";
 import { type BusinessContext as BusinessContextType } from "@/lib/types/businessContext";
 
-export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComplete?: (context: BusinessContextType) => void, platform?: "blog" | "linkedin" }) {
+export function BusinessContextSetup({
+  onComplete,
+  onSkip,
+  platform = "blog",
+}: {
+  onComplete?: (context: BusinessContextType) => void;
+  /** When set, Skip does not persist an empty profile — parent handles optional setup. */
+  onSkip?: () => void;
+  platform?: "blog" | "linkedin";
+}) {
   // Application State
   const [step, setStep] = useState<"input" | "scraping" | "verify">("input");
   const [url, setUrl] = useState("");
@@ -163,6 +172,10 @@ export function BusinessContextSetup({ onComplete, platform = "blog" }: { onComp
   };
 
   const handleSkipForNow = async () => {
+    if (onSkip) {
+      onSkip();
+      return;
+    }
     setDraftContext(createEmptyDraftContext());
     setEditServicesStr("");
     await persistContext(createEmptyDraftContext(), true);

@@ -378,21 +378,6 @@ function SetupPageInner() {
   // BLOG CREATION MODE  (/setup?mode=blog)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  // Guard: no account set up yet
-  if (!context || !strategySession) {
-    return (
-      <main className="min-h-screen bg-neutral-950 p-6 md:p-10 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-neutral-400 mb-6">You need to set up your business profile and strategy first.</p>
-          <a href="/setup" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-black text-white hover:bg-emerald-500 uppercase tracking-widest transition-all">
-            Set Up Account
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-          </a>
-        </div>
-      </main>
-    );
-  }
-
   return (
     <main className="min-h-screen bg-neutral-950 p-4 md:p-10">
       <div className="mx-auto max-w-2xl">
