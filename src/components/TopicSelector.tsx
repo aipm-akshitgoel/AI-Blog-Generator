@@ -6,6 +6,8 @@ import type { BusinessContext } from "@/lib/types/businessContext";
 import { directoryToTopicOptions, getDirectoryFromSession, normalizeBlogStrategyResponse } from "@/lib/contentDirectory";
 import { CtaButton } from "@/components/ui/CtaButton";
 
+const PAGE_SIZE = 4;
+
 interface TopicSelectorProps {
     strategy: StrategySession;
     onSelect: (topic: TopicOption) => void;
@@ -35,6 +37,7 @@ export function TopicSelector({
     const [editDraft, setEditDraft] = useState<{ title: string; h2Text: string } | null>(null);
     const [isRegenerating, setIsRegenerating] = useState(false);
     const [customPrompt, setCustomPrompt] = useState("");
+    const [page, setPage] = useState(0);
 
     // Batch selection state
     const [batchCount, setBatchCount] = useState(mode === "manual" ? 1 : 1);
@@ -143,7 +146,17 @@ export function TopicSelector({
             .filter(({ topic }) => !excludeCompleted || !topic.completed);
     }, [topics, excludeCompleted]);
 
-    const availableCount = topics.filter((t) => !t.completed).length;
+    const totalPages = Math.max(1, Math.ceil(topicRows.length / PAGE_SIZE));
+
+    useEffect(() => {
+        setPage(0);
+    }, [topicRows.length, excludeCompleted]);
+
+    useEffect(() => {
+        if (page > totalPages - 1) setPage(Math.max(0, totalPages - 1));
+    }, [page, totalPages]);
+
+    const visibleRows = topicRows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
     return (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-6 shadow-xl animate-in slide-in-from-bottom-4 duration-500">
@@ -243,8 +256,9 @@ export function TopicSelector({
                     )}
                 </div>
             ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 mb-8">
-                {topicRows.map(({ topic, index: i }) => {
+            <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                {visibleRows.map(({ topic, index: i }) => {
                     const selectedOrder = selectedIndices.indexOf(i);
                     const isSelected = selectedOrder !== -1;
                     const isEditing = editingIdx === i;
@@ -332,6 +346,33 @@ export function TopicSelector({
                     );
                 })}
             </div>
+
+            {topicRows.length > PAGE_SIZE && (
+                <div className="flex items-center justify-between gap-3 mb-8 border-t border-neutral-800/80 pt-4">
+                    <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        disabled={page === 0}
+                        className="rounded-lg border border-neutral-800 px-3 py-1.5 text-xs font-bold text-neutral-400 hover:text-white hover:border-neutral-600 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                    >
+                        Previous
+                    </button>
+                    <span className="text-xs text-neutral-500 font-medium tabular-nums">
+                        Page {page + 1} of {totalPages}
+                        <span className="text-neutral-600"> · </span>
+                        {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, topicRows.length)} of {topicRows.length}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                        disabled={page >= totalPages - 1}
+                        className="rounded-lg border border-neutral-800 px-3 py-1.5 text-xs font-bold text-neutral-400 hover:text-white hover:border-neutral-600 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                    >
+                        Next
+                    </button>
+                </div>
+            )}
+            </>
             )}
 
             {topicRows.length > 0 && onCustomTopic && mode === "manual" && (
