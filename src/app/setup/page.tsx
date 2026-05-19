@@ -352,7 +352,7 @@ function SetupPageInner() {
 
       // 4. CTA
       stepLabel(4);
-      const ctaRes = await fetch("/api/cta-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, businessContext: ctx }) });
+      const ctaRes = await fetch("/api/cta-agent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ optimizedContent: optimized, businessContext: ctx, topicTitle: topic.title }) });
       const ctaJson = await ctaRes.json();
       if (!ctaRes.ok) throw new Error(ctaJson.error || "CTA generation failed");
       const cta: CTAData = ctaJson.cta;
@@ -1112,7 +1112,12 @@ function SetupPageInner() {
               )}
               {generatedSchema && !ctaData && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <CtaAgentUI optimizedContent={optimizedPost!} businessContext={effectiveContext} onComplete={(fin, cta) => { setOptimizedPost(fin); setCtaData(cta); }} />
+                  <CtaAgentUI
+                    optimizedContent={optimizedPost!}
+                    businessContext={effectiveContext}
+                    topicTitle={selectedTopic?.title}
+                    onComplete={(fin, cta) => { setOptimizedPost(fin); setCtaData(cta); }}
+                  />
                 </div>
               )}
               {ctaData && !generatedImages && (

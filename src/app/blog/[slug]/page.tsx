@@ -158,7 +158,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
 
                                 {blog.payload.cta && (
                                     <div className="mt-24 border-y border-neutral-200 py-16 text-center bg-neutral-50">
-                                        <h2 className="text-4xl font-serif mb-6 text-neutral-900">{blog.payload.cta.ctaHeadline || "Ready to elevate your look?"}</h2>
+                                        <h2 className="text-4xl font-serif mb-6 text-neutral-900">{blog.payload.cta.ctaHeadline || "Take the next step"}</h2>
                                         <p className="text-xl text-neutral-500 mb-10 max-w-2xl mx-auto font-serif italic">{blog.payload.cta.ctaCopy}</p>
                                         <a
                                             href={blog.payload.cta.ctaLink}
@@ -220,7 +220,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                                     <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-500/20 rounded-full blur-[80px] translate-y-1/2 -translate-x-1/4"></div>
 
                                     <div className="relative z-10">
-                                        <h2 className="text-3xl font-bold mb-4">{blog.payload.cta.ctaHeadline || "Ready to elevate your look?"}</h2>
+                                        <h2 className="text-3xl font-bold mb-4">{blog.payload.cta.ctaHeadline || "Take the next step"}</h2>
                                         <p className="text-lg text-neutral-400 mb-8 max-w-xl mx-auto">{blog.payload.cta.ctaCopy}</p>
                                         <a
                                             href={blog.payload.cta.ctaLink}
