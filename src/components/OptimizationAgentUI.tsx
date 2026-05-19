@@ -161,7 +161,7 @@ function HeadingTagsPanel({ rows }: { rows: HeadingTagRow[] }) {
                         <th className="w-[5.5rem] px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#718096]">
                             <span className="inline-flex items-center justify-end gap-1">
                                 Density
-                                <HelpTip text="Share of words in that section’s body that match this heading’s wording (not your primary SEO keyword)." />
+                                <HelpTip text="Share of words in that section (heading + body) that match this heading’s key terms — higher means the copy reinforces the H1/H2 topic." />
                             </span>
                         </th>
                     </tr>
@@ -281,7 +281,19 @@ export function OptimizationAgentUI({
     const [loadingSeconds, setLoadingSeconds] = useState(0);
     const [isRefreshingMetrics, setIsRefreshingMetrics] = useState(false);
     const optimizeAbortRef = useRef<AbortController | null>(null);
+    const resultsTopRef = useRef<HTMLDivElement>(null);
     const postOptimizeKey = `${post.slug}|${post.contentMarkdown?.length ?? 0}`;
+
+    useEffect(() => {
+        if (loading || !optimizedData) return;
+        const scrollToResults = () => {
+            window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+            resultsTopRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+        };
+        requestAnimationFrame(() => requestAnimationFrame(scrollToResults));
+    }, [loading, optimizedData]);
 
     useEffect(() => {
         if (!isEditing || !optimizedData) return;
@@ -640,7 +652,10 @@ export function OptimizationAgentUI({
 
     // Render optimized markdown with internal links (markdown already contains links)
     return (
-        <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-6 shadow-xl animate-in slide-in-from-bottom-4 duration-500">
+        <div
+            ref={resultsTopRef}
+            className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-6 shadow-xl animate-in slide-in-from-bottom-4 duration-500 scroll-mt-24"
+        >
             <div className="flex items-center gap-3 mb-6 border-b border-neutral-800 pb-4">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-900/30 text-emerald-400 border border-emerald-800/50">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
@@ -798,15 +813,20 @@ export function OptimizationAgentUI({
                     <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden">
                         <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/50">
                             <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
-                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-emerald-800/50 bg-emerald-900/30 text-emerald-400">
-                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth="2"
-                                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                        />
-                                    </svg>
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-emerald-800/50 bg-emerald-900/30 text-emerald-400">
+                                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth="2"
+                                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                            />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-lg font-black uppercase tracking-tighter text-white">
+                                        Edit Content
+                                    </h3>
                                 </div>
                                 <div className="flex items-center gap-2 sm:gap-3">
                                     <button

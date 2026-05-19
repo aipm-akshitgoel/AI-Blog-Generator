@@ -32,6 +32,80 @@ export function keywordDensityPercent(text: string, keyword: string): number {
     return Math.round(((hits * kwWords) / words) * 1000) / 10;
 }
 
+const DENSITY_STOP_WORDS = new Set([
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "for",
+    "to",
+    "of",
+    "in",
+    "on",
+    "at",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "by",
+    "with",
+    "as",
+    "vs",
+    "your",
+    "you",
+    "how",
+    "what",
+    "which",
+    "that",
+    "this",
+    "from",
+]);
+
+function plainTextFromMarkdown(md: string): string {
+    return String(md || "")
+        .replace(/^#{1,6}\s+/gm, "")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/[*_`>#]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function sectionMarkdownWithHeading(title: string, body: string): string {
+    const t = title.trim();
+    const b = body.trim();
+    return b ? `## ${t}\n\n${b}` : `## ${t}`;
+}
+
+/**
+ * How strongly this heading’s wording shows up in its section (H1 intro or H2 block).
+ * Uses the full heading phrase when present, otherwise distinctive heading terms in the section.
+ */
+export function headingDensityPercent(sectionMarkdown: string, headingTitle: string): number {
+    const plain = plainTextFromMarkdown(sectionMarkdown);
+    const words = countWords(plain);
+    if (words === 0 || !headingTitle.trim()) return 0;
+
+    const phraseDensity = keywordDensityPercent(plain, headingTitle);
+    if (phraseDensity > 0) return phraseDensity;
+
+    const terms = headingTitle
+        .toLowerCase()
+        .replace(/[^\w\s]/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length > 2 && !DENSITY_STOP_WORDS.has(w));
+
+    if (terms.length === 0) return 0;
+
+    let termWordHits = 0;
+    for (const term of terms) {
+        termWordHits += countPhraseOccurrences(plain, term);
+    }
+
+    return Math.round(((termWordHits / words) * 100) * 10) / 10;
+}
+
 type H2Section = { title: string; key: string; body: string };
 
 function normalizeHeadingKey(title: string): string {
@@ -134,11 +208,12 @@ export function buildHeadingTagRows(
     const rows: HeadingTagRow[] = [];
 
     if (h1Title) {
-        const h1Span = introBeforeFirstH2(markdown) || bodyText;
+        const intro = introBeforeFirstH2(markdown);
+        const h1Span = intro ? `# ${h1Title}\n\n${intro}` : `# ${h1Title}`;
         rows.push({
             level: "h1",
             title: h1Title,
-            densityPercent: keywordDensityPercent(h1Span, h1Title),
+            densityPercent: headingDensityPercent(h1Span, h1Title),
         });
     }
 
@@ -153,16 +228,20 @@ export function buildHeadingTagRows(
         const section = findSection(sections, h2);
         if (section) {
             matchedSectionKeys.add(section.key);
-            const span = section.body.trim() ? section.body : bodyText;
+            const span = sectionMarkdownWithHeading(
+                section.title,
+                section.body.trim() ? section.body : bodyText,
+            );
             rows.push({
                 level: "h2",
                 title: section.title,
-                densityPercent: keywordDensityPercent(span, section.title),
+                densityPercent: headingDensityPercent(span, section.title),
             });
             continue;
         }
 
-        const densityInDraft = keywordDensityPercent(bodyText, h2);
+        const span = sectionMarkdownWithHeading(h2, bodyText);
+        const densityInDraft = headingDensityPercent(span, h2);
         rows.push({
             level: "h2",
             title: h2,
@@ -173,11 +252,14 @@ export function buildHeadingTagRows(
 
     for (const section of sections) {
         if (matchedSectionKeys.has(section.key)) continue;
-        const span = section.body.trim() ? section.body : bodyText;
+        const span = sectionMarkdownWithHeading(
+            section.title,
+            section.body.trim() ? section.body : bodyText,
+        );
         rows.push({
             level: "h2",
             title: section.title,
-            densityPercent: keywordDensityPercent(span, section.title),
+            densityPercent: headingDensityPercent(span, section.title),
         });
     }
 
