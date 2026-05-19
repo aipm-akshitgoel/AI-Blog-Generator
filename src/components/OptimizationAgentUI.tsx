@@ -161,7 +161,11 @@ function HeadingTagsPanel({ rows }: { rows: HeadingTagRow[] }) {
                         <th className="w-[5.5rem] px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#718096]">
                             <span className="inline-flex items-center justify-end gap-1">
                                 Density
-                                <HelpTip text="Share of words in that section (heading + body) that match this heading’s key terms — higher means the copy reinforces the H1/H2 topic." />
+                                <HelpTip
+                                    side="bottom"
+                                    variant="light"
+                                    text="Share of words in that section (heading + body) that match this heading’s key terms — higher means the copy reinforces the H1/H2 topic."
+                                />
                             </span>
                         </th>
                     </tr>
