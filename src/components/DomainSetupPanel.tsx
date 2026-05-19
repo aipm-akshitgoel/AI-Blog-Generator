@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
+
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { BusinessContext } from "@/lib/types/businessContext";
@@ -116,7 +118,7 @@ export function DomainSetupPanel({ businessContext, onUpdate, isTest }: DomainSe
                                 value={domain}
                                 onChange={(e) => setDomain(e.target.value)}
                                 className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
-                                placeholder="e.g. https://www.yoursalon.com"
+                                placeholder="e.g. https://www.yoursite.com"
                             />
                             <button
                                 onClick={handleSave}
@@ -128,10 +130,7 @@ export function DomainSetupPanel({ businessContext, onUpdate, isTest }: DomainSe
                             >
                                 {saving ? (
                                     <>
-                                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                        </svg>
+                                        <ButtonSpinner size={16} />
                                         Saving...
                                     </>
                                 ) : saveStatus === "success" ? (

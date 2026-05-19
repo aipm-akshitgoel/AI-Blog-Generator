@@ -1,4 +1,5 @@
 import { supabaseServer as supabase } from "@/lib/supabaseServerClient";
+import { isPersistedUuid } from "@/lib/uuid";
 import type { StrategySession, KeywordStrategy, TopicOption } from "@/lib/types/strategy";
 
 export interface StrategySessionRow {
@@ -40,8 +41,8 @@ export async function createStrategySession(
     if (data.trendingTopics) payload.trending_topics = data.trendingTopics;
     if (data.inspiration) payload.inspiration = data.inspiration;
 
-    // If an ID is provided, update (upsert). This supports the singleton "edit" flow.
-    if (data.id) {
+    // Update only real DB UUIDs — ignore client placeholders like `local-123`.
+    if (isPersistedUuid(data.id)) {
         const { data: row, error } = await supabase
             .from("strategy_sessions")
             .update(payload)

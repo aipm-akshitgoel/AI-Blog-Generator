@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import type { OptimizedContent } from "@/lib/types/optimization";
-import type { MetaSeoPayload } from "@/lib/types/meta";
+import type { MetaOption, MetaSeoPayload } from "@/lib/types/meta";
 import type { SeoDefaults } from "@/lib/types/businessContext";
-import { sanitizeJsonString } from "@/lib/sanitizeJson";
-import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
+import { parseJsonFromModelText } from "@/lib/parseModelJson";
+import {
+    assistantMessageText,
+    azureConfigDebug,
+    createAzureClient,
+    getAzureConfig,
+} from "@/lib/azureOpenAI";
 
 const TITLE_LIMIT = 60;
 const DESC_LIMIT = 160;
+const META_PROMPT_MARKDOWN_MAX = 12_000;
 
 /** Hard truncate at word boundary without exceeding limit */
 function hardTruncate(text: string, limit: number): string {
@@ -16,10 +22,111 @@ function hardTruncate(text: string, limit: number): string {
     return (lastSpace > limit * 0.7 ? trimmed.slice(0, lastSpace) : trimmed).trimEnd();
 }
 
+function stripMarkdownForDesc(markdown: string): string {
+    return String(markdown || "")
+        .replace(/^#{1,6}\s+/gm, "")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/[*_`>#]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function truncateMarkdownForPrompt(markdown: string): string {
+    const t = String(markdown || "").trim();
+    if (t.length <= META_PROMPT_MARKDOWN_MAX) return t;
+    return `${t.slice(0, META_PROMPT_MARKDOWN_MAX)}\n\n[Article truncated for meta generation.]`;
+}
+
+function normalizeMetaPayload(raw: unknown, seoDefaults?: SeoDefaults): MetaSeoPayload | null {
+    if (!raw || typeof raw !== "object") return null;
+    const options = (raw as { options?: unknown }).options;
+    if (!Array.isArray(options) || options.length === 0) return null;
+
+    const normalized: MetaOption[] = [];
+    for (const item of options) {
+        if (!item || typeof item !== "object") continue;
+        const o = item as Record<string, unknown>;
+        const title = hardTruncate(String(o.title ?? "").trim(), TITLE_LIMIT);
+        const description = hardTruncate(String(o.description ?? "").trim(), DESC_LIMIT);
+        if (!title || !description) continue;
+        normalized.push({
+            title,
+            description,
+            explanation: String(o.explanation ?? "").trim() || "AI-generated meta option.",
+            category: typeof o.category === "string" ? o.category.trim() : undefined,
+        });
+    }
+
+    if (normalized.length === 0) return null;
+
+    const defaultCat = seoDefaults?.defaultPostCategory?.trim();
+    if (defaultCat) {
+        for (const opt of normalized) {
+            if (!opt.category) opt.category = defaultCat;
+        }
+    }
+
+    return { options: normalized.slice(0, 3) };
+}
+
+function buildFallbackMetaPayload(
+    optimized: OptimizedContent,
+    seoDefaults?: SeoDefaults,
+): MetaSeoPayload {
+    const baseTitle = hardTruncate(
+        optimized.title?.trim() || "Blog post",
+        TITLE_LIMIT,
+    );
+    const plain = stripMarkdownForDesc(optimized.contentMarkdown);
+    const baseDesc = hardTruncate(
+        optimized.metaDescription?.trim() || plain.slice(0, 220) || baseTitle,
+        DESC_LIMIT,
+    );
+    const category = seoDefaults?.defaultPostCategory?.trim() || "Guide";
+
+    const options: MetaOption[] = [
+        {
+            title: baseTitle,
+            description: baseDesc,
+            explanation: "Built from your article title and opening (AI meta response was empty or invalid).",
+            category,
+        },
+    ];
+
+    if (baseTitle.length > 20) {
+        options.push({
+            title: hardTruncate(`${baseTitle.replace(/[.:|–-].*$/, "").trim()}: A Practical Guide`, TITLE_LIMIT),
+            description: baseDesc,
+            explanation: "Alternate title variant from your draft.",
+            category,
+        });
+    }
+
+    const questionTitle = baseTitle.endsWith("?")
+        ? baseTitle
+        : hardTruncate(`${baseTitle.replace(/\.$/, "")}?`, TITLE_LIMIT);
+    if (questionTitle !== baseTitle) {
+        options.push({
+            title: questionTitle,
+            description: hardTruncate(
+                `Get clear, practical guidance on ${baseTitle.replace(/\.$/, "").toLowerCase()}. ${baseDesc}`.slice(0, 320),
+                DESC_LIMIT,
+            ),
+            explanation: "Question-style title variant.",
+            category,
+        });
+    }
+
+    return { options: options.slice(0, 3) };
+}
+
 export async function POST(req: Request) {
     const azure = getAzureConfig();
     if (!azure) {
-        return NextResponse.json({ error: "Azure OpenAI is not configured on the server", debug: azureConfigDebug() }, { status: 500 });
+        return NextResponse.json(
+            { error: "Azure OpenAI is not configured on the server", debug: azureConfigDebug() },
+            { status: 500 },
+        );
     }
 
     let body: { optimizedContent?: OptimizedContent; seoDefaults?: SeoDefaults };
@@ -33,6 +140,8 @@ export async function POST(req: Request) {
     if (!optimizedContent) {
         return NextResponse.json({ error: "Missing optimizedContent" }, { status: 400 });
     }
+
+    const fallback = buildFallbackMetaPayload(optimizedContent, seoDefaults);
 
     try {
         const client = createAzureClient(azure);
@@ -66,7 +175,9 @@ ${seoDefaults?.defaultPostCategory ? `- Prefer this default category when it fit
 OUTPUT ONLY a valid JSON object: { "options": [{ "title": "...", "description": "...", "explanation": "...", "category": "..." }] }
 No markdown, no extra text, no code fences.`;
 
-        const prompt = `Blog Post Content:\nTitle: ${optimizedContent.title}\nDescription: ${optimizedContent.metaDescription}\n\n${optimizedContent.contentMarkdown}\n\nSEO Defaults:\n${JSON.stringify(seoDefaults || {}, null, 2)}`;
+        const bodyMarkdown = truncateMarkdownForPrompt(optimizedContent.contentMarkdown);
+        const prompt = `Blog Post Content:\nTitle: ${optimizedContent.title}\nDescription: ${optimizedContent.metaDescription}\n\n${bodyMarkdown}\n\nSEO Defaults:\n${JSON.stringify(seoDefaults || {}, null, 2)}`;
+
         const response = await client.chat.completions.create({
             model: azure.deployment,
             max_completion_tokens: 1800,
@@ -76,22 +187,37 @@ No markdown, no extra text, no code fences.`;
             ],
         });
 
-        const text = assistantMessageText((response as any)?.choices?.[0]?.message?.content);
-        const clean = sanitizeJsonString(stripOuterMarkdownFence(text));
-        const payload: MetaSeoPayload = JSON.parse(clean);
+        const choice = (response as { choices?: { message?: { content?: unknown }; finish_reason?: string }[] })
+            ?.choices?.[0];
+        const text = assistantMessageText(choice?.message?.content);
+        const parsed = parseJsonFromModelText<unknown>(text);
+        const payload = normalizeMetaPayload(parsed, seoDefaults);
 
-        // ── Server-side safety net: hard truncate every option regardless of LLM output ──
-        if (payload?.options) {
-            payload.options = payload.options.map((opt) => ({
-                ...opt,
-                title: hardTruncate(opt.title ?? "", TITLE_LIMIT),
-                description: hardTruncate(opt.description ?? "", DESC_LIMIT),
-            }));
+        if (payload) {
+            return NextResponse.json({ payload }, { status: 200 });
         }
 
-        return NextResponse.json({ payload }, { status: 200 });
+        console.warn("[meta-seo] Using fallback meta options.", {
+            finishReason: choice?.finish_reason,
+            textLength: text.length,
+        });
+        return NextResponse.json(
+            {
+                payload: fallback,
+                parseWarning:
+                    "AI meta options could not be read. Showing titles and descriptions derived from your article — edit them or tap Regenerate.",
+            },
+            { status: 200 },
+        );
     } catch (err) {
         const message = err instanceof Error ? err.message : "Meta SEO generation failed";
-        return NextResponse.json({ error: message }, { status: 500 });
+        console.error("[meta-seo]", message);
+        return NextResponse.json(
+            {
+                payload: fallback,
+                parseWarning: `Meta generation hit an error (${message}). Showing fallback options from your article.`,
+            },
+            { status: 200 },
+        );
     }
 }

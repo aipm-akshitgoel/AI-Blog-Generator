@@ -1,26 +1,36 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { GlobalNavbar } from "@/components/GlobalNavbar";
+import {
+  CLERK_AFTER_AUTH_URL,
+  CLERK_AFTER_SIGN_OUT_URL,
+  CLERK_SIGN_IN_URL,
+  CLERK_SIGN_UP_URL,
+} from "@/lib/clerkAuth";
+import { AuthSessionGuard } from "@/components/AuthSessionGuard";
+import { StaleClerkSessionSync } from "@/components/StaleClerkSessionSync";
+import { ScrollToTopOnNavigate } from "@/components/ScrollToTopOnNavigate";
+import { clerkProviderAppearance } from "@/lib/clerkAppearance";
 import { Suspense } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://bloggieai.com"),
-  title: "AI Organic Growth Platform",
-  description: "Generate highly-optimized, SEO-ready blog posts in seconds. The ultimate AI content pipeline.",
+  title: "Bloggie AI — AI content for organic search",
+  description: "Connect your site and keyword plan. Get SEO-ready drafts you can edit, optimize, and publish.",
   openGraph: {
-    title: "AI Organic Growth Platform",
-    description: "Generate highly-optimized, SEO-ready blog posts in seconds. The ultimate AI content pipeline.",
+    title: "Bloggie AI — AI content for organic search",
+    description: "Connect your site and keyword plan. Get SEO-ready drafts you can edit, optimize, and publish.",
     url: "https://bloggieai.com",
-    siteName: "AI Organic Growth Platform",
+    siteName: "Bloggie AI",
     locale: "en_US",
     type: "website",
     images: ["/opengraph-image"],
   },
   twitter: {
     card: "summary_large_image",
-    title: "AI Organic Growth Platform",
-    description: "Generate highly-optimized, SEO-ready blog posts in seconds. The ultimate AI content pipeline.",
+    title: "Bloggie AI — AI content for organic search",
+    description: "Connect your site and keyword plan. Get SEO-ready drafts you can edit, optimize, and publish.",
     images: ["/opengraph-image"],
   },
 };
@@ -39,11 +49,12 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet" />
       </head>
-      <body className="antialiased min-h-screen" suppressHydrationWarning>
+      <body className="antialiased min-h-screen bg-neutral-950" suppressHydrationWarning>
         <Suspense>
+          <ScrollToTopOnNavigate />
           <GlobalNavbar />
         </Suspense>
-        {children}
+        <div className="min-h-[calc(100vh-3.5rem)]">{children}</div>
       </body>
     </html>
   );
@@ -55,8 +66,14 @@ export default function RootLayout({
   return (
     <ClerkProvider
       publishableKey={publishableKey}
-      appearance={{ elements: { footer: "hidden", footerAction: "hidden", userButtonPopoverFooter: "hidden" } }}
+      signInUrl={CLERK_SIGN_IN_URL}
+      signUpUrl={CLERK_SIGN_UP_URL}
+      signInFallbackRedirectUrl={CLERK_AFTER_AUTH_URL}
+      signUpFallbackRedirectUrl={CLERK_AFTER_AUTH_URL}
+      appearance={clerkProviderAppearance}
     >
+      <AuthSessionGuard />
+      <StaleClerkSessionSync />
       {shell}
     </ClerkProvider>
   );

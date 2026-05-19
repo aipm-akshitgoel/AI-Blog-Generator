@@ -17,6 +17,7 @@ export function ImageAgentUI({ optimizedContent, businessContext, onComplete }: 
     const [error, setError] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [customPrompt, setCustomPrompt] = useState("");
+    const [bannerLoadFailed, setBannerLoadFailed] = useState(false);
 
     const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -33,7 +34,8 @@ export function ImageAgentUI({ optimizedContent, businessContext, onComplete }: 
             });
             if (!res.ok) throw new Error("Upload failed");
             const data = await res.json();
-            setImages(prev => prev ? { ...prev, bannerImageUrl: data.url } : null);
+            setBannerLoadFailed(false);
+            setImages((prev) => (prev ? { ...prev, bannerImageUrl: data.url } : null));
         } catch (err: any) {
             alert(err.message);
         } finally {
@@ -86,7 +88,9 @@ export function ImageAgentUI({ optimizedContent, businessContext, onComplete }: 
                     </svg>
                 </div>
                 <h3 className="text-sm font-medium text-neutral-200">Generating Custom Imagery...</h3>
-                <p className="text-xs text-neutral-500 mt-2">Analyzing blog context to prompt Image Generation API.</p>
+                <p className="text-xs text-neutral-500 mt-2">
+                    Crafting visuals with Google AI Studio (Imagen) from your article context…
+                </p>
             </div>
         );
     }
@@ -141,12 +145,30 @@ export function ImageAgentUI({ optimizedContent, businessContext, onComplete }: 
                 </div>
             </div>
 
-            <div className="relative w-full overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900 h-64 shadow-inner mb-4 group inline-block">
-                {/* Simulated Image */}
-                <div
-                    className="absolute inset-0 bg-cover bg-center transition-all duration-700 group-hover:scale-105 group-hover:opacity-75"
-                    style={{ backgroundImage: `url('${images.bannerImageUrl}')` }}
-                ></div>
+            <div className="relative w-full overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900 h-64 shadow-inner mb-4 group">
+                {images.bannerImageUrl && !bannerLoadFailed ? (
+                    <img
+                        src={images.bannerImageUrl}
+                        alt={images.altText || optimizedContent.title}
+                        className="absolute inset-0 h-full w-full object-cover transition-all duration-700 group-hover:scale-105 group-hover:opacity-75"
+                        onLoad={() => setBannerLoadFailed(false)}
+                        onError={() => setBannerLoadFailed(true)}
+                    />
+                ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
+                        <p className="text-sm font-medium text-neutral-300">Banner image could not be loaded</p>
+                        <p className="text-xs text-neutral-500">
+                            Regenerate, upload a local image, or check your network connection.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => generateImages()}
+                            className="mt-1 rounded-lg border border-neutral-600 bg-neutral-800 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-neutral-200 hover:bg-neutral-700"
+                        >
+                            Try again
+                        </button>
+                    </div>
+                )}
                 {isUploading && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm">
                         <svg className="w-8 h-8 text-emerald-500 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -171,8 +193,11 @@ export function ImageAgentUI({ optimizedContent, businessContext, onComplete }: 
                 </div>
                 <textarea
                     value={images.altText}
-                    readOnly
-                    className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-neutral-500 transition-colors resize-none"
+                    onChange={(e) =>
+                        setImages((prev) => (prev ? { ...prev, altText: e.target.value } : prev))
+                    }
+                    placeholder="Describe the image for accessibility and SEO…"
+                    className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 transition-colors resize-y min-h-[4rem]"
                     rows={2}
                 />
                 <p className="text-xs text-neutral-500 italic mt-2">This text describes your image for search engines to boost your SEO.</p>

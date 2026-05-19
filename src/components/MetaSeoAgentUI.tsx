@@ -3,6 +3,7 @@ import type { OptimizedContent } from "@/lib/types/optimization";
 import type { MetaOption, MetaSeoPayload } from "@/lib/types/meta";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import { HelpTip } from "./HelpTip";
+import { formatApiError } from "@/lib/formatApiError";
 
 interface MetaSeoAgentProps {
     optimized: OptimizedContent;
@@ -27,6 +28,7 @@ export function MetaSeoAgentUI({ optimized, businessContext, onComplete }: MetaS
     const [payload, setPayload] = useState<MetaSeoPayload | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [parseWarning, setParseWarning] = useState<string | null>(null);
     const [selectedIdx, setSelectedIdx] = useState<number>(0);
     const [selectedCategory, setSelectedCategory] = useState<string>(businessContext?.seoDefaults?.defaultPostCategory || CATEGORIES[0]);
 
@@ -37,6 +39,7 @@ export function MetaSeoAgentUI({ optimized, businessContext, onComplete }: MetaS
     const fetchMetaOptions = async () => {
         setLoading(true);
         setError(null);
+        setParseWarning(null);
         try {
             const res = await fetch("/api/meta-seo", {
                 method: "POST",
@@ -44,27 +47,40 @@ export function MetaSeoAgentUI({ optimized, businessContext, onComplete }: MetaS
                 body: JSON.stringify({ optimizedContent: optimized, seoDefaults: businessContext?.seoDefaults }),
             });
 
-            if (!res.ok) {
-                const errData = await res.json();
-                throw new Error(errData.error || "Failed to generate Meta SEO options.");
+            const raw = await res.text();
+            type MetaApiResponse = { payload?: MetaSeoPayload; error?: string; parseWarning?: string };
+            let data: MetaApiResponse | null = null;
+            if (raw.trim()) {
+                try {
+                    data = JSON.parse(raw) as MetaApiResponse;
+                } catch {
+                    throw new Error("Invalid response from meta service. Please retry.");
+                }
             }
 
-            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(formatApiError(data?.error, `Failed to generate meta options (${res.status})`));
+            }
+
+            if (!data?.payload?.options?.length) {
+                throw new Error(formatApiError(data?.error, "No meta options returned. Please retry."));
+            }
+
             setPayload(data.payload);
+            setParseWarning(typeof data.parseWarning === "string" ? data.parseWarning : null);
             setSelectedIdx(0);
 
             const firstOption = data.payload.options[0];
             setEditedTitle(firstOption.title);
             setEditedDesc(firstOption.description);
 
-            // Set category based on AI suggestion if it's in our valid list
             if (firstOption.category && CATEGORIES.includes(firstOption.category)) {
                 setSelectedCategory(firstOption.category);
             } else if (businessContext?.seoDefaults?.defaultPostCategory) {
                 setSelectedCategory(businessContext.seoDefaults.defaultPostCategory);
             }
         } catch (err) {
-            setError(err instanceof Error ? err.message : "An error occurred.");
+            setError(formatApiError(err, "Meta generation failed. Please retry."));
         } finally {
             setLoading(false);
         }
@@ -128,6 +144,11 @@ export function MetaSeoAgentUI({ optimized, businessContext, onComplete }: MetaS
 
     return (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-6 shadow-xl animate-in slide-in-from-bottom-4 duration-500">
+            {parseWarning && (
+                <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                    {parseWarning}
+                </div>
+            )}
             <div className="flex items-center justify-between mb-6 border-b border-neutral-800 pb-4">
                 <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-900/30 text-emerald-400 border border-emerald-800/50">

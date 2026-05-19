@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { TopicOption } from "@/lib/types/strategy";
+import { CtaButton } from "@/components/ui/CtaButton";
 
 interface ManualTopicEntryProps {
     onSelect: (topic: TopicOption) => void;
@@ -67,19 +68,21 @@ export function ManualTopicEntry({ onSelect, onBack }: ManualTopicEntryProps) {
             {error && <p className="text-xs text-amber-400 mb-4">{error}</p>}
 
             <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-neutral-800">
-                <button
+                <CtaButton
                     type="button"
                     onClick={handleContinue}
-                    className="flex-1 flex items-center justify-center gap-3 rounded-2xl bg-emerald-600 px-8 py-5 text-sm font-black text-white transition-all hover:bg-emerald-500 shadow-2xl shadow-emerald-900/40 active:scale-[0.98] uppercase tracking-widest"
+                    className="flex-1 rounded-2xl px-8 py-5 text-sm shadow-2xl shadow-emerald-900/40"
+                    trailingIcon={
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                    }
                 >
                     Continue
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                </button>
+                </CtaButton>
             </div>
             <p className="text-[10px] text-neutral-600 mt-3 text-center">
-                <a href="/setup" className="text-emerald-500/80 hover:text-emerald-400 underline">
+                <a href="/setup?onboarding=first" className="text-emerald-500/80 hover:text-emerald-400 underline">
                     Set up business profile & strategy
                 </a>{" "}
                 anytime for AI-suggested topics.

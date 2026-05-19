@@ -1,20 +1,68 @@
 "use client";
 
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, Suspense } from "react";
+import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
 import { BusinessContextSetup } from "@/components/BusinessContextSetup";
 import { StrategyAgentUI } from "@/components/StrategyAgent";
-import { ContentAgentUI } from "@/components/ContentAgent";
-import { OptimizationAgentUI } from "@/components/OptimizationAgentUI";
-import { MetaSeoAgentUI } from "@/components/MetaSeoAgentUI";
-import { SchemaAgentUI } from "@/components/SchemaAgentUI";
-import { CtaAgentUI } from "@/components/CtaAgentUI";
-import { ImageAgentUI } from "@/components/ImageAgentUI";
-import { PublishingAgentUI } from "@/components/PublishingAgentUI";
 import { TopicSelector } from "@/components/TopicSelector";
 import { TopicBriefPanel } from "@/components/TopicBriefPanel";
 import { ManualTopicEntry } from "@/components/ManualTopicEntry";
-import { buildMinimalBusinessContext, hasTopicSuggestions } from "@/lib/strategyInputs";
+import { CtaButton } from "@/components/ui/CtaButton";
+
+function PipelineStepLoader({ label }: { label: string }) {
+  return (
+    <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-8 text-center animate-pulse">
+      <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+      <p className="mt-4 text-sm text-neutral-400">{label}</p>
+    </div>
+  );
+}
+
+const ContentAgentUI = dynamic(
+  () => import("@/components/ContentAgent").then((m) => m.ContentAgentUI),
+  { loading: () => <PipelineStepLoader label="Loading content writer…" /> },
+);
+const OptimizationAgentUI = dynamic(
+  () => import("@/components/OptimizationAgentUI").then((m) => m.OptimizationAgentUI),
+  { loading: () => <PipelineStepLoader label="Loading optimizer…" /> },
+);
+const MetaSeoAgentUI = dynamic(
+  () => import("@/components/MetaSeoAgentUI").then((m) => m.MetaSeoAgentUI),
+  { loading: () => <PipelineStepLoader label="Loading SEO tools…" /> },
+);
+const SchemaAgentUI = dynamic(
+  () => import("@/components/SchemaAgentUI").then((m) => m.SchemaAgentUI),
+  { loading: () => <PipelineStepLoader label="Loading schema builder…" /> },
+);
+const CtaAgentUI = dynamic(
+  () => import("@/components/CtaAgentUI").then((m) => m.CtaAgentUI),
+  { loading: () => <PipelineStepLoader label="Loading CTA agent…" /> },
+);
+const ImageAgentUI = dynamic(
+  () => import("@/components/ImageAgentUI").then((m) => m.ImageAgentUI),
+  { loading: () => <PipelineStepLoader label="Loading image agent…" /> },
+);
+const PublishingAgentUI = dynamic(
+  () => import("@/components/PublishingAgentUI").then((m) => m.PublishingAgentUI),
+  { loading: () => <PipelineStepLoader label="Loading publisher…" /> },
+);
+import {
+  buildMinimalBusinessContext,
+  businessContextPayloadFromStrategy,
+  canEnterBlogWriter,
+  hasBusinessDomain,
+  hasTopicSuggestions,
+  normalizeDomain,
+} from "@/lib/strategyInputs";
+import {
+  enrichStrategyWithBlogProgress,
+  getDirectoryFromSession,
+  normalizeBlogStrategyResponse,
+  syncSessionFromDirectory,
+} from "@/lib/contentDirectory";
+import { isPersistedUuid, stripNonPersistedId } from "@/lib/uuid";
+import { clearBusinessSetupStorage } from "@/lib/businessSetupStorage";
 import type { TopicBrief } from "@/lib/types/topicBrief";
 import { EMPTY_TOPIC_BRIEF } from "@/lib/types/topicBrief";
 import type { BusinessContext } from "@/lib/types/businessContext";
@@ -38,7 +86,17 @@ async function parseJsonSafely<T>(response: Response): Promise<T | null> {
 }
 
 function isStrategySession(value: unknown): value is StrategySession {
-  return !!value && typeof value === "object" && "topicOptions" in value;
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return "topicOptions" in v || "keywordStrategy" in v;
+}
+
+function normalizeLoadedStrategy(raw: StrategySession, businessContextId?: string): StrategySession {
+  return syncSessionFromDirectory(
+    normalizeBlogStrategyResponse(raw as unknown as Record<string, unknown>, {
+      businessContextId,
+    }),
+  );
 }
 
 async function fetchWithTimeout(url: string, ms: number, init?: RequestInit): Promise<Response> {
@@ -51,7 +109,57 @@ async function fetchWithTimeout(url: string, ms: number, init?: RequestInit): Pr
   }
 }
 
+function businessProfilePayload(ctx: BusinessContext) {
+  const rawType = ctx.businessType?.trim() || "";
+  const businessType =
+    rawType && rawType !== "General" && rawType !== "General Business" ? rawType : "other";
+  return {
+    platform: "blog" as const,
+    businessName: ctx.businessName?.trim() || "My Business",
+    businessType,
+    domain: ctx.domain,
+    location: ctx.location ?? {},
+    services: ctx.services ?? [],
+    targetAudience:
+      ctx.targetAudience?.trim() || "Prospective customers searching online",
+    positioning: ctx.positioning?.trim() || "Helpful and trustworthy",
+  };
+}
+
+async function persistBusinessProfile(ctx: BusinessContext): Promise<BusinessContext | null> {
+  if (!hasBusinessDomain(ctx)) return null;
+  try {
+    const res = await fetch("/api/business-context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(businessProfilePayload(ctx)),
+    });
+    const saved = await parseJsonSafely<BusinessContext & { error?: string }>(res);
+    if (!res.ok || !saved || "error" in saved) return null;
+    return { ...ctx, ...saved, domain: saved.domain || ctx.domain };
+  } catch (e) {
+    console.warn("Could not persist business profile to server", e);
+    return null;
+  }
+}
+
 // ── Internal component (needs useSearchParams inside Suspense) ──────────────
+const CONTEXT_SKIPPED_KEY = "bloggieai_context_skipped";
+const STRATEGY_SAVED_KEY = "bloggieai_strategy_saved";
+const WRITER_UNLOCKED_KEY = "bloggieai_writer_unlocked";
+
+function markWriterUnlocked() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(WRITER_UNLOCKED_KEY, "1");
+}
+
+function clearWriterUnlockFlags() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(WRITER_UNLOCKED_KEY);
+  window.sessionStorage.removeItem(CONTEXT_SKIPPED_KEY);
+  document.cookie = `${WRITER_UNLOCKED_KEY}=; path=/; max-age=0; SameSite=Lax`;
+}
+
 function SetupPageInner() {
   const LOCAL_CONTEXT_KEY = "bloggieai_local_business_context";
   const LOCAL_STRATEGY_KEY = "bloggieai_local_strategy_session";
@@ -59,30 +167,45 @@ function SetupPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  // mode=blog → blog creation flow (topic picker → pipeline)
-  // mode=account OR no param → account setup flow (profile → strategy → save → dashboard)
-  // mode=blog → blog creation flow (topic picker → pipeline)
-  // mode=account OR no param → account setup flow (profile → strategy → save → dashboard)
   const isBlogMode = searchParams.get("mode") === "blog";
+  const onboardingFirst = searchParams.get("onboarding") === "first";
 
   // ── Account data ─────────────────────────────────────────────────────────
   const [context, setContext] = useState<BusinessContext | null>(null);
   const [strategySession, setStrategySession] = useState<StrategySession | null>(null);
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  /** First blog + writer: show UI immediately; only block when reopening account setup from settings. */
+  const [isInitialLoading, setIsInitialLoading] = useState(!isBlogMode && !onboardingFirst);
+  const [dataHydrated, setDataHydrated] = useState(false);
+  /** False until saved strategy fetch finishes (or is skipped) — avoids topic UI flip & early redirects. */
+  const [strategyFetchSettled, setStrategyFetchSettled] = useState(false);
 
   // After strategy is approved in account setup mode, show a "Saved!" screen
   const [strategySaved, setStrategySaved] = useState(false);
+  const [isSavingStrategy, setIsSavingStrategy] = useState(false);
   const [contextSkipped, setContextSkipped] = useState(false);
   const [strategySkipped, setStrategySkipped] = useState(false);
+  const [writerUnlocked, setWriterUnlocked] = useState(false);
+  const [editingDomain, setEditingDomain] = useState(false);
 
   const effectiveContext = useMemo(
     () => context ?? buildMinimalBusinessContext({ platform: "blog" }),
     [context],
   );
   const hasStrategyTopics = hasTopicSuggestions(strategySession);
+  const hasProfileDomain = hasBusinessDomain(context);
+  const [hasAnyBlog, setHasAnyBlog] = useState(false);
+  const hasSavedStrategy = hasStrategyTopics || strategySaved;
+  const writerSetupInput = {
+    hasBusinessDomain: hasProfileDomain,
+    hasSavedStrategy,
+    hasAnyBlogOrDraft: hasAnyBlog,
+  };
+  const canEnterWriter = canEnterBlogWriter(writerSetupInput);
+  /** Domain + keyword strategy must both be saved before the blog writer opens. */
+  const onboardingStrategyDone = hasSavedStrategy;
 
   // ── Blog creation states ──────────────────────────────────────────────────
-  const [creationMode, setCreationMode] = useState<"batch" | "manual" | null>(null);
+  const [creationMode, setCreationMode] = useState<"batch" | "manual" | "custom" | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<TopicOption | null>(null);
   const [topicBrief, setTopicBrief] = useState<TopicBrief | null>(null);
   const [briefConfirmed, setBriefConfirmed] = useState(false);
@@ -103,7 +226,20 @@ function SetupPageInner() {
 
   const handleTopicSelect = (topic: TopicOption) => {
     setSelectedTopic(topic);
-    setTopicBrief(null);
+    const primaryKw = strategySession?.keywordStrategy?.primaryKeyword;
+    if (topic.h2Titles?.length) {
+      setTopicBrief({
+        ...EMPTY_TOPIC_BRIEF,
+        interlinkingRules: EMPTY_TOPIC_BRIEF.interlinkingRules,
+        contentConstraints: {
+          h1Title: topic.title,
+          h2Titles: topic.h2Titles,
+          h1PrimaryKeyword: primaryKw,
+        },
+      });
+    } else {
+      setTopicBrief(null);
+    }
     setBriefConfirmed(false);
   };
 
@@ -113,6 +249,48 @@ function SetupPageInner() {
       window.scrollTo(0, 0);
     }
   }, []);
+
+  // Onboarding: domain + strategy saved → open blog writer
+  useEffect(() => {
+    if (!onboardingFirst || !dataHydrated || !strategyFetchSettled || isBlogMode) return;
+    if (!canEnterWriter) return;
+    router.replace("/setup?mode=blog");
+  }, [onboardingFirst, dataHydrated, strategyFetchSettled, isBlogMode, canEnterWriter, router]);
+
+  // Blog mode without full setup → strategy on /setup if domain exists; first-time onboarding only when nothing saved yet
+  useEffect(() => {
+    if (!isBlogMode || !dataHydrated || !strategyFetchSettled || onboardingFirst) return;
+    if (canEnterWriter) return;
+    if (hasProfileDomain) {
+      router.replace("/setup");
+      return;
+    }
+    if (hasAnyBlog || hasSavedStrategy) return;
+    router.replace("/setup?onboarding=first");
+  }, [
+    isBlogMode,
+    dataHydrated,
+    strategyFetchSettled,
+    onboardingFirst,
+    canEnterWriter,
+    hasProfileDomain,
+    hasAnyBlog,
+    hasSavedStrategy,
+    router,
+  ]);
+
+  // Drop stale session skip flags
+  useEffect(() => {
+    if (!dataHydrated || !strategyFetchSettled) return;
+    if (canEnterWriter) return;
+    clearWriterUnlockFlags();
+    setWriterUnlocked(false);
+    setContextSkipped(false);
+    setStrategySkipped(false);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(STRATEGY_SAVED_KEY);
+    }
+  }, [dataHydrated, strategyFetchSettled, canEnterWriter]);
 
   // ── Auto-publish fast-lane ────────────────────────────────────────────────
   const [autoProgress, setAutoProgress] = useState<{ step: number; label: string } | null>(null);
@@ -210,27 +388,41 @@ function SetupPageInner() {
 
 
   const handleContextComplete = async (newContext: BusinessContext) => {
+    const scanned = newContext.internalLinks?.filter((l) => l.href?.trim()) ?? [];
+    const serviceLinks = (newContext.services || []).map((s) => ({
+      href: `/services#${s.toLowerCase().replace(/\s+/g, "-")}`,
+      anchorText: s,
+      target: "service" as const,
+    }));
+    const seen = new Set(scanned.map((l) => l.href));
+    const mergedLinks = [
+      ...scanned,
+      ...serviceLinks.filter((l) => !seen.has(l.href)),
+    ];
+
     const enriched: BusinessContext = {
       ...newContext,
       platform: "blog",
-      internalLinks: [
-        { href: "/", anchorText: "Home", target: "page" },
-        { href: "/services", anchorText: "Services", target: "page" },
-        { href: "/gallery", anchorText: "Gallery", target: "page" },
-        { href: "/contact", anchorText: "Contact Us", target: "page" },
-        ...(newContext.services || []).map(s => ({
-          href: `/services#${s.toLowerCase().replace(/\s+/g, "-")}`,
-          anchorText: s,
-          target: "service" as const,
-        })),
-      ],
+      internalLinks: mergedLinks.length > 0 ? mergedLinks : newContext.internalLinks,
     };
 
-    setContext(enriched);
     if (typeof window !== "undefined" && enriched.seoDefaults) {
       window.sessionStorage.setItem(LOCAL_SEO_DEFAULTS_KEY, JSON.stringify(enriched.seoDefaults));
     }
-    if (!enriched.id && typeof window !== "undefined") {
+
+    if (hasBusinessDomain(enriched)) {
+      const persisted = await persistBusinessProfile(enriched);
+      if (persisted) {
+        setContext(persisted);
+        if (typeof window !== "undefined") {
+          window.sessionStorage.removeItem(LOCAL_CONTEXT_KEY);
+        }
+        return;
+      }
+    }
+
+    setContext(enriched);
+    if (typeof window !== "undefined") {
       window.sessionStorage.setItem(LOCAL_CONTEXT_KEY, JSON.stringify(enriched));
     }
   };
@@ -238,6 +430,16 @@ function SetupPageInner() {
   useEffect(() => {
     const hydrateLocalFallback = () => {
       if (typeof window === "undefined") return;
+      if (window.sessionStorage.getItem(CONTEXT_SKIPPED_KEY) === "1") {
+        setContextSkipped(true);
+      }
+      if (window.sessionStorage.getItem(STRATEGY_SAVED_KEY) === "1") {
+        setStrategySaved(true);
+      }
+      if (window.sessionStorage.getItem(WRITER_UNLOCKED_KEY) === "1") {
+        setWriterUnlocked(true);
+        setStrategySkipped(true);
+      }
       const localContextRaw = window.sessionStorage.getItem(LOCAL_CONTEXT_KEY);
       const localStrategyRaw = window.sessionStorage.getItem(LOCAL_STRATEGY_KEY);
 
@@ -251,35 +453,69 @@ function SetupPageInner() {
       if (localStrategyRaw) {
         try {
           const parsedStrategy = JSON.parse(localStrategyRaw) as StrategySession;
-          if (isStrategySession(parsedStrategy)) setStrategySession(parsedStrategy);
+          if (isStrategySession(parsedStrategy)) {
+            const session = normalizeLoadedStrategy(
+              isPersistedUuid(parsedStrategy.id) ? parsedStrategy : stripNonPersistedId(parsedStrategy),
+            );
+            if (getDirectoryFromSession(session).length > 0) {
+              setStrategySession(session);
+            }
+          }
         } catch { }
       }
     };
 
+    const fetchStrategyForContext = async (
+      bcId: string,
+      fallback?: StrategySession | null,
+    ): Promise<StrategySession | null> => {
+      const STRATEGY_FETCH_MS = 15_000;
+      try {
+        const strategyRes = await fetchWithTimeout(
+          `/api/strategy-session?businessContextId=${bcId}&platform=blog`,
+          STRATEGY_FETCH_MS,
+        );
+        const strategy = await parseJsonSafely<StrategySession | { error?: string }>(strategyRes);
+        if (strategyRes.ok && isStrategySession(strategy)) {
+          const normalized = normalizeLoadedStrategy(strategy, bcId);
+          if (getDirectoryFromSession(normalized).length > 0) {
+            if (typeof window !== "undefined") {
+              window.sessionStorage.removeItem(LOCAL_STRATEGY_KEY);
+            }
+            return normalized;
+          }
+        }
+      } catch (e) {
+        console.warn("Strategy session fetch timed out or failed", e);
+      }
+      if (fallback && getDirectoryFromSession(normalizeLoadedStrategy(fallback, bcId)).length > 0) {
+        return normalizeLoadedStrategy(fallback, bcId);
+      }
+      return null;
+    };
+
     async function loadSavedData() {
       const CONTEXT_FETCH_MS = 12_000;
-      const STRATEGY_FETCH_MS = 15_000;
 
       try {
-        let contextRes: Response;
+        let loadedStrategy: StrategySession | null = null;
+        let loadedBlogs: { title: string; slug: string }[] = [];
+        let businessContextId: string | undefined;
+
+        let contextRes: Response | null = null;
         try {
           contextRes = await fetchWithTimeout("/api/business-context?platform=blog", CONTEXT_FETCH_MS);
         } catch (e) {
           console.warn("Business context fetch timed out or failed", e);
           hydrateLocalFallback();
-          return;
         }
 
-        const contexts = await parseJsonSafely<BusinessContext[] | { error?: string }>(contextRes);
+        const contexts =
+          contextRes != null
+            ? await parseJsonSafely<BusinessContext[] | { error?: string }>(contextRes)
+            : null;
 
-        if (!contextRes.ok) {
-          console.warn("Failed to fetch business context", contexts);
-          hydrateLocalFallback();
-          return;
-        }
-
-        if (Array.isArray(contexts) && contexts.length > 0) {
-          // Existing profile should be loaded, not re-saved.
+        if (contextRes?.ok && Array.isArray(contexts) && contexts.length > 0) {
           let mergedContext = contexts[0];
           if (typeof window !== "undefined") {
             const localSeoDefaultsRaw = window.sessionStorage.getItem(LOCAL_SEO_DEFAULTS_KEY);
@@ -288,108 +524,203 @@ function SetupPageInner() {
                 mergedContext = { ...mergedContext, seoDefaults: JSON.parse(localSeoDefaultsRaw) };
               } catch { }
             }
+            const localContextRaw = window.sessionStorage.getItem(LOCAL_CONTEXT_KEY);
+            if (localContextRaw && !hasBusinessDomain(mergedContext)) {
+              try {
+                const localCtx = JSON.parse(localContextRaw) as BusinessContext;
+                if (hasBusinessDomain(localCtx)) {
+                  mergedContext = {
+                    ...mergedContext,
+                    domain: localCtx.domain,
+                    businessName: mergedContext.businessName || localCtx.businessName,
+                    internalLinks: localCtx.internalLinks?.length
+                      ? localCtx.internalLinks
+                      : mergedContext.internalLinks,
+                  };
+                }
+              } catch { /* ignore */ }
+            }
+          }
+          if (hasBusinessDomain(mergedContext)) {
+            const persisted = await persistBusinessProfile(mergedContext);
+            if (persisted) {
+              mergedContext = persisted;
+            }
           }
           setContext(mergedContext);
+          businessContextId = mergedContext.id;
+
           if (typeof window !== "undefined") {
-            window.sessionStorage.removeItem(LOCAL_CONTEXT_KEY);
-            window.sessionStorage.removeItem(LOCAL_STRATEGY_KEY);
-          }
-
-          const bcId = contexts[0].id;
-          if (bcId) {
-            const loadStrategy = async () => {
+            const localStrategyRaw = window.sessionStorage.getItem(LOCAL_STRATEGY_KEY);
+            if (localStrategyRaw) {
               try {
-                const strategyRes = await fetchWithTimeout(
-                  `/api/strategy-session?businessContextId=${bcId}&platform=blog`,
-                  STRATEGY_FETCH_MS,
-                );
-                const strategy = await parseJsonSafely<StrategySession | { error?: string }>(strategyRes);
-                if (strategyRes.ok && isStrategySession(strategy) && strategy.topicOptions) {
-                  setStrategySession(strategy);
+                const parsedStrategy = JSON.parse(localStrategyRaw) as StrategySession;
+                if (isStrategySession(parsedStrategy)) {
+                  loadedStrategy = normalizeLoadedStrategy(
+                    isPersistedUuid(parsedStrategy.id)
+                      ? parsedStrategy
+                      : stripNonPersistedId(parsedStrategy),
+                    businessContextId,
+                  );
                 }
-              } catch (e) {
-                console.warn("Strategy session fetch timed out or failed", e);
-              }
-            };
-
-            // Strategy is optional in blog mode — load in background.
-            void loadStrategy();
+              } catch { /* keep fetching remote */ }
+            }
+            if (hasBusinessDomain(mergedContext)) {
+              window.sessionStorage.removeItem(LOCAL_CONTEXT_KEY);
+            }
+            window.sessionStorage.removeItem(CONTEXT_SKIPPED_KEY);
+            window.sessionStorage.removeItem(STRATEGY_SAVED_KEY);
           }
+        } else if (contextRes?.ok && Array.isArray(contexts) && contexts.length === 0) {
+          clearBusinessSetupStorage();
+          setContext(null);
         } else {
+          if (contextRes && !contextRes.ok) {
+            console.warn("Failed to fetch business context", contexts);
+          }
           hydrateLocalFallback();
+          if (typeof window !== "undefined") {
+            const localContextRaw = window.sessionStorage.getItem(LOCAL_CONTEXT_KEY);
+            if (localContextRaw) {
+              try {
+                const localCtx = JSON.parse(localContextRaw) as BusinessContext;
+                if (hasBusinessDomain(localCtx)) {
+                  const persisted = await persistBusinessProfile(localCtx);
+                  if (persisted) {
+                    setContext(persisted);
+                    businessContextId = persisted.id;
+                    window.sessionStorage.removeItem(LOCAL_CONTEXT_KEY);
+                  }
+                }
+              } catch { /* ignore */ }
+            }
+          }
+        }
+
+        if (!businessContextId && typeof window !== "undefined") {
+          const localContextRaw = window.sessionStorage.getItem(LOCAL_CONTEXT_KEY);
+          if (localContextRaw) {
+            try {
+              const parsed = JSON.parse(localContextRaw) as BusinessContext;
+              businessContextId = parsed.id;
+            } catch { /* ignore */ }
+          }
+        }
+
+        if (businessContextId) {
+          loadedStrategy = await fetchStrategyForContext(businessContextId, loadedStrategy);
+        }
+
+        try {
+          const blogsRes = await fetchWithTimeout("/api/blog", 10_000);
+          const blogsPayload = await parseJsonSafely<{ blogs?: unknown[] }>(blogsRes);
+          if (blogsRes.ok && Array.isArray(blogsPayload?.blogs)) {
+            setHasAnyBlog(blogsPayload.blogs.length > 0);
+            loadedBlogs = (blogsPayload.blogs as { title?: string; slug?: string }[]).map((b) => ({
+              title: String(b.title || ""),
+              slug: String(b.slug || ""),
+            }));
+          }
+        } catch (e) {
+          console.warn("Blog list fetch timed out or failed", e);
+        }
+
+        if (loadedStrategy) {
+          setStrategySession(enrichStrategyWithBlogProgress(loadedStrategy, loadedBlogs));
         }
       } catch (err) {
         console.error("Failed to load initial data", err);
         hydrateLocalFallback();
       } finally {
         setIsInitialLoading(false);
+        setDataHydrated(true);
+        setStrategyFetchSettled(true);
       }
     }
     loadSavedData();
   }, []);
 
   const handleStrategyApprove = async (session: StrategySession) => {
+    setIsSavingStrategy(true);
     try {
-      // Local fallback mode: continue setup even when context could not be persisted.
-      if (!context?.id) {
-        const localSession: StrategySession = {
-          ...session,
-          id: session.id || `local-${Date.now()}`,
-          businessContextId: "",
-          platform: "blog",
-          status: "approved",
-        };
-        setStrategySession(localSession);
-        if (typeof window !== "undefined") {
-          if (context) window.sessionStorage.setItem(LOCAL_CONTEXT_KEY, JSON.stringify(context));
-          window.sessionStorage.setItem(LOCAL_STRATEGY_KEY, JSON.stringify(localSession));
+      let ctx = context;
+
+      if (!ctx?.id && typeof window !== "undefined") {
+        const localRaw = window.sessionStorage.getItem(LOCAL_CONTEXT_KEY);
+        if (localRaw) {
+          try {
+            const localCtx = JSON.parse(localRaw) as BusinessContext;
+            if (hasBusinessDomain(localCtx)) {
+              ctx = { ...localCtx, ...ctx };
+            }
+          } catch { /* ignore */ }
         }
-        if (!isBlogMode) setStrategySaved(true);
-        return;
       }
 
-      // Ensure we have a valid UUID for the businessContextId
-      if (!session.businessContextId || session.businessContextId === context?.businessName) {
-        if (context?.id) {
-          session.businessContextId = context.id;
-        } else {
-          throw new Error("Business context ID is missing. Please refresh and try saving your profile again.");
+      if (!ctx?.id) {
+        const profilePayload = businessContextPayloadFromStrategy(session, ctx ?? undefined);
+        const profileRes = await fetch("/api/business-context", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(profilePayload),
+        });
+        const savedProfile = await parseJsonSafely<BusinessContext & { error?: string }>(profileRes);
+        if (!profileRes.ok || !savedProfile || "error" in savedProfile) {
+          throw new Error(
+            (savedProfile && "error" in savedProfile && savedProfile.error) ||
+              "Could not save a profile for your strategy. Try again.",
+          );
         }
+        ctx = savedProfile;
+        setContext(savedProfile);
       }
+
+      const toSave: StrategySession = stripNonPersistedId(
+        syncSessionFromDirectory({
+          ...session,
+          platform: session.platform ?? "blog",
+          businessContextId: ctx.id!,
+          status: "approved",
+        }),
+      );
 
       const res = await fetch("/api/strategy-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(session),
+        body: JSON.stringify(toSave),
       });
-      const savedSession = await res.json();
+      const savedSession = await parseJsonSafely<StrategySession & { error?: string }>(res);
 
-      if (!res.ok || savedSession.error) {
-        throw new Error(savedSession.error || "Backend failed to save strategy session");
+      if (!res.ok || !savedSession || "error" in savedSession) {
+        throw new Error(
+          (savedSession && "error" in savedSession && savedSession.error) ||
+            "Backend failed to save strategy session",
+        );
       }
 
       setStrategySession(savedSession);
       if (typeof window !== "undefined") {
         window.sessionStorage.removeItem(LOCAL_CONTEXT_KEY);
         window.sessionStorage.removeItem(LOCAL_STRATEGY_KEY);
+        window.sessionStorage.setItem(STRATEGY_SAVED_KEY, "1");
       }
 
-      // In account setup mode: show the "saved" confirmation screen
       if (!isBlogMode) setStrategySaved(true);
     } catch (err) {
       console.error("Failed to save strategy", err);
       alert(err instanceof Error ? err.message : "Failed to save strategy");
-      // Do not set strategySaved to true!
+    } finally {
+      setIsSavingStrategy(false);
     }
   };
 
   // ── Loading skeleton ──────────────────────────────────────────────────────
   if (isInitialLoading) {
     return (
-      <main className="min-h-screen bg-neutral-950 p-6 md:p-10">
-        <div className="mx-auto max-w-2xl animate-pulse space-y-4">
-          <div className="h-8 w-48 bg-neutral-900 rounded" />
-          <div className="h-40 bg-neutral-900 rounded-xl border border-neutral-800" />
+      <main className="min-h-screen bg-neutral-950 p-6 md:p-10 flex flex-col items-center justify-center">
+        <div className="mx-auto max-w-md w-full text-center space-y-4">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+          <p className="text-sm font-semibold text-white">Loading…</p>
         </div>
       </main>
     );
@@ -399,10 +730,18 @@ function SetupPageInner() {
   // ACCOUNT SETUP MODE  (/setup  or  /setup?mode=account)
   // ═══════════════════════════════════════════════════════════════════════════
   if (!isBlogMode) {
-    const accountSetupComplete = strategySaved || strategySkipped;
+    const accountSetupComplete = canEnterWriter;
 
-    // ── Setup complete (strategy saved or skipped) ───────────────────────
+    // ── Setup complete (domain + strategy saved) ─────────────────────────
     if (accountSetupComplete) {
+      if (onboardingFirst) {
+        return (
+          <main className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-6">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+            <p className="mt-6 text-sm font-semibold text-white">Opening blog writer…</p>
+          </main>
+        );
+      }
       return (
         <main className="min-h-screen bg-neutral-950 p-6 md:p-10 flex items-center justify-center">
           <div className="mx-auto max-w-lg text-center animate-in fade-in zoom-in-95 duration-500">
@@ -413,11 +752,7 @@ function SetupPageInner() {
             </div>
             <h1 className="text-3xl font-black text-white mb-3 uppercase tracking-tighter">You&apos;re All Set!</h1>
             <p className="text-neutral-400 mb-10 leading-relaxed">
-              {strategySaved && strategySession
-                ? "Your business profile and SEO strategy are saved. You're ready to generate AI content."
-                : strategySkipped && context
-                  ? "Profile saved. You can generate strategy later from account setup, or write posts with your own topics now."
-                  : "You can start writing with custom topics anytime. Add a profile and strategy later for AI-suggested topics."}
+              Your website domain and keyword strategy are saved. You&apos;re ready to generate AI content.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <a
@@ -446,36 +781,78 @@ function SetupPageInner() {
       <main className="min-h-screen bg-neutral-950 p-4 md:p-10">
         <div className="mx-auto max-w-2xl">
           <div className="mb-6">
-            <h1 className="text-2xl font-black text-white uppercase tracking-tighter">Account Setup</h1>
-            <p className="text-neutral-400 text-sm mt-1">Business profile and SEO strategy are optional — skip any step and add details later.</p>
+            <h1 className="text-2xl font-black text-white uppercase tracking-tighter">
+              {onboardingFirst ? "Before your first blog" : "Account Setup"}
+            </h1>
+            <p className="text-neutral-400 text-sm mt-1">
+              {onboardingFirst
+                ? "Add your website domain (scanning optional), then create or upload your keyword strategy. Both are required before writing."
+                : "Website domain and keyword strategy are required. You can update either here anytime."}
+            </p>
           </div>
           <div className="space-y-6">
-            {!context && !contextSkipped && (
+            {hasProfileDomain && !editingDomain && (
+              <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-4 shadow-sm flex items-center justify-between gap-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5" aria-hidden>
+                      <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <h2 className="text-sm font-semibold text-emerald-400">Website saved</h2>
+                    <p className="truncate text-xs text-neutral-400">
+                      {normalizeDomain(context?.domain || "") || context?.businessName}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingDomain(true)}
+                  className="shrink-0 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white"
+                >
+                  Change website
+                </button>
+              </div>
+            )}
+            {(!hasProfileDomain || editingDomain) && (
               <div className="animate-in slide-in-from-top-4 duration-500">
                 <BusinessContextSetup
-                  onComplete={handleContextComplete}
-                  onSkip={() => setContextSkipped(true)}
+                  onComplete={(ctx) => {
+                    handleContextComplete(ctx);
+                    setEditingDomain(false);
+                  }}
                 />
               </div>
             )}
-            {(context || contextSkipped) && !strategySession && !strategySkipped && (
+            {hasProfileDomain && !editingDomain && !hasSavedStrategy && (
               <div className="animate-in slide-in-from-top-4 duration-500 space-y-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-neutral-500">
-                  SEO strategy (optional)
+                  Keyword strategy (required)
                 </p>
                 <StrategyAgentUI
                   businessContext={context}
-                  onApprove={handleStrategyApprove}
+                  saving={isSavingStrategy}
+                  onApprove={(session) => handleStrategyApprove(session)}
                   onModify={() => { }}
-                  onSkip={() => setStrategySkipped(true)}
                 />
               </div>
             )}
-            {context && strategySession && !strategySaved && !strategySkipped && (
-              // Should not normally reach here — but handle gracefully
-              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.02] p-6 text-center">
-                <p className="text-emerald-400 font-bold mb-4">Strategy already active. Redirecting...</p>
-                <a href="/dashboard" className="text-sm text-emerald-500 underline">Go to Dashboard</a>
+            {hasProfileDomain && strategySession && !strategySaved && (
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.02] p-6 text-center space-y-4">
+                <p className="text-emerald-400 font-bold">Keyword strategy ready — save to continue</p>
+                <p className="text-sm text-neutral-400">
+                  We&apos;ll store your keywords and topics{context ? "" : " and a minimal profile from your direction"}.
+                </p>
+                <CtaButton
+                  type="button"
+                  onClick={() => void handleStrategyApprove(strategySession)}
+                  loading={isSavingStrategy}
+                  loadingLabel="Saving…"
+                  className="rounded-lg px-6 py-2.5 text-xs"
+                >
+                  Save keyword strategy
+                </CtaButton>
               </div>
             )}
           </div>
@@ -487,6 +864,17 @@ function SetupPageInner() {
   // ═══════════════════════════════════════════════════════════════════════════
   // BLOG CREATION MODE  (/setup?mode=blog)
   // ═══════════════════════════════════════════════════════════════════════════
+
+  if (isBlogMode && (!dataHydrated || !strategyFetchSettled)) {
+    return (
+      <main className="min-h-screen bg-neutral-950 p-6 md:p-10 flex flex-col items-center justify-center">
+        <div className="mx-auto max-w-md w-full text-center space-y-4">
+          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+          <p className="text-sm font-semibold text-white">Loading your profile…</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-neutral-950 p-4 md:p-10">
@@ -504,6 +892,29 @@ function SetupPageInner() {
         </div>
 
         <div className="space-y-6">
+          {!hasProfileDomain && (
+            <div className="animate-in slide-in-from-top-4 duration-500">
+              <BusinessContextSetup onComplete={handleContextComplete} />
+            </div>
+          )}
+
+          {hasProfileDomain && !hasSavedStrategy && (
+            <div className="animate-in slide-in-from-top-4 duration-500 space-y-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-500">
+                Keyword strategy (required)
+              </p>
+              <StrategyAgentUI
+                businessContext={context}
+                saving={isSavingStrategy}
+                onApprove={(session) => void handleStrategyApprove(session)}
+                onModify={() => { }}
+              />
+            </div>
+          )}
+
+          {hasProfileDomain && hasSavedStrategy && (
+          <>
+
           {/* Auto-publish progress overlay */}
           {autoProgress && (
             <div className="fixed inset-0 z-50 bg-neutral-950/90 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-300">
@@ -602,23 +1013,32 @@ function SetupPageInner() {
                   ← Back to Selection
                 </button>
               </div>
-              {hasStrategyTopics && strategySession ? (
+              {!strategyFetchSettled ? (
+                <PipelineStepLoader label="Loading topic suggestions…" />
+              ) : creationMode === "custom" ? (
+                <ManualTopicEntry
+                  onSelect={handleTopicSelect}
+                  onBack={() => setCreationMode(hasStrategyTopics ? "manual" : null)}
+                />
+              ) : hasStrategyTopics && strategySession ? (
                 <TopicSelector
                   strategy={strategySession}
                   onSelect={handleTopicSelect}
                   businessContext={effectiveContext}
                   onAutoPublish={handleAutoPublish}
-                  mode={creationMode}
+                  mode={creationMode === "batch" ? "batch" : "manual"}
+                  excludeCompleted={creationMode !== "batch"}
+                  onCustomTopic={() => setCreationMode("custom")}
                 />
-              ) : creationMode === "manual" ? (
+              ) : creationMode === "manual" && !hasStrategyTopics ? (
                 <ManualTopicEntry
                   onSelect={handleTopicSelect}
-                  onBack={() => setCreationMode(null)}
+                  onBack={() => setCreationMode(hasStrategyTopics ? "manual" : null)}
                 />
               ) : (
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6 text-center">
                   <p className="text-sm text-neutral-300 mb-4">
-                    Auto-Pilot Batch needs a saved SEO strategy with topic suggestions.
+                    Auto-Pilot Batch needs a saved keyword strategy with topic suggestions.
                   </p>
                   <button
                     type="button"
@@ -636,7 +1056,9 @@ function SetupPageInner() {
           {selectedTopic && creationMode === "manual" && !briefConfirmed && !generatedPost && (
             <div className="animate-in slide-in-from-top-4 duration-500">
               <TopicBriefPanel
+                key={selectedTopic.title}
                 topic={selectedTopic}
+                primaryKeyword={strategySession?.keywordStrategy?.primaryKeyword}
                 onConfirm={(brief) => {
                   setTopicBrief(brief);
                   setBriefConfirmed(true);
@@ -659,13 +1081,23 @@ function SetupPageInner() {
                     businessContext={effectiveContext}
                     topic={selectedTopic}
                     topicBrief={topicBrief ?? EMPTY_TOPIC_BRIEF}
+                    strategySession={strategySession}
                     onComplete={setGeneratedPost}
                   />
                 </div>
               )}
               {generatedPost && !optimizedPost && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <OptimizationAgentUI post={generatedPost} businessContext={effectiveContext} onComplete={setOptimizedPost} />
+                  <OptimizationAgentUI
+                    post={generatedPost}
+                    businessContext={effectiveContext}
+                    interlinkingRules={topicBrief?.interlinkingRules}
+                    primaryKeyword={
+                      topicBrief?.contentConstraints?.h1PrimaryKeyword?.trim() ||
+                      strategySession?.keywordStrategy?.primaryKeyword
+                    }
+                    onComplete={setOptimizedPost}
+                  />
                 </div>
               )}
               {optimizedPost && !selectedMeta && (
@@ -693,7 +1125,13 @@ function SetupPageInner() {
                   <PublishingAgentUI
                     optimizedContent={optimizedPost!} businessContext={effectiveContext}
                     images={generatedImages} cta={ctaData!} meta={selectedMeta!}
-                    schema={generatedSchema!} onComplete={setPublishData}
+                    schema={generatedSchema!}
+                    onComplete={(payload) => {
+                      setPublishData(payload);
+                      if (payload?.status === "draft" || payload?.status === "published") {
+                        setHasAnyBlog(true);
+                      }
+                    }}
                   />
                 </div>
               )}
@@ -748,6 +1186,8 @@ function SetupPageInner() {
               )}
             </>
           )}
+          </>
+          )}
         </div>
       </div>
     </main>
@@ -757,14 +1197,14 @@ function SetupPageInner() {
 // Wrap in Suspense for useSearchParams
 export default function SetupPage() {
   return (
-    <Suspense fallback={
-      <main className="min-h-screen p-6 md:p-10">
-        <div className="mx-auto max-w-2xl animate-pulse space-y-4">
-          <div className="h-8 w-48 bg-neutral-900 rounded" />
-          <div className="h-40 bg-neutral-900 rounded-xl border border-neutral-800" />
-        </div>
-      </main>
-    }>
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-neutral-950 flex flex-col items-center justify-center p-6">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-500" />
+          <p className="mt-6 text-sm font-semibold text-white">Opening blog writer…</p>
+        </main>
+      }
+    >
       <SetupPageInner />
     </Suspense>
   );

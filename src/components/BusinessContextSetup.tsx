@@ -1,5 +1,8 @@
 "use client";
 
+import { CtaButton } from "@/components/ui/CtaButton";
+import { isValidPublicDomain, normalizeDomain } from "@/lib/strategyInputs";
+
 import { useState } from "react";
 import { type BusinessContext as BusinessContextType } from "@/lib/types/businessContext";
 
@@ -41,9 +44,14 @@ export function BusinessContextSetup({
     platform,
   });
 
+  const domainReady = isValidPublicDomain(url);
+
   const handleScrape = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
+    if (!domainReady) {
+      setError("Enter a full domain with an extension (e.g. yoursite.com, brand.io, company.co.in).");
+      return;
+    }
 
     // Formatting URL if missing protocol
     let formattedUrl = url.trim();
@@ -74,9 +82,9 @@ export function BusinessContextSetup({
       const contextData = data.data as BusinessContextType;
       setDraftContext({
         ...contextData,
-        // Ensure arrays and objects exist so the form doesn't break
         services: contextData.services || [],
         location: contextData.location || { city: "", region: "", country: "" },
+        internalLinks: contextData.internalLinks || [],
       });
       setEditServicesStr((contextData.services || []).join(", "));
       setEditDefaultCategory(contextData.seoDefaults?.defaultPostCategory || "Guide");
@@ -109,12 +117,20 @@ export function BusinessContextSetup({
         country: contextToSave.location?.country?.trim() || "",
       },
       services: parsedServices.length > 0 ? parsedServices : (contextToSave.services || []),
-      seoDefaults: {
+      seoDefaults: contextToSave.seoDefaults ?? {
         defaultPostCategory: editDefaultCategory || "Guide",
         defaultSchemaType: editSchemaType,
         includeFaqSchemaByDefault: editIncludeFaqSchema,
         canonicalBaseUrl: editCanonicalBaseUrl.trim() || "",
       },
+    };
+
+    const finishSave = (savedContext: BusinessContextType) => {
+      if (onComplete) {
+        onComplete(savedContext);
+        return;
+      }
+      setSaved(savedContext);
     };
 
     try {
@@ -126,9 +142,14 @@ export function BusinessContextSetup({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Save failed");
 
-      const hydratedSaved = { ...data, seoDefaults: finalDeps.seoDefaults };
-      setSaved(hydratedSaved);
-      if (onComplete) onComplete(hydratedSaved);
+      const hydratedSaved: BusinessContextType = {
+        ...finalDeps,
+        ...data,
+        domain: (data.domain as string | undefined)?.trim() || finalDeps.domain,
+        seoDefaults: finalDeps.seoDefaults,
+      };
+      finishSave(hydratedSaved);
+      return true;
     } catch (e: any) {
       const errorMessage = typeof e?.message === "string" ? e.message : "";
       const normalizedError = errorMessage.toLowerCase();
@@ -142,12 +163,13 @@ export function BusinessContextSetup({
           ...finalDeps,
           id: undefined,
         };
-        setSaved(localContext);
-        if (onComplete) onComplete(localContext);
+        finishSave(localContext);
         setError(null);
+        return true;
       } else {
         const message = e?.message || "Save failed";
         setError(message);
+        return false;
       }
     } finally {
       setIsSaving(false);
@@ -159,26 +181,37 @@ export function BusinessContextSetup({
     await persistContext(draftContext);
   };
 
-  const handleManualEntry = () => {
+  const handleContinueWithoutScan = async () => {
+    if (!isValidPublicDomain(url)) {
+      setError("Enter a full domain with an extension (e.g. yoursite.com, brand.io, company.co.in).");
+      return;
+    }
+    const host = normalizeDomain(url);
     setError(null);
-    const emptyContext = createEmptyDraftContext();
-    setDraftContext(emptyContext);
+    const canonical = `https://${host}`;
+    const draft: BusinessContextType = {
+      ...createEmptyDraftContext(),
+      domain: canonical,
+      businessName:
+        host.split(".")[0].replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "My Business",
+      seoDefaults: {
+        defaultPostCategory: "Guide",
+        defaultSchemaType: "BlogPosting",
+        includeFaqSchemaByDefault: true,
+        canonicalBaseUrl: canonical,
+      },
+    };
+    setDraftContext(draft);
     setEditServicesStr("");
     setEditDefaultCategory("Guide");
     setEditSchemaType("BlogPosting");
-    setEditCanonicalBaseUrl("");
+    setEditCanonicalBaseUrl(canonical);
     setEditIncludeFaqSchema(true);
-    setStep("verify");
-  };
 
-  const handleSkipForNow = async () => {
-    if (onSkip) {
-      onSkip();
-      return;
+    const ok = await persistContext(draft, true);
+    if (!ok) {
+      setStep("verify");
     }
-    setDraftContext(createEmptyDraftContext());
-    setEditServicesStr("");
-    await persistContext(createEmptyDraftContext(), true);
   };
 
   const handleRestart = () => {
@@ -204,8 +237,10 @@ export function BusinessContextSetup({
             </svg>
           </div>
           <div>
-            <h2 className={`text-sm font-semibold ${platform === 'linkedin' ? 'text-blue-400' : 'text-emerald-400'}`}>Business identity verified</h2>
-            <p className="text-xs text-neutral-400">{saved.businessName}</p>
+            <h2 className={`text-sm font-semibold ${platform === 'linkedin' ? 'text-blue-400' : 'text-emerald-400'}`}>Website saved</h2>
+            <p className="text-xs text-neutral-400">
+              {normalizeDomain(saved.domain || "") || saved.businessName}
+            </p>
           </div>
         </div>
         <button
@@ -213,7 +248,7 @@ export function BusinessContextSetup({
           onClick={handleRestart}
           className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:bg-neutral-800 hover:text-white"
         >
-          Start Over
+          Change website
         </button>
       </div>
     );
@@ -230,45 +265,60 @@ export function BusinessContextSetup({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
           </div>
-          <h2 className="text-2xl font-black text-white mb-2 uppercase tracking-tighter">Set Up Business Context</h2>
-          <p className="text-neutral-400 mb-8 max-w-sm mx-auto italic">
-            {platform === "linkedin" ? "Our platform" : "AI Organic Growth Platform"} will scan your website to automatically extract your services, brand tone, and target audience. No long forms required.
+          <h2 className="text-2xl font-black text-white mb-2 uppercase tracking-tighter">Set Up Business Profile</h2>
+          <p className="text-neutral-400 mb-8 max-w-sm mx-auto">
+            Your website domain is required for publishing and internal links. Scanning is optional — new sites can fill in details manually.
           </p>
 
           <form onSubmit={handleScrape} className="mx-auto max-w-md relative">
             <input
               type="text"
               value={url}
-              onChange={e => setUrl(e.target.value)}
-              placeholder="e.g. yoursalon.com"
+              onChange={(e) => {
+                setUrl(e.target.value);
+                if (error) setError(null);
+              }}
+              placeholder="www.yoursite.com"
+              autoComplete="off"
               autoFocus
+              required
               className="w-full bg-neutral-950 border border-neutral-800 rounded-2xl py-4 pl-5 pr-32 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder:text-neutral-600 shadow-inner"
             />
             <button
               type="submit"
-              disabled={!url.trim()}
+              disabled={!domainReady}
               className="absolute right-2 top-2 bottom-2 rounded-xl bg-emerald-600 px-6 font-bold text-white transition-all hover:bg-emerald-500 disabled:opacity-50 disabled:bg-neutral-800 shadow-lg shadow-emerald-900/50"
             >
               Scan
             </button>
           </form>
 
+          {url.trim() && !domainReady && (
+            <p className="mx-auto mt-3 max-w-md text-xs text-neutral-500">
+              Include a domain extension — e.g. <span className="text-neutral-400">.com</span>,{" "}
+              <span className="text-neutral-400">.io</span>, <span className="text-neutral-400">.ai</span>,{" "}
+              <span className="text-neutral-400">.in</span>, <span className="text-neutral-400">.co</span>
+            </p>
+          )}
+
           <div className="mx-auto mt-4 max-w-md space-y-3">
             <button
               type="button"
-              onClick={handleManualEntry}
-              className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-5 py-3 text-xs font-black uppercase tracking-widest text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-white"
+              onClick={() => void handleContinueWithoutScan()}
+              disabled={!domainReady || isSaving}
+              className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-5 py-3 text-xs font-black uppercase tracking-widest text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-white disabled:opacity-40"
             >
-              Enter Details Manually
+              {isSaving ? "Saving…" : "Continue without scanning"}
             </button>
-            <button
-              type="button"
-              onClick={handleSkipForNow}
-              disabled={isSaving}
-              className="w-full rounded-xl border border-neutral-800 bg-transparent px-5 py-3 text-xs font-black uppercase tracking-widest text-neutral-500 transition-colors hover:border-neutral-700 hover:text-neutral-300 disabled:opacity-60"
-            >
-              {isSaving ? "Skipping..." : "Skip For Now"}
-            </button>
+            {platform === "linkedin" && onSkip && (
+              <button
+                type="button"
+                onClick={onSkip}
+                className="w-full rounded-xl border border-neutral-800 bg-transparent px-5 py-3 text-xs font-black uppercase tracking-widest text-neutral-500 transition-colors hover:border-neutral-700 hover:text-neutral-300"
+              >
+                Skip profile (LinkedIn only)
+              </button>
+            )}
           </div>
 
           {error && <p className="mt-4 text-sm text-red-400 font-medium bg-red-900/20 inline-block px-4 py-2 rounded-lg border border-red-900/50">{error}</p>}
@@ -299,8 +349,12 @@ export function BusinessContextSetup({
         <div className="p-6 md:p-8 animate-in slide-in-from-bottom-4 duration-500">
           <div className="mb-6 flex justify-between items-center border-b border-neutral-800 pb-4">
             <div>
-              <h2 className="text-xl font-black text-white uppercase tracking-tighter">Verify Business Profile</h2>
-              <p className="text-sm text-neutral-400 mt-1">Review the AI extraction. Correct any mistakes or fill out missing data.</p>
+              <h2 className="text-xl font-black text-white uppercase tracking-tighter">Review business profile</h2>
+              <p className="text-sm text-neutral-400 mt-1">
+                {draftContext.domain && !draftContext.services?.length
+                  ? "Confirm your domain and add any details you want before continuing."
+                  : "Review the scan results. Correct any mistakes or fill out missing data."}
+              </p>
             </div>
             <button
               onClick={handleBackToInput}
@@ -337,11 +391,15 @@ export function BusinessContextSetup({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Domain</label>
+                  <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">
+                    Website domain <span className="text-neutral-600">(required)</span>
+                  </label>
                   <input
                     type="text"
                     value={draftContext.domain || ""}
                     onChange={e => setDraftContext({ ...draftContext, domain: e.target.value })}
+                    placeholder="https://www.yoursite.com"
+                    required
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
@@ -374,7 +432,7 @@ export function BusinessContextSetup({
                 <textarea
                   value={editServicesStr}
                   onChange={e => setEditServicesStr(e.target.value)}
-                  placeholder="Haircuts, Balayage, Extensions (Comma separated)"
+                  placeholder="e.g. online MBA programs, admissions consulting"
                   rows={2}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
                 />
@@ -452,14 +510,20 @@ export function BusinessContextSetup({
             </div>
           </div>
 
-          <button
+          <CtaButton
             onClick={handleSave}
-            disabled={isSaving}
-            className="w-full flex items-center justify-center gap-3 rounded-xl bg-amber-500 px-6 py-4 font-black text-neutral-900 transition-all hover:bg-amber-400 disabled:opacity-50 uppercase tracking-widest shadow-xl shadow-amber-900/30"
+            loading={isSaving}
+            loadingLabel="Saving Identity..."
+            variant="amber"
+            className="w-full rounded-xl px-6 py-4 text-xs shadow-xl"
+            trailingIcon={
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+            }
           >
-            {isSaving ? "Saving Identity..." : "Confirm & Setup Strategy Session"}
-            {!isSaving && <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>}
-          </button>
+            Save & continue
+          </CtaButton>
         </div>
       )}
     </div>

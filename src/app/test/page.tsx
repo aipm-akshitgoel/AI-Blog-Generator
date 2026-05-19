@@ -179,20 +179,22 @@ function SetupPageInner() {
 
 
   const handleContextComplete = async (newContext: BusinessContext) => {
+    const scanned = newContext.internalLinks?.filter((l) => l.href?.trim()) ?? [];
+    const serviceLinks = (newContext.services || []).map((s) => ({
+      href: `/services#${s.toLowerCase().replace(/\s+/g, "-")}`,
+      anchorText: s,
+      target: "service" as const,
+    }));
+    const seen = new Set(scanned.map((l) => l.href));
+    const mergedLinks = [
+      ...scanned,
+      ...serviceLinks.filter((l) => !seen.has(l.href)),
+    ];
+
     const enriched: BusinessContext = {
       ...newContext,
       platform: "blog",
-      internalLinks: [
-        { href: "/", anchorText: "Home", target: "page" },
-        { href: "/services", anchorText: "Services", target: "page" },
-        { href: "/gallery", anchorText: "Gallery", target: "page" },
-        { href: "/contact", anchorText: "Contact Us", target: "page" },
-        ...(newContext.services || []).map(s => ({
-          href: `/services#${s.toLowerCase().replace(/\s+/g, "-")}`,
-          anchorText: s,
-          target: "service" as const,
-        })),
-      ],
+      internalLinks: mergedLinks.length > 0 ? mergedLinks : newContext.internalLinks,
     };
 
     setContext(enriched);
@@ -495,18 +497,18 @@ function SetupPageInner() {
                   ← Back to Selection
                 </button>
               </div>
-              {hasStrategyTopics && strategySession ? (
+              {creationMode === "manual" ? (
+                <ManualTopicEntry
+                  onSelect={handleTopicSelect}
+                  onBack={() => setCreationMode(null)}
+                />
+              ) : hasStrategyTopics && strategySession ? (
                 <TopicSelector
                   strategy={strategySession}
                   onSelect={handleTopicSelect}
                   businessContext={effectiveContext}
                   onAutoPublish={handleAutoPublish}
                   mode={creationMode}
-                />
-              ) : creationMode === "manual" ? (
-                <ManualTopicEntry
-                  onSelect={handleTopicSelect}
-                  onBack={() => setCreationMode(null)}
                 />
               ) : (
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6 text-center">
@@ -558,7 +560,12 @@ function SetupPageInner() {
               )}
               {generatedPost && !optimizedPost && (
                 <div className="animate-in slide-in-from-top-4 duration-500">
-                  <OptimizationAgentUI post={generatedPost} businessContext={effectiveContext} onComplete={setOptimizedPost} />
+                  <OptimizationAgentUI
+                    post={generatedPost}
+                    businessContext={effectiveContext}
+                    interlinkingRules={topicBrief?.interlinkingRules}
+                    onComplete={setOptimizedPost}
+                  />
                 </div>
               )}
               {optimizedPost && !selectedMeta && (

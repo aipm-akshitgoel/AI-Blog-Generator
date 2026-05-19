@@ -2,6 +2,12 @@
 
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { BusinessContext } from "@/lib/types/businessContext";
+import type { FactSource } from "@/lib/types/factSource";
+import {
+    FactCitationDecorations,
+    refreshFactCitationDecorations,
+    type FactCitationDecorationOptions,
+} from "@/components/tiptap/FactCitationDecorations";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -16,6 +22,11 @@ interface RichTextEditorProps {
     internalLinks?: BusinessContext["internalLinks"];
     /** Fill parent flex column and scroll editor body (edit modal). */
     fillHeight?: boolean;
+    /** Inside ArticleContentEditor — no outer card border. */
+    embedded?: boolean;
+    factSources?: FactSource[];
+    factModeEnabled?: boolean;
+    onRemoveFactSource?: (id: string) => void;
 }
 
 export type RichTextEditorHandle = {
@@ -147,7 +158,16 @@ function toolbarPointerDown(e: React.MouseEvent) {
 }
 
 export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(function RichTextEditor(
-    { value, onChange, internalLinks = [], fillHeight = false },
+    {
+        value,
+        onChange,
+        internalLinks = [],
+        fillHeight = false,
+        embedded = false,
+        factSources = [],
+        factModeEnabled = false,
+        onRemoveFactSource,
+    },
     ref,
 ) {
     const [showLinkModal, setShowLinkModal] = useState(false);
@@ -155,7 +175,17 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const [pendingLinkRange, setPendingLinkRange] = useState<{ from: number; to: number } | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const lastMarkdownFromEditorRef = useRef("");
+    const citationOptsRef = useRef<FactCitationDecorationOptions>({
+        sources: [],
+        enabled: false,
+    });
     const turndown = useMemo(() => new TurndownService({ headingStyle: "atx", bulletListMarker: "-" }), []);
+
+    citationOptsRef.current = {
+        sources: factSources,
+        enabled: factModeEnabled,
+        onRemoveSource: onRemoveFactSource,
+    };
 
     useEffect(() => {
         if (typeof document === "undefined") return;
@@ -178,9 +208,12 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             Placeholder.configure({
                 placeholder: "Start editing your optimized content here...",
             }),
+            FactCitationDecorations.configure({
+                getCitationOptions: () => citationOptsRef.current,
+            }),
         ],
         content: "",
-        immediatelyRender: false,
+        immediatelyRender: true,
         onUpdate: ({ editor: tiptapEditor }) => {
             const html = tiptapEditor.getHTML();
             const markdown = turndown.turndown(html);
@@ -192,17 +225,37 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     useEffect(() => {
         if (!editor) return;
         const nextValue = value || "";
-        if (nextValue === lastMarkdownFromEditorRef.current) return;
+        if (nextValue === lastMarkdownFromEditorRef.current && !editor.isEmpty) return;
+
         let alive = true;
         (async () => {
-            const html = await marked.parse(nextValue || "");
-            if (!alive) return;
-            editor.commands.setContent(String(html || "<p></p>"), { emitUpdate: false });
+            try {
+                const html = await marked.parse(nextValue || "");
+                if (!alive) return;
+                lastMarkdownFromEditorRef.current = nextValue;
+                editor.commands.setContent(String(html || "<p></p>"), { emitUpdate: false });
+            } catch {
+                if (!alive) return;
+                lastMarkdownFromEditorRef.current = nextValue;
+                const escaped = nextValue
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+                editor.commands.setContent(
+                    escaped ? `<pre style="white-space:pre-wrap;font-family:inherit">${escaped}</pre>` : "<p></p>",
+                    { emitUpdate: false },
+                );
+            }
         })();
         return () => {
             alive = false;
         };
     }, [value, editor]);
+
+    useEffect(() => {
+        if (!editor) return;
+        refreshFactCitationDecorations(editor);
+    }, [editor, factSources, factModeEnabled, onRemoveFactSource]);
 
     const handleInsertLink = (text: string, url: string) => {
         if (!editor) return;
@@ -255,7 +308,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 />
             )}
             <div
-                className={`rich-text-wrapper relative rounded-xl border border-neutral-800 focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/50 transition-all flex flex-col ${fillHeight ? "h-full min-h-0 overflow-hidden" : "overflow-visible mt-9"} ${isFullscreen ? "fixed inset-4 z-[250] mt-0 bg-neutral-950 p-3" : ""}`}
+                className={`rich-text-wrapper relative flex flex-col transition-all ${embedded ? "rounded-none border-0" : "rounded-xl border border-neutral-800 focus-within:border-emerald-500/50 focus-within:ring-1 focus-within:ring-emerald-500/50"} ${fillHeight ? "flex-1 min-h-[280px] h-full overflow-hidden" : embedded ? "overflow-hidden" : "overflow-visible mt-9"} ${isFullscreen ? "fixed inset-4 z-[250] mt-0 bg-neutral-950 p-3 border border-neutral-800" : ""}`}
             >
                 <div className={`absolute right-2 z-30 ${isFullscreen ? "-top-10" : "-top-10"}`}>
                     <button
@@ -316,7 +369,11 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 <div
                     className={`tiptap-shell bg-[#111827] text-neutral-100 ${fillHeight || isFullscreen ? "flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 md:p-6 tiptap-shell--scroll" : "min-h-[500px] p-6"}`}
                 >
-                    <EditorContent editor={editor} />
+                    {editor ? (
+                        <EditorContent editor={editor} />
+                    ) : (
+                        <p className="text-sm text-neutral-500 animate-pulse">Loading editor…</p>
+                    )}
                 </div>
             </div>
             <style jsx global>{`
@@ -374,6 +431,19 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 .tiptap-shell .ProseMirror a {
                     color: #34d399;
                     text-decoration: underline;
+                }
+                .tiptap-shell .ProseMirror .fact-citation-highlight {
+                    background: rgba(16, 185, 129, 0.22);
+                    box-decoration-break: clone;
+                    -webkit-box-decoration-break: clone;
+                    border-radius: 2px;
+                    box-shadow: inset 0 -2px 0 rgba(52, 211, 153, 0.55);
+                }
+                .tiptap-shell .ProseMirror .fact-citation-chip-mount {
+                    display: inline-flex;
+                    vertical-align: super;
+                    margin-left: 1px;
+                    user-select: none;
                 }
             `}</style>
         </>

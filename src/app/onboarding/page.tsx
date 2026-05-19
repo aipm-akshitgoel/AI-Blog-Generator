@@ -10,7 +10,7 @@ export default async function OnboardingPage() {
     if (!userId) {
         redirect("/");
     } else {
-        redirect("/setup");
+        redirect("/dashboard");
     }
 
     return (

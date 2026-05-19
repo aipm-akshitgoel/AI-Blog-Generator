@@ -59,7 +59,7 @@ export default async function TestDashboardPage({ searchParams }: { searchParams
                         href="/test-dashboard?tab=settings"
                         className={`pb-4 text-sm font-black uppercase tracking-widest transition-all relative ${tab === "settings" ? "text-emerald-400" : "text-neutral-500 hover:text-white"}`}
                     >
-                        Setup Hub
+                        Setup
                         {tab === "settings" && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400 animate-in fade-in slide-in-from-bottom-1" />}
                     </Link>
                 </div>

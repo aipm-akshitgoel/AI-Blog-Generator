@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CtaButton } from "@/components/ui/CtaButton";
 
 export default function GeminiChat() {
   const [prompt, setPrompt] = useState("");
@@ -47,13 +48,16 @@ export default function GeminiChat() {
           className="w-full resize-none rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-neutral-100 placeholder-neutral-500 focus:border-neutral-500 focus:outline-none"
           disabled={loading}
         />
-        <button
+        <CtaButton
           type="submit"
-          disabled={loading || !prompt.trim()}
-          className="rounded-lg bg-amber-600 px-4 py-2 font-medium text-white hover:bg-amber-500 disabled:opacity-50"
+          loading={loading}
+          loadingLabel="Thinking…"
+          disabled={!prompt.trim()}
+          variant="amber"
+          className="rounded-lg px-4 py-2 text-sm normal-case tracking-normal font-medium"
         >
-          {loading ? "Thinking…" : "Send"}
-        </button>
+          Send
+        </CtaButton>
       </form>
       {error && (
         <p className="mt-3 text-sm text-red-400">{error}</p>

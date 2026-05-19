@@ -8,6 +8,8 @@ import {
   UserButton,
 } from "@clerk/nextjs";
 import Link from "next/link";
+import { CLERK_AFTER_AUTH_URL, CLERK_AFTER_SIGN_OUT_URL } from "@/lib/clerkAuth";
+import { clerkUserButtonAppearance } from "@/lib/clerkAppearance";
 
 /**
  * Header using Clerk's official components (SignInButton, SignUpButton, UserButton).
@@ -22,11 +24,14 @@ export function Header() {
         </Link>
         <div className="flex items-center gap-4">
           <SignedOut>
-            <SignInButton mode="modal" />
-            <SignUpButton mode="modal" />
+            <SignInButton mode="redirect" forceRedirectUrl={CLERK_AFTER_AUTH_URL} />
+            <SignUpButton mode="redirect" forceRedirectUrl={CLERK_AFTER_AUTH_URL} />
           </SignedOut>
           <SignedIn>
-            <UserButton afterSignOutUrl="/" />
+            <UserButton
+              afterSignOutUrl={CLERK_AFTER_SIGN_OUT_URL}
+              appearance={clerkUserButtonAppearance}
+            />
           </SignedIn>
         </div>
       </div>

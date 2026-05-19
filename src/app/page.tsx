@@ -4,11 +4,16 @@ import { HomepageCTA } from "@/components/HomepageCTA";
 
 export const dynamic = 'force-dynamic';
 
-export default async function Home() {
+type HomeProps = {
+  searchParams: Promise<{ signed_out?: string }>;
+};
+
+export default async function Home({ searchParams }: HomeProps) {
+  const { signed_out: signedOut } = await searchParams;
   const { userId } = await auth();
 
   // If the user lands here and is already logged in, take them to the app
-  if (userId) {
+  if (userId && signedOut !== "1") {
     redirect("/dashboard");
   }
 
@@ -20,30 +25,30 @@ export default async function Home() {
 
       <div className="relative z-10 max-w-3xl border border-neutral-800/50 bg-neutral-900/40 p-8 md:p-16 rounded-3xl backdrop-blur-xl shadow-2xl">
         <h1 className="text-4xl md:text-6xl font-black text-white mb-6 tracking-tight">
-          AI Organic Growth Platform
+          Bloggie AI
           <br />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-emerald-600 font-bold">
-            Intelligent Organic Page Generation Agent
+            AI content for organic search
           </span>
         </h1>
         <p className="text-lg md:text-xl text-neutral-400 mb-10 leading-relaxed max-w-2xl mx-auto">
-          Pick a topic. 9 AI agents do the rest — write, optimize, and publish.
+          Connect your site and keyword plan. Get drafts you can edit, optimize, and publish — blogs, guides, and landing pages.
         </p>
 
         <HomepageCTA />
 
-        <div className="mt-12 flex items-center justify-center gap-6 text-sm text-neutral-500 font-medium">
+        <div className="mt-12 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm text-neutral-500 font-medium">
           <div className="flex items-center gap-2">
             <svg className="w-4 h-4 text-emerald-500/70" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"></path></svg>
-            9 AI Agents
+            Keyword-driven topics
           </div>
           <div className="flex items-center gap-2">
             <svg className="w-4 h-4 text-emerald-500/70" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"></path></svg>
-            3-Step Publish
+            On-page SEO
           </div>
           <div className="flex items-center gap-2">
             <svg className="w-4 h-4 text-emerald-500/70" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"></path></svg>
-            Real-Time Analytics
+            Publish to your site
           </div>
         </div>
       </div>

@@ -1,34 +1,88 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type BusinessContext } from "@/lib/types/businessContext";
 import { type StrategySession } from "@/lib/types/strategy";
-import { canGenerateStrategy, mergeContextWithReference, normalizeDomain } from "@/lib/strategyInputs";
+import {
+    buildMinimalBusinessContext,
+    canRunStrategyAgent,
+    mergeContextWithReference,
+    resolveStrategyReferenceDomain,
+} from "@/lib/strategyInputs";
 import { formatApiError } from "@/lib/formatApiError";
+import { isAzureContentFilterError, userFacingContentFilterMessage } from "@/lib/azureContentFilter";
+import { ManualKeywordStrategyPanel } from "@/components/ManualKeywordStrategyPanel";
+import {
+    enrichStrategyWithBlogProgress,
+    getDirectoryFromSession,
+    normalizeBlogStrategyResponse,
+    syncSessionFromDirectory,
+} from "@/lib/contentDirectory";
+import { ContentDirectoryList } from "@/components/ContentDirectoryList";
+import { CtaButton } from "@/components/ui/CtaButton";
 
 interface StrategyAgentProps {
     businessContext: BusinessContext | null;
-    onApprove: (session: StrategySession) => void;
+    onApprove: (session: StrategySession) => void | Promise<void>;
     onModify: () => void;
     onSkip?: () => void;
     platform?: "blog" | "linkedin";
+    /** Parent-driven save in progress (shows spinner on Save keyword strategy). */
+    saving?: boolean;
 }
 
-export function StrategyAgentUI({ businessContext, onApprove, onModify, onSkip, platform = "blog" }: StrategyAgentProps) {
+type KeywordInputMode = "ai" | "manual";
+
+export function StrategyAgentUI({
+    businessContext,
+    onApprove,
+    onModify,
+    onSkip,
+    platform = "blog",
+    saving = false,
+}: StrategyAgentProps) {
     const [strategy, setStrategy] = useState<StrategySession | null>(null);
     const [loading, setLoading] = useState(false);
     const [loadingStep, setLoadingStep] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [customPrompt, setCustomPrompt] = useState("");
-    const [referenceDomain, setReferenceDomain] = useState(businessContext?.domain || "");
+    const [inputMode, setInputMode] = useState<KeywordInputMode>("ai");
 
-    const readyToGenerate = canGenerateStrategy(businessContext, referenceDomain);
+    const readyToGenerate = canRunStrategyAgent(businessContext, customPrompt);
+
+    useEffect(() => {
+        if (!strategy) return;
+        let cancelled = false;
+        void (async () => {
+            try {
+                const res = await fetch("/api/blog");
+                if (!res.ok || cancelled) return;
+                const json = await res.json();
+                const blogs = Array.isArray(json.blogs)
+                    ? json.blogs.map((b: { title?: string; slug?: string; status?: string }) => ({
+                          title: String(b.title || ""),
+                          slug: String(b.slug || ""),
+                          status: b.status,
+                      }))
+                    : [];
+                if (cancelled) return;
+                setStrategy((prev) => (prev ? enrichStrategyWithBlogProgress(prev, blogs) : prev));
+            } catch {
+                /* keep strategy as-is */
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [strategy?.id, strategy?.keywordStrategy?.strategySource]);
 
     const generateStrategy = async () => {
         if (!readyToGenerate) {
-            setError("Add your website domain below, or complete your business profile first.");
+            setError("Add a short direction below (industry, audience, or website to mirror).");
             return;
         }
+
+        const referenceDomain = resolveStrategyReferenceDomain(businessContext, customPrompt);
 
         setLoading(true);
         setError(null);
@@ -36,36 +90,76 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, onSkip, 
 
         // Platform-specific loading messages
         const step2 = platform === "linkedin" ? "Probing LinkedIn Viral Trends..." : "Querying Google Ads Keyword Planner...";
-        const step3 = platform === "linkedin" ? "Aggregating High-Engagement Inspiration..." : "Probing local competitor SERPs...";
+        const step3 = platform === "linkedin" ? "Aggregating High-Engagement Inspiration..." : "Reviewing reference-site topics...";
 
         // Faking a tool sequence for UI feel
         setTimeout(() => setLoadingStep(2), 1500);
         setTimeout(() => setLoadingStep(3), 3500);
 
         try {
-            const ctxForStrategy = mergeContextWithReference(businessContext, referenceDomain);
+            const baseContext =
+                businessContext ?? buildMinimalBusinessContext({ domain: referenceDomain, platform });
+            const ctxForStrategy = mergeContextWithReference(baseContext, referenceDomain);
             const res = await fetch("/api/strategy-agent", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     businessContext: ctxForStrategy,
-                    referenceDomain: normalizeDomain(referenceDomain),
+                    referenceDomain,
                     customPrompt,
                     platform,
                 }),
             });
 
             const json = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(formatApiError(json?.error, "Failed to generate strategy"));
+            if (!res.ok) {
+                const apiErr = formatApiError(json?.error, "Failed to generate strategy");
+                throw new Error(
+                    isAzureContentFilterError(apiErr) ? userFacingContentFilterMessage() : apiErr,
+                );
+            }
 
-            setStrategy(json.data);
+            const raw = json.data as Record<string, unknown>;
+            const normalized =
+                platform === "blog"
+                    ? normalizeBlogStrategyResponse(raw, {
+                          businessContextId: businessContext?.id,
+                          referenceDomain,
+                      })
+                    : (raw as unknown as StrategySession);
+            setStrategy(
+                platform === "blog"
+                    ? normalized
+                    : {
+                          ...normalized,
+                          keywordStrategy: {
+                              ...normalized.keywordStrategy,
+                              strategySource: "ai",
+                          },
+                      },
+            );
         } catch (e) {
-            setError(formatApiError(e, "Unknown error occurred"));
+            setError(
+                isAzureContentFilterError(e)
+                    ? userFacingContentFilterMessage()
+                    : formatApiError(e, "Unknown error occurred"),
+            );
         } finally {
             setLoading(false);
             setLoadingStep(0);
         }
     };
+
+    if (!strategy && !loading && platform === "blog" && inputMode === "manual") {
+        return (
+            <ManualKeywordStrategyPanel
+                businessContextId={businessContext?.id}
+                onApprove={(session) => onApprove(session)}
+                onBack={() => setInputMode("ai")}
+                onSkip={onSkip}
+            />
+        );
+    }
 
     if (!strategy && !loading) {
         return (
@@ -81,58 +175,45 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, onSkip, 
                         )}
                     </div>
                     <h2 className="text-xl font-bold text-white uppercase tracking-tighter">
-                        {platform === 'linkedin' ? "LinkedIn Growth Strategy Agent" : "SEO Strategy Agent"}
+                        {platform === 'linkedin' ? "LinkedIn Growth Strategy Agent" : "Keyword Strategy Agent"}
                     </h2>
                 </div>
                 <p className="mb-6 text-sm text-neutral-400 leading-relaxed">
                     {platform === 'linkedin'
-                        ? "Connecting to LinkedIn's content graph to identify trending industry topics and viral patterns for your audience."
-                        : "Optional — generates topic ideas from your business profile or a reference website. Skip if you prefer to enter topics manually when writing."
-                    }
+                        ? "Describe your audience and content goals. Mention a profile or site to mirror in your notes if helpful."
+                        : "Describe your niche and audience for AI-suggested topics, or upload your own H1/H2 directory."}
                 </p>
 
-                {!readyToGenerate && (
-                    <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
-                        <p className="text-xs text-amber-200/90 mb-3 leading-relaxed">
-                            Add a reference domain below, or complete your business profile first.
-                        </p>
-                        <label className="block text-[10px] font-black uppercase tracking-widest text-amber-500 mb-2">
-                            Reference website domain
-                        </label>
-                        <input
-                            type="text"
-                            value={referenceDomain}
-                            onChange={(e) => setReferenceDomain(e.target.value)}
-                            placeholder="yourdegree.com"
-                            className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
-                        />
-                    </div>
-                )}
-
-                {readyToGenerate && businessContext?.domain && !referenceDomain && (
-                    <div className="mb-4">
-                        <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
-                            Reference domain (optional override)
-                        </label>
-                        <input
-                            type="text"
-                            value={referenceDomain}
-                            onChange={(e) => setReferenceDomain(e.target.value)}
-                            placeholder={businessContext.domain}
-                            className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500"
-                        />
+                {platform === "blog" && (
+                    <div className="mb-6 flex gap-2 p-1 rounded-xl bg-neutral-950 border border-neutral-800">
+                        <button
+                            type="button"
+                            onClick={() => setInputMode("ai")}
+                            className={`flex-1 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${inputMode === "ai" ? "bg-emerald-600 text-white" : "text-neutral-500 hover:text-white"}`}
+                        >
+                            AI keyword strategy
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setInputMode("manual")}
+                            className={`flex-1 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${inputMode === "manual" ? "bg-emerald-600 text-white" : "text-neutral-500 hover:text-white"}`}
+                        >
+                            Manual directory (Excel)
+                        </button>
                     </div>
                 )}
 
                 <div className="mb-6 relative group">
                     <label className={`text-xs font-black uppercase tracking-widest ${platform === 'linkedin' ? 'text-blue-500' : 'text-emerald-500'} mb-2 flex items-center gap-2`}>
-                        Custom Direction <span className="text-neutral-500 font-medium normal-case">(Optional)</span>
+                        Custom direction
                     </label>
                     <textarea
                         value={customPrompt}
                         onChange={(e) => setCustomPrompt(e.target.value)}
-                        placeholder={platform === 'linkedin' ? "E.g., Focus on personal storytelling about starting my business..." : "E.g., Focus only on wedding makeup topics right now..."}
-                        rows={2}
+                        placeholder={platform === 'linkedin'
+                            ? "E.g., B2B founders in India; mirror thought-leadership style from linkedin.com/in/example…"
+                            : "E.g., B2B SaaS for mid-market teams in the US. Optional: mention a reference site URL for topic inspiration (not copied verbatim)…"}
+                        rows={3}
                         className={`w-full bg-neutral-950/50 border border-neutral-800 rounded-lg px-4 py-3 text-sm text-white focus:outline-none placeholder:text-neutral-600 resize-none transition-all ${platform === 'linkedin' ? 'focus:border-blue-500 focus:ring-1 focus:ring-blue-500' : 'focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'}`}
                     />
                 </div>
@@ -153,14 +234,17 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, onSkip, 
                 )}
 
                 <div className="flex flex-col sm:flex-row gap-3">
-                    <button
+                    <CtaButton
                         type="button"
                         onClick={generateStrategy}
+                        loading={loading}
+                        loadingLabel="Generating…"
                         disabled={!readyToGenerate}
-                        className={`flex-1 rounded-lg px-4 py-3 font-bold uppercase tracking-widest text-xs text-white transition-all shadow-lg disabled:opacity-40 ${platform === 'linkedin' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20'}`}
+                        variant={platform === "linkedin" ? "blue" : "primary"}
+                        className="flex-1 rounded-lg px-4 py-3 text-xs shadow-lg disabled:opacity-40"
                     >
-                        Initialize {platform === 'linkedin' ? 'Growth' : 'Strategy'} Agent
-                    </button>
+                        Generate keyword strategy
+                    </CtaButton>
                     {onSkip && (
                         <button
                             type="button"
@@ -205,13 +289,6 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, onSkip, 
     if (strategy) {
         return (
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-6 shadow-xl animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="mb-6 border-b border-neutral-800 pb-4 flex justify-between items-center">
-                    <div>
-                        <h2 className="text-xl font-bold text-white uppercase tracking-tighter">Approved Strategy Dashboard</h2>
-                        <p className="mt-1 text-xs text-neutral-400">Verified roadmap for {platform === 'linkedin' ? 'LinkedIn visibility' : 'SEO performance'}.</p>
-                    </div>
-                </div>
-
                 {/* LinkedIn Specific: Inspiration Section */}
                 {platform === "linkedin" && strategy.inspiration && (
                     <div className="mb-8 p-4 rounded-xl border border-blue-900/30 bg-blue-950/10">
@@ -255,13 +332,14 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, onSkip, 
                     <h3 className="mb-3 text-[10px] font-black uppercase tracking-widest text-neutral-500">
                         {platform === 'linkedin' ? "Content Pillars" : "Target SEO Keywords"}
                     </h3>
-                    <div className="grid gap-4 md:grid-cols-2">
+                    <div className={platform === "linkedin" ? "grid gap-4 md:grid-cols-2" : ""}>
                         <div className={`rounded-xl border p-4 ${platform === 'linkedin' ? 'border-blue-900/50 bg-blue-950/20' : 'border-emerald-900/50 bg-emerald-950/20'}`}>
                             <span className="mb-1 block text-[10px] font-black uppercase text-neutral-500">North Star {platform === 'linkedin' ? 'Theme' : 'Keyword'}</span>
                             <p className={`text-lg font-black ${platform === 'linkedin' ? 'text-blue-400' : 'text-emerald-400'}`}>{strategy.keywordStrategy.primaryKeyword}</p>
                         </div>
+                        {platform === "linkedin" && (strategy.keywordStrategy.secondaryKeywords?.length ?? 0) > 0 && (
                         <div className="rounded-xl border border-neutral-800 bg-neutral-950/50 p-4">
-                            <span className="mb-2 block text-[10px] font-black uppercase text-neutral-500">Supporting {platform === 'linkedin' ? 'Angles' : 'Phrases'}</span>
+                            <span className="mb-2 block text-[10px] font-black uppercase text-neutral-500">Supporting angles</span>
                             <div className="flex flex-wrap gap-2">
                                 {strategy.keywordStrategy.secondaryKeywords.map((kw, i) => (
                                     <span key={i} className="rounded-md bg-neutral-800 px-2 py-1 text-xs font-bold text-neutral-400">
@@ -270,25 +348,23 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, onSkip, 
                                 ))}
                             </div>
                         </div>
+                        )}
                     </div>
                 </div>
 
-                {/* Shared: Topic Selection */}
+                {platform === "blog" && getDirectoryFromSession(strategy).length > 0 && (
                 <div className="mb-8">
-                    <h3 className="mb-3 text-[10px] font-black uppercase tracking-widest text-neutral-500">Refined Post Directions</h3>
-                    <div className="space-y-3">
-                        {strategy.topicOptions.map((topic, i) => (
-                            <div
-                                key={i}
-                                className="relative rounded-xl border border-neutral-900 bg-neutral-950/35 p-4 cursor-default select-text"
-                                aria-label={`Suggested topic ${i + 1}`}
-                            >
-                                <h4 className="font-bold text-neutral-300 text-sm">{topic.title}</h4>
-                                <p className="mt-1 text-xs text-neutral-400 leading-relaxed font-medium">{topic.description}</p>
-                            </div>
-                        ))}
-                    </div>
+                    <h3 className="mb-3 text-[10px] font-black uppercase tracking-widest text-neutral-500">
+                        Content directory (H1 + H2)
+                        <span className="text-neutral-600 font-bold normal-case tracking-normal">
+                            {" "}
+                            · {getDirectoryFromSession(strategy).filter((e) => e.completed).length}/
+                            {getDirectoryFromSession(strategy).length} written
+                        </span>
+                    </h3>
+                    <ContentDirectoryList entries={getDirectoryFromSession(strategy)} variant="review" />
                 </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex justify-end gap-3 pt-6 border-t border-neutral-800">
@@ -298,17 +374,26 @@ export function StrategyAgentUI({ businessContext, onApprove, onModify, onSkip, 
                     >
                         Re-Scrape & Regenerate
                     </button>
-                    <button
-                        onClick={() => onApprove({
-                            ...strategy,
-                            platform,
-                            businessContextId: businessContext?.id ?? String(businessContext?.businessName ?? "local"),
-                            status: "approved"
-                        })}
-                        className={`rounded-lg px-6 py-2.5 text-xs font-black uppercase tracking-widest text-white transition-all shadow-lg ${platform === 'linkedin' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/40'}`}
+                    <CtaButton
+                        type="button"
+                        variant={platform === "linkedin" ? "blue" : "primary"}
+                        loading={saving}
+                        loadingLabel="Saving…"
+                        onClick={() =>
+                            void onApprove(
+                                syncSessionFromDirectory({
+                                    ...strategy,
+                                    platform,
+                                    businessContextId: businessContext?.id ?? "",
+                                    referenceDomain: resolveStrategyReferenceDomain(businessContext, customPrompt),
+                                    status: "approved",
+                                }),
+                            )
+                        }
+                        className="rounded-lg px-6 py-2.5 text-xs shadow-lg"
                     >
-                        Approve & Start Drafting
-                    </button>
+                        Save keyword strategy
+                    </CtaButton>
                 </div>
             </div>
         );

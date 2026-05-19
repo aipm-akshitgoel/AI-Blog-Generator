@@ -3,6 +3,13 @@
 import { useState, useEffect } from "react";
 import { BusinessContext, BUSINESS_TYPES } from "@/lib/types/businessContext";
 import type { StrategySession, TopicOption } from "@/lib/types/strategy";
+import { hasTopicSuggestions, hasUsableBusinessContext } from "@/lib/strategyInputs";
+import { getDirectoryFromSession } from "@/lib/contentDirectory";
+import { ContentDirectoryList } from "@/components/ContentDirectoryList";
+import { CtaButton } from "@/components/ui/CtaButton";
+import { isPersistedUuid, stripNonPersistedId } from "@/lib/uuid";
+import { clearBusinessSetupStorage } from "@/lib/businessSetupStorage";
+import { useRouter } from "next/navigation";
 
 interface StrategyManagementProps {
     mockContext?: BusinessContext;
@@ -10,6 +17,7 @@ interface StrategyManagementProps {
 }
 
 export function StrategyManagement({ mockContext, mockStrategy }: StrategyManagementProps = {}) {
+    const router = useRouter();
     const [context, setContext] = useState<BusinessContext | null>(mockContext || null);
     const [strategy, setStrategy] = useState<StrategySession | null>(mockStrategy || null);
     const [loading, setLoading] = useState(!mockContext);
@@ -27,7 +35,6 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
         targetAudience: "",
         positioning: "",
         primaryKeyword: "",
-        secondaryKeywords: "",
         searchIntent: "informational" as "informational" | "navigational" | "commercial" | "transactional",
         topics: [] as TopicOption[],
     });
@@ -47,15 +54,19 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
             if (!res.ok) throw new Error(data.error || "Failed to fetch contexts");
 
             if (data.length > 0) {
-                const ctx = data[0];
-                setContext(ctx);
-                setIsExpanded(false); // Contract it if they already have one
+                const ctx = data[0] as BusinessContext;
+                if (hasUsableBusinessContext(ctx)) {
+                    setContext(ctx);
+                    setIsExpanded(false);
 
-                // Fetch its strategy
-                const stratRes = await fetch(`/api/strategy-session?businessContextId=${ctx.id}`);
-                const stratData = await stratRes.json();
-                if (stratRes.ok && stratData && !stratData.error) {
-                    setStrategy(stratData);
+                    const stratRes = await fetch(`/api/strategy-session?businessContextId=${ctx.id}`);
+                    const stratData = await stratRes.json();
+                    if (stratRes.ok && stratData && !stratData.error) {
+                        setStrategy(stratData);
+                    }
+                } else {
+                    setContext(null);
+                    setStrategy(null);
                 }
             }
         } catch (err) {
@@ -77,7 +88,6 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
             targetAudience: context.targetAudience ?? "",
             positioning: context.positioning ?? "",
             primaryKeyword: strategy?.keywordStrategy?.primaryKeyword ?? "",
-            secondaryKeywords: strategy?.keywordStrategy?.secondaryKeywords?.join(", ") ?? "",
             searchIntent: strategy?.keywordStrategy?.searchIntent ?? "informational",
             topics: strategy?.topicOptions ? [...strategy.topicOptions] : [],
         });
@@ -112,17 +122,17 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
 
             // Save strategy if one exists or edit form has keyword data
             if (strategy || editForm.primaryKeyword.trim()) {
-                const updatedStrategy = {
+                const updatedStrategy = stripNonPersistedId({
                     ...(strategy ?? {}),
                     businessContextId: ctxData.id,
                     keywordStrategy: {
                         primaryKeyword: editForm.primaryKeyword.trim(),
-                        secondaryKeywords: editForm.secondaryKeywords.split(",").map((k: string) => k.trim()).filter(Boolean),
+                        secondaryKeywords: [],
                         searchIntent: editForm.searchIntent,
                     },
                     topicOptions: editForm.topics,
                     status: "approved" as const,
-                };
+                });
                 const stratRes = await fetch("/api/strategy-session", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -148,16 +158,18 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
             setLoading(true);
 
             // 1. Delete Strategy
-            if (strategy?.id) {
+            if (strategy?.id && isPersistedUuid(strategy.id)) {
                 await fetch(`/api/strategy-session?id=${strategy.id}`, { method: "DELETE" });
             }
 
             // 2. Delete Business Context
             await fetch(`/api/business-context?id=${context.id}`, { method: "DELETE" });
 
-            // 3. Clear local state so it shows the empty/setup prompt screen
+            // 3. Clear browser cache and local state so setup does not show stale domain/strategy
+            clearBusinessSetupStorage();
             setContext(null);
             setStrategy(null);
+            router.refresh();
 
         } catch (err) {
             console.error(err);
@@ -166,6 +178,9 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
             setLoading(false);
         }
     };
+
+    const profileActive = hasUsableBusinessContext(context);
+    const strategyActive = hasTopicSuggestions(strategy);
 
     if (loading) return (
         <div className="mt-12 animate-pulse">
@@ -193,10 +208,27 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-4 shrink-0">
-                    <span className="hidden md:inline-flex px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg backdrop-blur-sm">
-                        Active Profile
-                    </span>
+                <div className="flex items-center gap-2 shrink-0">
+                    {profileActive ? (
+                        <span className="hidden md:inline-flex px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-lg">
+                            Active profile
+                        </span>
+                    ) : (
+                        <span className="hidden md:inline-flex px-2.5 py-1 text-[10px] font-black uppercase tracking-widest bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg">
+                            Setup required
+                        </span>
+                    )}
+                    {profileActive && (
+                        <span
+                            className={`hidden md:inline-flex px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-lg border ${
+                                strategyActive
+                                    ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                    : "bg-neutral-800 text-neutral-400 border-neutral-700"
+                            }`}
+                        >
+                            {strategyActive ? "Strategy ready" : "No strategy"}
+                        </span>
+                    )}
                     <svg
                         className={`w-5 h-5 text-neutral-500 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                         fill="none"
@@ -252,7 +284,10 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                                         <div>
                                             <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1.5">Business Name</label>
                                             <input type="text" value={editForm.businessName} onChange={e => setEditForm(f => ({ ...f, businessName: e.target.value }))}
-                                                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 outline-none transition-all" required />
+                                                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 outline-none transition-all"
+                                                placeholder="e.g. Your company or publication name"
+                                                required />
+                                            <p className="mt-1 text-[11px] text-neutral-500">Your brand — not a competitor or reference site from strategy.</p>
                                         </div>
                                         <div>
                                             <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1.5">Business Type</label>
@@ -276,7 +311,7 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                                     <div>
                                         <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1.5">Services (comma-separated)</label>
                                         <input type="text" value={editForm.services} onChange={e => setEditForm(f => ({ ...f, services: e.target.value }))}
-                                            className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 outline-none transition-all" placeholder="Haircuts, Styling, Extensions" />
+                                            className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 outline-none transition-all" placeholder="e.g. online MBA programs, admissions consulting" />
                                     </div>
                                     <div>
                                         <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1.5">Target Audience</label>
@@ -313,12 +348,6 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                                             </select>
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1.5">Secondary Keywords (comma-separated)</label>
-                                        <input type="text" value={editForm.secondaryKeywords} onChange={e => setEditForm(f => ({ ...f, secondaryKeywords: e.target.value }))}
-                                            className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 outline-none transition-all" placeholder="keyword1, keyword2" />
-                                    </div>
-
                                     {editForm.topics.length > 0 && (
                                         <div>
                                             <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-3">Topics</label>
@@ -351,10 +380,14 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                                         className="flex-1 rounded-xl border border-neutral-800 px-6 py-4 text-sm font-black text-neutral-400 hover:text-white hover:bg-neutral-800 transition-all uppercase tracking-widest">
                                         Cancel
                                     </button>
-                                    <button type="submit" disabled={saving}
-                                        className="flex-[2] rounded-xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-500 disabled:opacity-50 transition-all shadow-xl shadow-emerald-900/20 uppercase tracking-widest active:scale-[0.98]">
-                                        {saving ? "Saving…" : "Apply Updates"}
-                                    </button>
+                                    <CtaButton
+                                        type="submit"
+                                        loading={saving}
+                                        loadingLabel="Saving…"
+                                        className="flex-[2] rounded-xl px-6 py-4 text-sm shadow-xl"
+                                    >
+                                        Apply Updates
+                                    </CtaButton>
                                 </div>
                             </form>
                         </div>
@@ -409,42 +442,34 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                                     {/* ── Strategy Section ── */}
                                     {strategy ? (
                                         <div className="mt-2 border-t border-neutral-800/50 pt-8 space-y-8">
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                                                <div className="space-y-4">
-                                                    <h4 className="text-[10px] uppercase font-black text-emerald-500 tracking-[0.2em] opacity-70">Primary Search Focus</h4>
-                                                    <div className="bg-emerald-950/20 border border-emerald-500/10 rounded-2xl p-6">
-                                                        <p className="text-2xl font-black text-emerald-400 mb-2 uppercase tracking-tight">
-                                                            {strategy.keywordStrategy.primaryKeyword}
-                                                        </p>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Intent:</span>
-                                                            <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                                                                {strategy.keywordStrategy.searchIntent}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <div className="space-y-4">
-                                                    <h4 className="text-[10px] uppercase font-black text-emerald-500 tracking-[0.2em] opacity-70">Supporting Keywords</h4>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {strategy.keywordStrategy.secondaryKeywords?.map((kw, i) => (
-                                                            <span key={i} className="text-[11px] font-bold text-neutral-400 border border-neutral-800 bg-neutral-950 px-3 py-1.5 rounded-xl uppercase tracking-tighter">
-                                                                {kw}
-                                                            </span>
-                                                        ))}
+                                            <div className="space-y-4 max-w-xl">
+                                                <h4 className="text-[10px] uppercase font-black text-emerald-500 tracking-[0.2em] opacity-70">Primary keyword</h4>
+                                                <div className="bg-emerald-950/20 border border-emerald-500/10 rounded-2xl p-6">
+                                                    <p className="text-2xl font-black text-emerald-400 mb-2 uppercase tracking-tight">
+                                                        {strategy.keywordStrategy.primaryKeyword}
+                                                    </p>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Intent:</span>
+                                                        <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                                            {strategy.keywordStrategy.searchIntent}
+                                                        </span>
                                                     </div>
                                                 </div>
                                             </div>
                                             <div className="space-y-4">
-                                                <h4 className="text-[10px] uppercase font-black text-emerald-500 tracking-[0.2em] opacity-70">Topics</h4>
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    {strategy.topicOptions?.map((topic, i) => (
-                                                        <div key={i} className="bg-neutral-950/40 border border-neutral-800/50 rounded-2xl p-5 hover:border-emerald-500/20 transition-colors">
-                                                            <h5 className="text-sm font-black text-neutral-200 mb-1 uppercase tracking-tight">{topic.title}</h5>
-                                                            <p className="text-xs text-neutral-500 leading-relaxed font-medium line-clamp-2">{topic.description}</p>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                                <h4 className="text-[10px] uppercase font-black text-emerald-500 tracking-[0.2em] opacity-70">
+                                                    Content directory (H1 + H2)
+                                                    {getDirectoryFromSession(strategy).length > 0 && (
+                                                        <span className="text-neutral-600 font-bold normal-case tracking-normal ml-2">
+                                                            {getDirectoryFromSession(strategy).filter((e) => e.completed).length}/
+                                                            {getDirectoryFromSession(strategy).length} written
+                                                        </span>
+                                                    )}
+                                                </h4>
+                                                <ContentDirectoryList
+                                                    entries={getDirectoryFromSession(strategy)}
+                                                    variant="dashboard"
+                                                />
                                             </div>
                                         </div>
                                     ) : (

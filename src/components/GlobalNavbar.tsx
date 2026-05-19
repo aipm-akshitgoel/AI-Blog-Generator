@@ -1,12 +1,13 @@
 "use client";
 
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton, ClerkLoaded } from "@clerk/nextjs";
 import Link from "next/link";
+import { CLERK_AFTER_AUTH_URL, CLERK_AFTER_SIGN_OUT_URL } from "@/lib/clerkAuth";
+import { clerkUserButtonAppearance } from "@/lib/clerkAppearance";
 
 export function GlobalNavbar() {
     const pathname = usePathname();
-    const searchParams = useSearchParams();
 
     // Hide global navbar on public blog pages and test templates to avoid double-headers
     const isPublicPage =
@@ -17,9 +18,18 @@ export function GlobalNavbar() {
         pathname.startsWith("/yd-online-mba");
     if (isPublicPage) return null;
 
-    const isDashboard = pathname === "/dashboard";
     const isSetupMode = pathname.startsWith("/setup") || pathname.startsWith("/test");
     const isLinkedinMode = pathname.startsWith("/linkedin");
+    const isSignInPage = pathname.startsWith("/sign-in");
+    const isOAuthCallback = pathname.includes("/sso-callback");
+    if (isOAuthCallback) return null;
+    const isDashboardHub = pathname === "/dashboard" || pathname === "/test-dashboard";
+
+    const primaryAuthClass = isLinkedinMode
+        ? "bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-md transition-colors uppercase tracking-widest text-[10px] font-black"
+        : "bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-md transition-colors uppercase tracking-widest text-[10px] font-black";
+    const secondaryAuthClass =
+        "text-sm font-medium text-neutral-300 hover:text-white transition-colors";
 
     const brandName = isLinkedinMode ? "LinkedIn Ghostwriter" : "Bloggie AI";
     const brandColor = isLinkedinMode ? "text-blue-500" : "text-emerald-400";
@@ -34,11 +44,25 @@ export function GlobalNavbar() {
                 <div className="flex items-center gap-6">
                     <ClerkLoaded>
                         <SignedOut>
-                            <SignInButton mode="modal">
-                                <button className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">Sign In</button>
+                            <SignInButton
+                                mode="redirect"
+                                forceRedirectUrl={isLinkedinMode ? "/linkedin" : CLERK_AFTER_AUTH_URL}
+                            >
+                                <button
+                                    className={isSignInPage ? primaryAuthClass : secondaryAuthClass}
+                                >
+                                    Sign In
+                                </button>
                             </SignInButton>
-                            <SignUpButton mode="modal" forceRedirectUrl={isLinkedinMode ? "/linkedin" : "/setup"}>
-                                <button className={`text-sm font-medium ${isLinkedinMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-emerald-600 hover:bg-emerald-500'} text-white px-4 py-1.5 rounded-md transition-colors uppercase tracking-widest text-[10px] font-black`}>Sign Up</button>
+                            <SignUpButton
+                                mode="redirect"
+                                forceRedirectUrl={isLinkedinMode ? "/linkedin" : CLERK_AFTER_AUTH_URL}
+                            >
+                                <button
+                                    className={!isSignInPage ? primaryAuthClass : secondaryAuthClass}
+                                >
+                                    Sign Up
+                                </button>
                             </SignUpButton>
                         </SignedOut>
                         <SignedIn>
@@ -54,19 +78,17 @@ export function GlobalNavbar() {
                                         <>
                                             {/* LinkedIn Ghostwriter specific links would go here */}
                                         </>
-                                    ) : (
-                                        <>
-                                            <Link href="/dashboard" className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">
-                                                Dashboard
-                                            </Link>
-                                            <Link href="/setup?mode=blog" className="text-sm font-medium bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 px-4 py-1.5 rounded-md hover:bg-emerald-600/30 transition-colors">
-                                                + New Blog
-                                            </Link>
-                                        </>
-                                    )}
+                                    ) : !isDashboardHub ? (
+                                        <Link href="/dashboard" className="text-sm font-medium text-neutral-300 hover:text-white transition-colors">
+                                            Dashboard
+                                        </Link>
+                                    ) : null}
                                 </div>
                             )}
-                            <UserButton />
+                            <UserButton
+                                afterSignOutUrl={CLERK_AFTER_SIGN_OUT_URL}
+                                appearance={clerkUserButtonAppearance}
+                            />
                         </SignedIn>
                     </ClerkLoaded>
                 </div>

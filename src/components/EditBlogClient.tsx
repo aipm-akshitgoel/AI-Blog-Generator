@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
+
 import { useState } from "react";
 import { SavedBlog } from "@/lib/blogDb";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -128,8 +130,9 @@ export function EditBlogClient({ blog }: { blog: SavedBlog }) {
                         <button
                             onClick={handleSave}
                             disabled={isSaving}
-                            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-lg flex items-center gap-2 transition-all disabled:opacity-50"
+                            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg shadow-lg flex items-center gap-2.5 transition-all disabled:opacity-50"
                         >
+                            {isSaving && <ButtonSpinner size={16} />}
                             {isSaving ? "Saving..." : "Save Changes"}
                         </button>
                     </div>

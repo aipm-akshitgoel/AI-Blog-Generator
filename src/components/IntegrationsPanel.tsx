@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
+
 import { useState } from "react";
 import { HelpTip } from "./HelpTip";
 import type { BusinessContext } from "@/lib/types/businessContext";
@@ -153,7 +155,7 @@ export function IntegrationsPanel({ businessContext, onUpdate, isTest }: Props) 
                                     type="url"
                                     value={form.gscPropertyUrl}
                                     onChange={e => setForm(f => ({ ...f, gscPropertyUrl: e.target.value }))}
-                                    placeholder="https://www.yourdomain.com/"
+                                    placeholder="https://www.yoursite.com/"
                                     className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white placeholder-neutral-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 font-mono transition-all"
                                 />
                             </div>
@@ -234,9 +236,7 @@ export function IntegrationsPanel({ businessContext, onUpdate, isTest }: Props) 
                             disabled={saving}
                             className="ml-auto flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-2.5 text-sm font-black text-white hover:bg-emerald-500 transition-all disabled:opacity-50 uppercase tracking-widest active:scale-95"
                         >
-                            {saving ? (
-                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                            ) : null}
+                            {saving && <ButtonSpinner size={16} />}
                             {saving ? "Saving..." : "Save Integrations"}
                         </button>
                     </div>

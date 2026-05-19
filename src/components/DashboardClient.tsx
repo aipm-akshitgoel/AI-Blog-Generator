@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
+
 import { useState } from "react";
 import type { SavedBlog } from "@/lib/blogDb";
 import { formatDistanceToNow, isValid } from "date-fns";
@@ -17,7 +19,13 @@ function formatCreatedRelative(createdAt: string | undefined): string {
     }
 }
 
-export function DashboardClient({ initialBlogs }: { initialBlogs: SavedBlog[] }) {
+export function DashboardClient({
+    initialBlogs,
+    newBlogHref = "/setup?onboarding=first",
+}: {
+    initialBlogs: SavedBlog[];
+    newBlogHref?: string;
+}) {
     const router = useRouter();
     const [blogs, setBlogs] = useState<SavedBlog[]>(initialBlogs);
     const [isDeleting, setIsDeleting] = useState<string | null>(null);
@@ -169,7 +177,7 @@ export function DashboardClient({ initialBlogs }: { initialBlogs: SavedBlog[] })
                         className="w-full md:w-auto flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-6 py-3 text-sm font-black text-neutral-900 transition-all hover:bg-amber-400 shadow-xl shadow-amber-900/20 active:scale-95 disabled:opacity-50"
                     >
                         {isPublishingAll ? (
-                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                            <ButtonSpinner size={16} />
                         ) : (
                             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
@@ -244,7 +252,7 @@ export function DashboardClient({ initialBlogs }: { initialBlogs: SavedBlog[] })
                                             className="flex-1 flex items-center justify-center gap-2 bg-amber-500 text-neutral-900 hover:bg-amber-400 px-3 py-2 rounded-md text-sm font-bold transition-all active:scale-95 disabled:opacity-50"
                                         >
                                             {isPublishing === blog.id ? (
-                                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                                                <ButtonSpinner size={16} />
                                             ) : (
                                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
@@ -292,7 +300,7 @@ export function DashboardClient({ initialBlogs }: { initialBlogs: SavedBlog[] })
                     <div className="col-span-full py-20 text-center border border-dashed border-neutral-800 rounded-2xl bg-neutral-900/20 animate-in fade-in zoom-in-95">
                         <p className="text-neutral-500 font-medium">No {statusTab} posts found.</p>
                         {statusTab === "drafts" ? (
-                            <Link href="/setup?mode=blog" className="text-emerald-500 text-xs font-bold mt-2 hover:underline block uppercase tracking-widest">Generate New Post →</Link>
+                            <Link href={newBlogHref} prefetch className="text-emerald-500 text-xs font-bold mt-2 hover:underline block uppercase tracking-widest">Generate New Post →</Link>
                         ) : (
                             <button onClick={() => setStatusTab("drafts")} className="text-amber-500 text-xs font-bold mt-2 hover:underline block uppercase tracking-widest">Review Your Drafts →</button>
                         )}

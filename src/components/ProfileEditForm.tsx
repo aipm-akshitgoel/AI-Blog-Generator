@@ -1,5 +1,7 @@
 "use client";
 
+import { CtaButton } from "@/components/ui/CtaButton";
+
 import { useState } from "react";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import { BUSINESS_TYPES } from "@/lib/types/businessContext";
@@ -25,7 +27,6 @@ export function ProfileEditForm({ context, strategy, onSave, onCancel }: Profile
     positioning: context.positioning ?? "",
     // Strategy fields
     primaryKeyword: strategy?.keywordStrategy?.primaryKeyword ?? "",
-    secondaryKeywords: strategy?.keywordStrategy?.secondaryKeywords?.join(", ") ?? "",
     searchIntent: strategy?.keywordStrategy?.searchIntent ?? "informational",
     topics: strategy?.topicOptions ?? [] as TopicOption[],
   });
@@ -51,7 +52,7 @@ export function ProfileEditForm({ context, strategy, onSave, onCancel }: Profile
           ...strategy,
           keywordStrategy: {
             primaryKeyword: form.primaryKeyword.trim(),
-            secondaryKeywords: form.secondaryKeywords.split(",").map((k: string) => k.trim()).filter(Boolean),
+            secondaryKeywords: [],
             searchIntent: form.searchIntent as any,
           },
           topicOptions: form.topics,
@@ -203,17 +204,6 @@ export function ProfileEditForm({ context, strategy, onSave, onCancel }: Profile
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1.5">Secondary Keywords (comma-separated)</label>
-              <input
-                type="text"
-                value={form.secondaryKeywords}
-                onChange={(e) => setForm((f) => ({ ...f, secondaryKeywords: e.target.value }))}
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 placeholder:text-neutral-700 focus:border-emerald-500/50 outline-none transition-all"
-                placeholder="keyword1, keyword2, keyword3"
-              />
-            </div>
-
             <div className="space-y-4">
               <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500">Topics</label>
               <div className="space-y-3">
@@ -256,13 +246,14 @@ export function ProfileEditForm({ context, strategy, onSave, onCancel }: Profile
           >
             Cancel
           </button>
-          <button
+          <CtaButton
             type="submit"
-            disabled={saving}
-            className="flex-[2] rounded-xl bg-emerald-600 px-6 py-4 text-sm font-black text-white hover:bg-emerald-500 disabled:opacity-50 transition-all shadow-xl shadow-emerald-900/20 uppercase tracking-widest active:scale-[0.98]"
+            loading={saving}
+            loadingLabel="Saving Changes…"
+            className="flex-[2] rounded-xl px-6 py-4 text-sm shadow-xl"
           >
-            {saving ? "Saving Changes…" : "Apply Strategy Updates"}
-          </button>
+            Apply Strategy Updates
+          </CtaButton>
         </div>
       </form>
     </div>

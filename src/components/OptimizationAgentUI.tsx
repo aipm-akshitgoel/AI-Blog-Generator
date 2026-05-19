@@ -1,26 +1,188 @@
 import { useState, useEffect, useRef } from "react";
+import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BlogPost } from "@/lib/types/content";
-import { RichTextEditor, type RichTextEditorHandle } from "./RichTextEditor";
+import { ArticleContentEditor, type ArticleContentEditorHandle } from "./ArticleContentEditor";
 import type { ContentEditMode } from "@/lib/types/contentEdit";
 import { HelpTip } from "./HelpTip";
+import type { FactSource } from "@/lib/types/factSource";
+import {
+    optimizationErrorMessage,
+    requestContentOptimization,
+} from "@/lib/optimizeContentClient";
+import {
+    OPTIMIZATION_LINKS_PHASE,
+    OPTIMIZATION_LOADING_STEPS,
+    OPTIMIZATION_LOADING_TITLE,
+    OPTIMIZATION_TIMING_NOTE,
+    OPTIMIZED_CONTENT_SUBTITLE,
+    REFINE_LOADING_DETAIL,
+    REFINE_LOADING_TITLE,
+    optimizationLoadingStepIndex,
+} from "@/lib/optimizationCopy";
+import { normalizeInterlinkingRules, type InterlinkingRules } from "@/lib/types/contentSpec";
+import { DEFAULT_INTERLINKING_RULES } from "@/lib/types/topicBrief";
+import { linkCountSummary, rewriteMarkdownInternalLinksToAbsolute } from "@/lib/interlinking";
+import { toAbsoluteSiteHref } from "@/lib/domainLinks";
+import {
+    buildHeadingTagRows,
+    normalizeSeoScores,
+    seoQualityTotal,
+    type HeadingTagRow,
+} from "@/lib/seoAnalyzer";
+import type { SeoScores } from "@/lib/types/optimization";
 
 interface OptimizationAgentProps {
     post: BlogPost;
     businessContext: import("@/lib/types/businessContext").BusinessContext;
+    interlinkingRules?: InterlinkingRules | null;
+    primaryKeyword?: string;
     onComplete?: (optimized: OptimizedContent) => void;
 }
 
-function deriveInsights(scores: { overall: number; contentStructure: number; readability: number }, plagiarismReport?: any): string[] {
-    const tips: string[] = [];
-    if (scores.readability < 90) tips.push("Improve readability: use shorter sentences, simpler words, and more subheadings.");
-    if (scores.contentStructure < 90) tips.push("Improve structure: add clearer H2/H3 hierarchy and balance section lengths.");
-    if (scores.overall < 90) tips.push("Review keyword placement in title, intro, and headings for better SEO.");
-    if (plagiarismReport && !plagiarismReport.isSafe) {
-        tips.push(`🚨 Plagiarism Alert: ${plagiarismReport.flaggedSections?.length || 0} phrases matched external sources. Reword the highlighted text below.`);
+type SeoScoreDeltas = {
+    readability: number;
+    grammar: number;
+    originality: number;
+};
+
+type RefineFeedback =
+    | { type: "improved"; message: string }
+    | { type: "discarded"; message: string };
+
+function SeoMetricBar({
+    label, value, max = 100, barClass, help, suffix, delta,
+}: {
+    label: string; value: number; max?: number; barClass: string; help: string; suffix?: string; delta?: number;
+}) {
+    const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+    return (
+        <div>
+            <div className="flex justify-between items-start mb-2">
+                <div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-semibold text-[#4A5568] block">{label}</span>
+                        <HelpTip text={help} />
+                    </div>
+                </div>
+                <span className="text-sm font-bold text-[#2D3748] mt-1 flex items-center gap-1">
+                    {suffix ?? `${value}/${max}`}
+                    <ScoreDeltaBadge delta={delta} />
+                </span>
+            </div>
+            <div className="h-3 w-full bg-neutral-100 rounded-full overflow-hidden">
+                <div
+                    className={`h-full ${barClass} transition-all duration-1000 ease-out rounded-full`}
+                    style={{ width: `${pct}%` }}
+                />
+            </div>
+        </div>
+    );
+}
+function ScoreDeltaBadge({ delta, className = "" }: { delta?: number; className?: string }) {
+    if (delta == null || delta <= 0) return null;
+    return (
+        <span
+            className={`inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 text-[11px] font-black text-emerald-700 animate-in zoom-in-50 fade-in duration-300 ${className}`}
+        >
+            +{delta}
+        </span>
+    );
+}
+
+const AI_EDIT_BTN =
+    "rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-neutral-300 transition-colors hover:border-emerald-600/50 hover:text-white";
+const AI_EDIT_BTN_ACTIVE =
+    "rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-emerald-400";
+
+function EditContentMetric({
+    label,
+    value,
+    suffix,
+}: {
+    label: string;
+    value: number;
+    suffix?: string;
+}) {
+    return (
+        <div className="flex items-baseline gap-1.5 min-w-[4.5rem] shrink-0 whitespace-nowrap">
+            <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">{label}</span>
+            <span className="text-sm font-bold text-neutral-200 tabular-nums">
+                {value}
+                {suffix ?? ""}
+            </span>
+        </div>
+    );
+}
+
+function HeadingTagsPanel({ rows }: { rows: HeadingTagRow[] }) {
+    const h1Rows = rows.filter((r) => r.level === "h1");
+    const h2Rows = rows.filter((r) => r.level === "h2");
+
+    const renderRow = (row: HeadingTagRow) => (
+        <tr key={`${row.level}-${row.title}`} className="border-t border-neutral-100">
+            <td className="px-4 py-3.5 align-top text-sm leading-relaxed text-[#2D3748]">
+                <span className="font-medium">{row.title}</span>
+                {row.missing && (
+                    <span className="mt-1 block text-[11px] font-semibold text-amber-600">
+                        Section not found in draft
+                    </span>
+                )}
+            </td>
+            <td className="w-[5.5rem] px-4 py-3.5 align-top text-right tabular-nums text-sm font-semibold text-[#2D3748]">
+                {row.densityPercent}%
+            </td>
+        </tr>
+    );
+
+    const renderGroupHeader = (level: string) => (
+        <tr className="bg-[#EDF2F7]">
+            <th
+                colSpan={2}
+                className="border-t border-neutral-200 px-4 py-2 text-left text-[10px] font-black uppercase tracking-widest text-[#718096]"
+            >
+                {level}
+            </th>
+        </tr>
+    );
+
+    if (rows.length === 0) {
+        return <p className="text-sm text-[#A0AEC0]">No headings detected yet.</p>;
     }
-    if (tips.length === 0) tips.push("All metrics look good. You can still use 'Open Rich Text Editor' to make manual tweaks.");
-    return tips;
+
+    return (
+        <div className="overflow-hidden rounded-lg border border-neutral-200">
+            <table className="w-full border-collapse text-left">
+                <thead>
+                    <tr className="border-b border-neutral-200 bg-[#F7FAFC]">
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-[#718096]">
+                            Section
+                        </th>
+                        <th className="w-[5.5rem] px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#718096]">
+                            <span className="inline-flex items-center justify-end gap-1">
+                                Density
+                                <HelpTip text="Share of words in that section’s body that match this heading’s wording (not your primary SEO keyword)." />
+                            </span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody className="bg-white">
+                    {h1Rows.length > 0 && (
+                        <>
+                            {renderGroupHeader("H1")}
+                            {h1Rows.map(renderRow)}
+                        </>
+                    )}
+                    {h2Rows.length > 0 && (
+                        <>
+                            {renderGroupHeader("H2")}
+                            {h2Rows.map(renderRow)}
+                        </>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    );
 }
 
 function getHeuristic(markdown: string) {
@@ -40,6 +202,32 @@ function getHeuristic(markdown: string) {
     if (wordsPerHeading > 300) struct -= (wordsPerHeading - 300) * 0.1;
 
     return { read, struct };
+}
+
+function computeSeoScoresFromMarkdown(
+    markdown: string,
+    fallback: SeoScores,
+    plagiarismSimilarity = 0,
+): SeoScores {
+    const h = getHeuristic(markdown);
+    const base = normalizeSeoScores(fallback, plagiarismSimilarity);
+    return {
+        ...base,
+        readability: Math.min(100, Math.max(0, Math.round(h.read))),
+        grammar: Math.min(100, Math.max(0, Math.round(h.struct))),
+    };
+}
+
+function resolveEditorMarkdown(
+    contentMarkdown: string | undefined,
+    post: BlogPost,
+    domain?: string,
+): string {
+    const raw = String(contentMarkdown || post.contentMarkdown || "").trim();
+    return rewriteMarkdownInternalLinksToAbsolute(
+        applyHeadingStructureForEditor(raw, post),
+        domain,
+    );
 }
 
 function applyHeadingStructureForEditor(contentMarkdown: string, post: BlogPost): string {
@@ -62,28 +250,65 @@ function applyHeadingStructureForEditor(contentMarkdown: string, post: BlogPost)
     return markdown;
 }
 
-export function OptimizationAgentUI({ post, businessContext, onComplete }: OptimizationAgentProps) {
+export function OptimizationAgentUI({
+    post,
+    businessContext,
+    interlinkingRules = null,
+    primaryKeyword,
+    onComplete,
+}: OptimizationAgentProps) {
     const [optimizedData, setOptimizedData] = useState<OptimizedContent | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [isRefining, setIsRefining] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [editedContent, setEditedContent] = useState("");
-    const [liveScores, setLiveScores] = useState<any>(null);
+    const [liveScores, setLiveScores] = useState<SeoScores | null>(null);
     const latestRequestRef = useRef(0);
-    const editorRef = useRef<RichTextEditorHandle>(null);
+    const editorRef = useRef<ArticleContentEditorHandle>(null);
     const [contentPatches, setContentPatches] = useState<string[]>([]);
     const [aiPrompt, setAiPrompt] = useState("");
-    const [aiEditMode, setAiEditMode] = useState<"modify" | "add">("modify");
+    const [aiEditMode, setAiEditMode] = useState<ContentEditMode | null>(null);
     const [isAiEditing, setIsAiEditing] = useState(false);
     const [aiEditError, setAiEditError] = useState<string | null>(null);
+    const [scoreDeltas, setScoreDeltas] = useState<SeoScoreDeltas | null>(null);
+    const [refineFeedback, setRefineFeedback] = useState<RefineFeedback | null>(null);
+    const [highlightScores, setHighlightScores] = useState(false);
+    const [factSources, setFactSources] = useState<FactSource[]>([]);
+    const [factModeEnabled, setFactModeEnabled] = useState(false);
+    const [editorMountKey, setEditorMountKey] = useState(0);
+    const [loadingPhase, setLoadingPhase] = useState<"links" | "optimize">("optimize");
+    const [loadingSeconds, setLoadingSeconds] = useState(0);
+    const [isRefreshingMetrics, setIsRefreshingMetrics] = useState(false);
+    const optimizeAbortRef = useRef<AbortController | null>(null);
+    const postOptimizeKey = `${post.slug}|${post.contentMarkdown?.length ?? 0}`;
 
-    // Initialize liveScores when optimizedData loads
     useEffect(() => {
-        if (optimizedData && !liveScores) {
-            setLiveScores(optimizedData.seoScores);
+        if (!isEditing || !optimizedData) return;
+        setEditedContent(resolveEditorMarkdown(optimizedData.contentMarkdown, post, businessContext.domain));
+        setFactSources(optimizedData.factSources?.length ? optimizedData.factSources : post.factSources ?? []);
+    }, [isEditing, optimizedData, post]);
+
+    // Sync analyzer scores from optimized draft when not editing
+    useEffect(() => {
+        if (optimizedData && !isEditing) {
+            setLiveScores(
+                normalizeSeoScores(
+                    optimizedData.seoScores,
+                    optimizedData.plagiarismReport?.overallSimilarity ?? 0,
+                ),
+            );
         }
-    }, [optimizedData, liveScores]);
+    }, [optimizedData, isEditing]);
+
+    useEffect(() => {
+        if (!scoreDeltas && !highlightScores) return;
+        const t = window.setTimeout(() => {
+            setScoreDeltas(null);
+            setHighlightScores(false);
+        }, 5000);
+        return () => window.clearTimeout(t);
+    }, [scoreDeltas, highlightScores]);
 
     // Live update scores as user types
     useEffect(() => {
@@ -94,87 +319,84 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
 
         const deltaRead = currH.read - baseH.read;
         const deltaStruct = currH.struct - baseH.struct;
-
-        const newRead = Math.min(100, Math.max(0, Math.round(optimizedData.seoScores.readability + deltaRead)));
-        const newStruct = Math.min(100, Math.max(0, Math.round(optimizedData.seoScores.contentStructure + deltaStruct)));
-
-        const lowerMarkdown = editedContent.toLowerCase();
-        const keywords = optimizedData.seoScores.targetKeywords || [];
-        let kwScore = 100;
-        if (keywords.length > 0) {
-            const foundCount = keywords.filter((kw: string) => lowerMarkdown.includes(kw.toLowerCase())).length;
-            kwScore = (foundCount / keywords.length) * 100;
-        }
-
-        const deltaOverall = Math.round((deltaRead + deltaStruct + (kwScore - 100) * 0.5) / 3);
-        const newOverall = Math.min(100, Math.max(0, Math.round(optimizedData.seoScores.overall + deltaOverall)));
+        const base = normalizeSeoScores(
+            optimizedData.seoScores,
+            optimizedData.plagiarismReport?.overallSimilarity ?? 0,
+        );
 
         setLiveScores({
-            ...optimizedData.seoScores,
-            readability: newRead,
-            contentStructure: newStruct,
-            overall: newOverall
+            ...base,
+            readability: Math.min(100, Math.max(0, Math.round(base.readability + deltaRead))),
+            grammar: Math.min(100, Math.max(0, Math.round(base.grammar + deltaStruct * 0.5))),
         });
     }, [editedContent, isEditing, optimizedData]);
 
     useEffect(() => {
+        if (!loading) {
+            setLoadingSeconds(0);
+            return;
+        }
+        const tick = window.setInterval(() => setLoadingSeconds((s) => s + 1), 1000);
+        return () => window.clearInterval(tick);
+    }, [loading]);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        optimizeAbortRef.current = controller;
+
         const fetchOptimization = async () => {
             const requestId = ++latestRequestRef.current;
             setLoading(true);
+            setLoadingPhase("links");
             setError(null);
             try {
-                // Build enriched context: start with existing links then append sister blog posts
-                let enrichedContext = { ...businessContext };
-                try {
-                    const blogsRes = await fetch("/api/blog");
-                    if (blogsRes.ok) {
-                        const { blogs } = await blogsRes.json();
-                        const blogLinks = (blogs || [])
-                            .filter((b: any) => b.status === "published" && b.slug)
-                            .map((b: any) => ({
-                                href: `/blog/${b.slug}`,
-                                anchorText: b.title,
-                                target: "blog" as const,
-                            }));
-                        enrichedContext = {
-                            ...enrichedContext,
-                            internalLinks: [...(enrichedContext.internalLinks || []), ...blogLinks],
-                        };
-                    }
-                } catch { /* non-blocking — proceed without blog links */ }
+                setLoadingPhase("optimize");
+                const data = await requestContentOptimization(
+                    post,
+                    businessContext,
+                    interlinkingRules,
+                    { signal: controller.signal },
+                );
 
-                const res = await fetch("/api/optimize-content", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ blogPost: post, businessContext: enrichedContext }),
-                });
-
-                if (!res.ok) {
-                    const errorData = await res.json();
-                    throw new Error(errorData.error || "Failed to optimize content.");
-                }
-
-                const data = await res.json();
                 if (latestRequestRef.current !== requestId) return;
                 setOptimizedData(data.optimized);
+                setFactSources(
+                    data.optimized.factSources?.length
+                        ? data.optimized.factSources
+                        : post.factSources ?? [],
+                );
+                setLiveScores(
+                    normalizeSeoScores(
+                        data.optimized.seoScores,
+                        data.optimized.plagiarismReport?.overallSimilarity ?? 0,
+                    ),
+                );
+                setRefineFeedback(null);
+                setScoreDeltas(null);
                 setError(null);
             } catch (err) {
                 if (latestRequestRef.current !== requestId) return;
-                setError(err instanceof Error ? err.message : "Unknown error occurred.");
+                setError(optimizationErrorMessage(err));
             } finally {
                 if (latestRequestRef.current === requestId) {
                     setLoading(false);
+                    optimizeAbortRef.current = null;
                 }
             }
         };
 
-        fetchOptimization();
-    }, [post]);
+        void fetchOptimization();
+
+        return () => {
+            controller.abort();
+            optimizeAbortRef.current = null;
+        };
+    }, [postOptimizeKey, interlinkingRules, businessContext]);
 
     const handleAddContentPatch = () => {
         const text = editorRef.current?.getSelectionText() ?? "";
         if (!text.trim()) {
-            setAiEditError("Highlight text in the editor, then click Add selection.");
+            setAiEditError("Highlight text in the editor, then click Modify selected.");
             return;
         }
         setAiEditError(null);
@@ -189,8 +411,12 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
             setAiEditError("Enter a prompt describing what you want changed or added.");
             return;
         }
+        if (contentPatches.length === 0 && !aiEditMode) {
+            setAiEditError("Choose Modify all or Add content, or highlight text and use Modify selected.");
+            return;
+        }
         const mode: ContentEditMode =
-            contentPatches.length > 0 ? "patch" : aiEditMode;
+            contentPatches.length > 0 ? "patch" : aiEditMode!;
 
         setIsAiEditing(true);
         setAiEditError(null);
@@ -220,9 +446,22 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
 
     const handleRefine = async () => {
         if (!optimizedData) return;
+        const prevScores = normalizeSeoScores(
+            optimizedData.seoScores,
+            optimizedData.plagiarismReport?.overallSimilarity ?? 0,
+        );
+
+        const controller = new AbortController();
+        optimizeAbortRef.current = controller;
+
         setLoading(true);
         setIsRefining(true);
+        setLoadingPhase("optimize");
         setError(null);
+        setRefineFeedback(null);
+        setScoreDeltas(null);
+        setHighlightScores(false);
+
         try {
             const refinePayload: BlogPost = {
                 ...post,
@@ -233,24 +472,64 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                 faqs: optimizedData.faqs,
             };
 
-            const res = await fetch("/api/optimize-content", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ blogPost: refinePayload, businessContext, isRefining: true }),
-            });
+            const data = await requestContentOptimization(
+                refinePayload,
+                businessContext,
+                interlinkingRules,
+                { isRefining: true, signal: controller.signal },
+            );
+            const attempted = data.optimized;
+            const attemptedScores = normalizeSeoScores(
+                attempted.seoScores,
+                attempted.plagiarismReport?.overallSimilarity ?? 0,
+            );
 
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || "Failed to refine content.");
+            if (data.parseWarning) {
+                setRefineFeedback({
+                    type: "discarded",
+                    message:
+                        "Auto-fix could not apply changes (optimizer response invalid). Your draft and scores are unchanged.",
+                });
+                return;
             }
 
-            const data = await res.json();
-            setOptimizedData(data.optimized);
+            const prevTotal = seoQualityTotal(prevScores);
+            const newTotal = seoQualityTotal(attemptedScores);
+
+            if (newTotal <= prevTotal) {
+                setRefineFeedback({
+                    type: "discarded",
+                    message:
+                        "Auto-fix did not improve readability, grammar, or originality. Changes were discarded — try Edit Content or adjust the draft manually.",
+                });
+                return;
+            }
+
+            const deltas: SeoScoreDeltas = {
+                readability: attemptedScores.readability - prevScores.readability,
+                grammar: attemptedScores.grammar - prevScores.grammar,
+                originality: attemptedScores.originality - prevScores.originality,
+            };
+
+            setOptimizedData({ ...attempted, seoScores: attemptedScores });
+            setFactSources(
+                attempted.factSources?.length
+                    ? attempted.factSources
+                    : post.factSources ?? [],
+            );
+            setLiveScores(attemptedScores);
+            setScoreDeltas(deltas);
+            setHighlightScores(true);
+            setRefineFeedback({
+                type: "improved",
+                message: `Quality scores improved (readability +${Math.max(0, deltas.readability)}, grammar +${Math.max(0, deltas.grammar)}).`,
+            });
         } catch (err) {
-            setError(err instanceof Error ? err.message : "Unknown error occurred.");
+            setError(optimizationErrorMessage(err));
         } finally {
             setLoading(false);
             setIsRefining(false);
+            optimizeAbortRef.current = null;
         }
     };
 
@@ -264,10 +543,41 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                     </svg>
                 </div>
                 <h3 className="text-lg font-medium text-neutral-200">
-                    {isRefining ? "Applying Fixes & Refining..." : "Optimizing Content..."}
+                    {isRefining ? REFINE_LOADING_TITLE : OPTIMIZATION_LOADING_TITLE}
                 </h3>
-                <p className="mt-2 text-sm text-neutral-500">
-                    {isRefining ? "Running secondary LLM pass to improve low scores." : "Refining flow, adding internal links, and balancing sections."}
+                {isRefining && (
+                    <p className="mt-2 text-sm text-neutral-300 max-w-md mx-auto font-medium">
+                        {REFINE_LOADING_DETAIL}
+                    </p>
+                )}
+                {!isRefining && loadingPhase === "links" && (
+                    <p className="mt-2 text-sm text-neutral-300 max-w-md mx-auto font-medium">
+                        {OPTIMIZATION_LINKS_PHASE}
+                    </p>
+                )}
+                {!isRefining && loadingPhase === "optimize" && (
+                    <ul className="mt-4 mx-auto max-w-sm text-left space-y-1.5">
+                        {OPTIMIZATION_LOADING_STEPS.map((step, i) => {
+                            const active = optimizationLoadingStepIndex(loadingSeconds) === i;
+                            return (
+                                <li
+                                    key={step}
+                                    className={`text-xs flex items-center gap-2 ${active ? "text-emerald-400 font-semibold" : "text-neutral-600"}`}
+                                >
+                                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${active ? "bg-emerald-400" : "bg-neutral-700"}`} />
+                                    {step}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
+                <p className="mt-4 text-[11px] text-neutral-600 max-w-md mx-auto">
+                    {!isRefining && loadingPhase === "optimize" ? OPTIMIZATION_TIMING_NOTE : null}
+                    {loadingSeconds > 0 && (
+                        <span className={!isRefining && loadingPhase === "optimize" ? " block mt-1 font-mono" : " font-mono"}>
+                            {loadingSeconds}s elapsed
+                        </span>
+                    )}
                 </p>
             </div>
         );
@@ -283,14 +593,50 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                 </div>
                 <h3 className="text-lg font-medium text-neutral-100 mb-2">Optimization Failed</h3>
                 <p className="text-red-400 text-sm mb-4">{error}</p>
-                <div className="inline-block rounded-lg bg-neutral-900 border border-neutral-800 p-3">
-                    <p className="text-neutral-300 text-sm font-medium">✨ Nudge: If this is an API rate limit issue, please wait 1 minute and try again.</p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setError(null);
+                            const requestId = ++latestRequestRef.current;
+                            const controller = new AbortController();
+                            optimizeAbortRef.current = controller;
+                            setLoading(true);
+                            setLoadingPhase("optimize");
+                            void requestContentOptimization(post, businessContext, interlinkingRules, {
+                                signal: controller.signal,
+                            })
+                                .then((data) => {
+                                    if (latestRequestRef.current !== requestId) return;
+                                    setOptimizedData(data.optimized);
+                                    setLiveScores(
+                    normalizeSeoScores(
+                        data.optimized.seoScores,
+                        data.optimized.plagiarismReport?.overallSimilarity ?? 0,
+                    ),
+                );
+                                    setError(null);
+                                })
+                                .catch((e) => setError(optimizationErrorMessage(e)))
+                                .finally(() => {
+                                    setLoading(false);
+                                    optimizeAbortRef.current = null;
+                                });
+                        }}
+                        className="rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-amber-500"
+                    >
+                        Retry optimization
+                    </button>
                 </div>
             </div>
         );
     }
 
     if (!optimizedData) return null;
+
+    const analyzerMarkdown = isEditing ? editedContent : optimizedData.contentMarkdown;
+    const linkSummary = linkCountSummary(analyzerMarkdown, interlinkingRules);
+    const headingRows = buildHeadingTagRows(analyzerMarkdown, post);
 
     // Render optimized markdown with internal links (markdown already contains links)
     return (
@@ -303,319 +649,375 @@ export function OptimizationAgentUI({ post, businessContext, onComplete }: Optim
                 </div>
                 <div>
                     <h2 className="text-xl font-semibold text-neutral-100">Optimized Content</h2>
-                    <p className="text-xs text-neutral-400">Refined article with internal links and balanced sections</p>
+                    <p className="text-xs text-neutral-400">{OPTIMIZED_CONTENT_SUBTITLE}</p>
+                    {(linkSummary.min != null || linkSummary.max != null) && (
+                        <p
+                            className={`mt-1 text-[11px] font-medium ${
+                                linkSummary.metMin ? "text-emerald-400" : "text-amber-400"
+                            }`}
+                        >
+                            Internal links in article: {linkSummary.count}
+                            {linkSummary.min != null && linkSummary.max != null
+                                ? ` (target ${linkSummary.min}–${linkSummary.max})`
+                                : linkSummary.min != null
+                                  ? ` (target at least ${linkSummary.min})`
+                                  : ` (target at most ${linkSummary.max})`}
+                            {!linkSummary.metMin ? " — open Edit content to add more if needed." : ""}
+                        </p>
+                    )}
                 </div>
             </div>
 
-            {/* SEO Analyzer Module (Matches User Screenshot) */}
+            {/* SEO Analyzer */}
             {liveScores && (
                 <div className="mb-6 rounded-xl border border-neutral-800 bg-[#FAFAFA] text-neutral-900 p-6 md:p-8">
                     <div className="flex items-center gap-2 mb-6 text-neutral-800">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-500">
                             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
                         </svg>
                         <h2 className="text-xl font-bold">SEO Analyzer</h2>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Overall Circular Score */}
-                        <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm flex flex-col items-center justify-center">
-                            <div className="relative w-32 h-32 mb-4">
-                                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                                    {/* Background Circle */}
-                                    <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f1f5f9" strokeWidth="12" />
-                                    {/* Progress Circle (Green #22c55e) */}
-                                    <circle
-                                        cx="50"
-                                        cy="50"
-                                        r="40"
-                                        fill="transparent"
-                                        stroke="#22c55e"
-                                        strokeWidth="12"
-                                        strokeDasharray={`${(liveScores.overall / 100) * 251.2} 251.2`}
-                                        strokeLinecap="round"
-                                        className="transition-all duration-1000 ease-out"
-                                    />
-                                </svg>
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                    <span className="text-3xl font-bold text-neutral-800">{liveScores.overall}</span>
+                    <div className="flex flex-col gap-6">
+                        <div
+                            className={`rounded-xl border border-neutral-200 bg-white p-6 shadow-sm flex flex-col space-y-5 transition-all duration-500 ${
+                                highlightScores ? "ring-2 ring-emerald-300 ring-offset-1" : ""
+                            }`}
+                        >
+                            <SeoMetricBar
+                                label="Readability"
+                                value={liveScores.readability}
+                                barClass="bg-[#eab308]"
+                                help="How easy the post is to read. Higher scores mean clearer sentences and better flow."
+                                delta={scoreDeltas?.readability}
+                            />
+                            <SeoMetricBar
+                                label="Originality"
+                                value={liveScores.originality}
+                                barClass="bg-[#3b82f6]"
+                                help="How original the copy is versus known sources. Higher is better for avoiding duplicate-content penalties."
+                                delta={scoreDeltas?.originality}
+                            />
+                            <SeoMetricBar
+                                label="Grammar"
+                                value={liveScores.grammar}
+                                barClass="bg-[#22c55e]"
+                                help="Grammar and mechanics quality across headings and body copy."
+                                delta={scoreDeltas?.grammar}
+                            />
+                            <SeoMetricBar
+                                label="AI Content%"
+                                value={liveScores.aiContentPercent}
+                                barClass="bg-[#a855f7]"
+                                help="Estimated share of text that reads AI-generated. Lower is better."
+                                suffix={`${liveScores.aiContentPercent}%`}
+                            />
+                            <div className="pt-2 border-t border-neutral-100">
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-sm font-semibold text-[#4A5568]">Internal links</span>
+                                        <HelpTip text="Number of on-site links in the article body (your domain and published blog posts only)." />
+                                    </div>
+                                    <span className="text-sm font-bold text-[#2D3748]">{linkSummary.count}</span>
                                 </div>
-                            </div>
-                            <div className="text-center mt-2">
-                                <div className="flex items-center justify-center gap-1.5">
-                                    <span className="text-sm font-semibold text-neutral-500">Overall SEO Score</span>
-                                    <HelpTip text="A combined score (0–100) of how well-optimised this post is for Google. 80+ is good, 90+ is excellent." />
-                                </div>
-                                <span className="text-[10px] text-neutral-400">Aim for 80+ to rank well on Google.</span>
                             </div>
                         </div>
 
-                        <div className="flex flex-col gap-6">
-                            {/* Detailed Metric Bars */}
-                            <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm flex flex-col justify-center space-y-6">
-                                <div>
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div>
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-sm font-semibold text-[#4A5568] block">Content Structure</span>
-                                                <HelpTip text="How well the post uses headings (H2, H3) to organise information — making it easier for both readers and Google to follow." />
-                                            </div>
-                                            <span className="text-[10px] text-neutral-400">Proper use of headings (H2/H3) for Google.</span>
-                                        </div>
-                                        <span className="text-sm font-bold text-[#2D3748] mt-1">{liveScores.contentStructure}/100</span>
-                                    </div>
-                                    <div className="h-3 w-full bg-neutral-100 rounded-full overflow-hidden">
-                                        <div className="h-full bg-[#22c55e] transition-all duration-1000 ease-out rounded-full" style={{ width: `${liveScores.contentStructure}%` }}></div>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div>
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-sm font-semibold text-[#4A5568] block">Readability</span>
-                                                <HelpTip text="How easy the post is to read. Higher = more visitors read to the end, which signals quality to Google." />
-                                            </div>
-                                            <span className="text-[10px] text-neutral-400">How easy your content is for humans to read.</span>
-                                        </div>
-                                        <span className="text-sm font-bold text-[#2D3748] mt-1">{liveScores.readability}/100</span>
-                                    </div>
-                                    <div className="h-3 w-full bg-neutral-100 rounded-full overflow-hidden">
-                                        <div className="h-full bg-[#eab308] transition-all duration-1000 ease-out rounded-full" style={{ width: `${liveScores.readability}%` }}></div>
-                                    </div>
-                                </div>
-
-                                <div className="pt-2 border-t border-neutral-100">
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div>
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-sm font-semibold text-[#4A5568]">Originality Score</span>
-                                                <HelpTip text="The inverse of plagiarism — 100% means fully original. Duplicate content can hurt your Google ranking, so aim for 90%+." />
-                                                {optimizedData.plagiarismReport.isSafe && (
-                                                    <span className="text-[10px] font-bold text-green-600 bg-green-100 px-1.5 py-0.5 rounded uppercase">Safe</span>
-                                                )}
-                                            </div>
-                                            <span className="text-[10px] text-neutral-400">Checks for copied content to avoid penalties.</span>
-                                        </div>
-                                        <span className="text-sm font-bold text-[#2D3748] mt-1">{100 - optimizedData.plagiarismReport.overallSimilarity}%</span>
-                                    </div>
-                                    <div className="h-3 w-full bg-neutral-100 rounded-full overflow-hidden">
-                                        <div className="h-full bg-[#3b82f6] transition-all duration-1000 ease-out rounded-full" style={{ width: `${100 - optimizedData.plagiarismReport.overallSimilarity}%` }}></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Target Keywords */}
-                            <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
-                                <div className="mb-4">
-                                    <h3 className="text-sm font-bold tracking-wider text-[#718096] uppercase">Target Keywords</h3>
-                                    <p className="text-[10px] text-neutral-400 mt-0.5">Words you want to rank for. Green means they are included.</p>
-                                </div>
-                                {liveScores.targetKeywords && liveScores.targetKeywords.length > 0 ? (
-                                    <div className="flex flex-wrap gap-2">
-                                        {liveScores.targetKeywords.map((kw: string, i: number) => {
-                                            const isFound = isEditing ? editedContent.toLowerCase().includes(kw.toLowerCase()) : optimizedData.contentMarkdown.toLowerCase().includes(kw.toLowerCase());
-                                            return (
-                                                <span key={i} className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold ${isFound ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-[#EDF2F7] text-[#4A5568]'}`}>
-                                                    {kw}
-                                                </span>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <p className="text-sm text-[#A0AEC0]">No primary keywords set yet.</p>
-                                )}
-                            </div>
+                        <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
+                            <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-[#718096]">
+                                Heading tags
+                            </h3>
+                            <HeadingTagsPanel rows={headingRows} />
                         </div>
                     </div>
-
-                    {/* Insights & Action Items - always visible */}
-                    <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-                        <div className="flex items-center gap-2 mb-4 text-amber-800">
-                            <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <h3 className="font-bold">
-                                {liveScores.actionableInsights?.length ? "Actionable Insights" : "Insights & Tips"}
-                            </h3>
+                </div>
+            )}
+            {/* Next step — on the dark shell, not inside the light SEO card */}
+            {!isEditing && (
+                <div className="mb-6 border-t border-neutral-800 pt-6 space-y-4">
+                    {refineFeedback && (
+                        <div
+                            className={`rounded-lg border px-4 py-3 text-sm ${
+                                refineFeedback.type === "improved"
+                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                                    : "border-neutral-700 bg-neutral-900/80 text-neutral-300"
+                            }`}
+                        >
+                            {refineFeedback.message}
                         </div>
-                        <ul className="list-disc list-inside space-y-2 text-sm text-amber-900 mb-5">
-                            {(liveScores.actionableInsights?.length
-                                ? liveScores.actionableInsights
-                                : deriveInsights(liveScores, optimizedData.plagiarismReport)
-                            ).map((insight: string, i: number) => (
-                                <li key={i}>{insight}</li>
-                            ))}
-                        </ul>
-                        <div className="flex flex-wrap gap-3">
-                            {liveScores.actionableInsights?.length ? (
-                                <button
-                                    onClick={handleRefine}
-                                    disabled={loading}
-                                    className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-500 disabled:opacity-50 shadow-md shadow-amber-600/20"
-                                >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    )}
+                    <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const md = resolveEditorMarkdown(
+                                    optimizedData.contentMarkdown,
+                                    post,
+                                    businessContext.domain,
+                                );
+                                setEditedContent(md);
+                                setFactSources(optimizedData.factSources?.length ? optimizedData.factSources : post.factSources ?? []);
+                                setContentPatches([]);
+                                setAiPrompt("");
+                                setAiEditMode(null);
+                                setAiEditError(null);
+                                setEditorMountKey((k) => k + 1);
+                                setIsEditing(true);
+                            }}
+                            className="inline-flex w-full sm:flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-8 py-4 text-sm font-black uppercase tracking-widest text-white transition-all hover:bg-emerald-500 shadow-lg shadow-emerald-900/25 active:scale-[0.99]"
+                        >
+                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                            Edit content
+                        </button>
+                        {liveScores?.actionableInsights?.length ? (
+                            <button
+                                type="button"
+                                onClick={handleRefine}
+                                disabled={loading}
+                                className="inline-flex w-full sm:w-auto items-center justify-center gap-2.5 rounded-xl border border-neutral-700 bg-neutral-900 px-6 py-4 text-sm font-bold text-neutral-200 transition-colors hover:border-neutral-600 hover:bg-neutral-800 hover:text-white disabled:opacity-50"
+                            >
+                                {loading ? (
+                                    <ButtonSpinner size={16} />
+                                ) : (
+                                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                                     </svg>
-                                    {loading ? "Refining..." : "Auto-Fix Issues"}
-                                </button>
-                            ) : null}
-                            {!isEditing && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setEditedContent(applyHeadingStructureForEditor(optimizedData.contentMarkdown, post));
-                                        setContentPatches([]);
-                                        setAiPrompt("");
-                                        setAiEditError(null);
-                                        setIsEditing(true);
-                                    }}
-                                    className="inline-flex items-center gap-2 rounded-lg border-2 border-amber-600 bg-amber-500/10 px-5 py-2.5 text-sm font-bold text-amber-800 transition-colors hover:bg-amber-500/20 shadow-sm"
-                                >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                    </svg>
-                                    Edit Content
-                                </button>
-                            )}
-                        </div>
+                                )}
+                                {loading ? "Refining…" : "Auto-fix issues"}
+                            </button>
+                        ) : null}
                     </div>
                 </div>
             )}
 
             {/* Inline Editor for manual corrections */}
-            {isEditing && (
+            {isEditing && liveScores && (
                 <div className="fixed inset-0 z-[100] flex flex-col bg-neutral-950 p-4 md:p-8 animate-in fade-in duration-300 overflow-hidden">
-                    <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden">
-                        <div className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950/50 px-6 py-4">
-                            <div className="flex items-center gap-3">
-                                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
-                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col rounded-2xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden">
+                        <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/50">
+                            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-emerald-800/50 bg-emerald-900/30 text-emerald-400">
+                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth="2"
+                                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                        />
                                     </svg>
                                 </div>
-                                <div>
-                                    <h3 className="text-lg font-black text-white uppercase tracking-tighter">Edit Content</h3>
-                                    <p className="text-xs text-neutral-400">Edit manually or use AI to modify selections / add content.</p>
+                                <div className="flex items-center gap-2 sm:gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setEditedContent(
+                                                resolveEditorMarkdown(
+                                                    optimizedData.contentMarkdown,
+                                                    post,
+                                                    businessContext.domain,
+                                                ),
+                                            );
+                                            setFactSources(
+                                                optimizedData.factSources?.length
+                                                    ? optimizedData.factSources
+                                                    : post.factSources ?? [],
+                                            );
+                                            setContentPatches([]);
+                                            setAiPrompt("");
+                                            setAiEditError(null);
+                                            setIsEditing(false);
+                                        }}
+                                        className="rounded-lg px-4 py-2 text-sm font-bold text-neutral-400 transition-colors hover:text-white"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setOptimizedData((prev) =>
+                                                prev
+                                                    ? {
+                                                          ...prev,
+                                                          contentMarkdown: editedContent,
+                                                          seoScores: liveScores ?? prev.seoScores,
+                                                          factSources,
+                                                      }
+                                                    : prev,
+                                            );
+                                            setIsEditing(false);
+                                        }}
+                                        className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-900/20 transition-all hover:bg-emerald-500 active:scale-95"
+                                    >
+                                        Save
+                                    </button>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-3">
-                                <div className="hidden md:flex items-center gap-4 mr-6 pr-6 border-r border-neutral-800">
-                                    <div className="flex flex-col items-center">
-                                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">SEO Score</span>
-                                        <div className="flex items-center gap-1.5">
-                                            <div className={`h-2 w-2 rounded-full ${liveScores.overall >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                                            <span className="text-lg font-black text-white leading-none">{liveScores.overall}</span>
-                                        </div>
+                            <div className="border-t border-neutral-800/80 px-4 pb-4 pt-3 sm:px-6">
+                                <div
+                                    className="flex items-stretch rounded-xl border border-neutral-800 bg-neutral-900/70 overflow-hidden"
+                                    title="Live quality metrics for the current draft"
+                                >
+                                    <div className="flex flex-1 items-center gap-3 overflow-x-auto px-3 py-2 sm:gap-4 sm:px-4 custom-scrollbar">
+                                        <EditContentMetric label="Readability" value={liveScores!.readability} suffix="%" />
+                                        <EditContentMetric label="Originality" value={liveScores!.originality} suffix="%" />
+                                        <EditContentMetric label="Grammar" value={liveScores!.grammar} suffix="%" />
+                                        <EditContentMetric
+                                            label="AI Content%"
+                                            value={liveScores!.aiContentPercent}
+                                            suffix="%"
+                                        />
+                                        <EditContentMetric label="Internal links" value={linkSummary.count} suffix="" />
                                     </div>
-                                    <div className="flex flex-col items-center">
-                                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">Structure</span>
-                                        <span className="text-sm font-bold text-neutral-300">{liveScores.contentStructure}%</span>
-                                    </div>
-                                    <div className="flex flex-col items-center">
-                                        <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest mb-1">Readability</span>
-                                        <span className="text-sm font-bold text-neutral-300">{liveScores.readability}%</span>
-                                    </div>
+                                    <button
+                                        type="button"
+                                        disabled={isRefreshingMetrics}
+                                        onClick={() => {
+                                            if (!optimizedData || !liveScores) return;
+                                            setIsRefreshingMetrics(true);
+                                            try {
+                                                const refreshed = computeSeoScoresFromMarkdown(
+                                                    editedContent,
+                                                    liveScores,
+                                                    optimizedData.plagiarismReport?.overallSimilarity ?? 0,
+                                                );
+                                                setLiveScores(refreshed);
+                                                setHighlightScores(true);
+                                            } finally {
+                                                setIsRefreshingMetrics(false);
+                                            }
+                                        }}
+                                        className="flex flex-col items-center justify-center gap-1 border-l border-neutral-800 bg-neutral-950/50 px-3 py-2 min-w-[4.5rem] text-neutral-400 transition-colors hover:bg-neutral-800/80 hover:text-emerald-400 disabled:opacity-50 sm:px-4"
+                                        title="Recalculate all metrics from current article text"
+                                    >
+                                        {isRefreshingMetrics ? (
+                                            <ButtonSpinner size={14} />
+                                        ) : (
+                                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    strokeWidth="2"
+                                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                                />
+                                            </svg>
+                                        )}
+                                        <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">
+                                            Refresh
+                                        </span>
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => {
-                                        setEditedContent(applyHeadingStructureForEditor(optimizedData.contentMarkdown, post));
-                                        setContentPatches([]);
-                                        setAiPrompt("");
-                                        setAiEditError(null);
-                                        setIsEditing(false);
-                                    }}
-                                    className="rounded-lg px-4 py-2 text-sm font-bold text-neutral-400 transition-colors hover:text-white"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setOptimizedData((prev) => prev ? { ...prev, contentMarkdown: editedContent, seoScores: liveScores } : prev);
-                                        setIsEditing(false);
-                                    }}
-                                    className="rounded-lg bg-emerald-600 px-6 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-900/20 transition-all hover:bg-emerald-500 active:scale-95"
-                                >
-                                    Save Changes
-                                </button>
                             </div>
                         </div>
-
                         <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/80 px-4 py-4 md:px-6">
                             <div className="flex flex-col lg:flex-row lg:items-start gap-4">
                                 <div className="flex-1 min-w-0 space-y-3">
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-neutral-500">AI edit</span>
-                                        <button type="button" onClick={handleAddContentPatch} className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-amber-400 hover:bg-amber-500/20">+ Add selection</button>
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-neutral-500 shrink-0">
+                                            AI edit
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handleAddContentPatch}
+                                            className={contentPatches.length > 0 ? AI_EDIT_BTN_ACTIVE : AI_EDIT_BTN}
+                                        >
+                                            Modify selected
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAiEditMode((m) => (m === "modify" ? null : "modify"));
+                                                setAiEditError(null);
+                                            }}
+                                            className={aiEditMode === "modify" ? AI_EDIT_BTN_ACTIVE : AI_EDIT_BTN}
+                                        >
+                                            Modify all
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAiEditMode((m) => (m === "add" ? null : "add"));
+                                                setAiEditError(null);
+                                            }}
+                                            className={aiEditMode === "add" ? AI_EDIT_BTN_ACTIVE : AI_EDIT_BTN}
+                                        >
+                                            Add content
+                                        </button>
                                         {contentPatches.length > 0 && (
-                                            <button type="button" onClick={() => setContentPatches([])} className="text-[10px] font-bold text-neutral-500 hover:text-white uppercase">Clear ({contentPatches.length})</button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setContentPatches([])}
+                                                className="text-[10px] font-bold text-neutral-500 hover:text-white uppercase"
+                                            >
+                                                Clear ({contentPatches.length})
+                                            </button>
                                         )}
                                     </div>
-                                    {contentPatches.length > 0 ? (
+                                    {contentPatches.length > 0 && (
                                         <ul className="space-y-1.5 max-h-24 overflow-y-auto custom-scrollbar">
                                             {contentPatches.map((patch, i) => (
-                                                <li key={i} className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5">
-                                                    <span className="text-[10px] font-black text-amber-500 shrink-0">{i + 1}</span>
+                                                <li key={i} className="flex items-start gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-1.5">
+                                                    <span className="text-[10px] font-black text-emerald-500 shrink-0">{i + 1}</span>
                                                     <p className="text-xs text-neutral-300 line-clamp-2 flex-1">{patch}</p>
                                                     <button type="button" onClick={() => setContentPatches((p) => p.filter((_, idx) => idx !== i))} className="text-neutral-500 hover:text-red-400">×</button>
                                                 </li>
                                             ))}
                                         </ul>
-                                    ) : (
-                                        <div className="flex gap-2">
-                                            <button type="button" onClick={() => setAiEditMode("modify")} className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase ${aiEditMode === "modify" ? "bg-emerald-600 text-white" : "bg-neutral-800 text-neutral-400"}`}>Modify all</button>
-                                            <button type="button" onClick={() => setAiEditMode("add")} className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase ${aiEditMode === "add" ? "bg-emerald-600 text-white" : "bg-neutral-800 text-neutral-400"}`}>Add content</button>
-                                        </div>
                                     )}
                                     <textarea value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} rows={2} placeholder="Describe what to change or add…" className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-emerald-500 resize-none" />
                                     {aiEditError && <p className="text-xs text-amber-400">{aiEditError}</p>}
                                 </div>
-                                <button type="button" onClick={handleAiContentEdit} disabled={isAiEditing || !aiPrompt.trim()} className="shrink-0 rounded-xl bg-violet-600 px-5 py-3 text-xs font-black text-white uppercase disabled:opacity-40">{isAiEditing ? "Applying…" : "Apply AI"}</button>
+                                <button
+                                    type="button"
+                                    onClick={handleAiContentEdit}
+                                    disabled={
+                                        isAiEditing ||
+                                        !aiPrompt.trim() ||
+                                        (contentPatches.length === 0 && !aiEditMode)
+                                    }
+                                    className="shrink-0 inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-xs font-black text-white uppercase shadow-lg shadow-emerald-900/25 hover:bg-emerald-500 disabled:opacity-40 transition-colors"
+                                >
+                                    {isAiEditing && <ButtonSpinner size={16} />}
+                                    {isAiEditing ? "Applying…" : "Apply AI"}
+                                </button>
                             </div>
                         </div>
-                        <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-4 md:p-6 pt-3">
-                            <RichTextEditor ref={editorRef} fillHeight value={editedContent} onChange={setEditedContent} internalLinks={businessContext.internalLinks} />
+                        <div className="flex-1 min-h-0 flex flex-col p-4 md:p-6 pt-3 overflow-y-auto">
+                            <div className="flex-1 min-h-[min(52vh,640px)] flex flex-col min-w-0">
+                                {!editedContent.trim() && (
+                                    <p className="mb-2 shrink-0 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                                        No draft text loaded. Paste your article below, or cancel and regenerate the draft.
+                                    </p>
+                                )}
+                                <ArticleContentEditor
+                                    key={editorMountKey}
+                                    ref={editorRef}
+                                    fillHeight
+                                    value={editedContent}
+                                    onChange={(md) =>
+                                        setEditedContent(
+                                            rewriteMarkdownInternalLinksToAbsolute(
+                                                md,
+                                                businessContext.domain,
+                                            ),
+                                        )
+                                    }
+                                    internalLinks={businessContext.internalLinks?.map((l) => ({
+                                        ...l,
+                                        href: toAbsoluteSiteHref(l.href, businessContext.domain),
+                                    }))}
+                                    factSources={factSources}
+                                    onRemoveFactSource={(id) =>
+                                        setFactSources((prev) => prev.filter((f) => f.id !== id))
+                                    }
+                                    factModeEnabled={factModeEnabled}
+                                    onFactModeChange={setFactModeEnabled}
+                                />
+                            </div>
                         </div>
 
-                        <div className="border-t border-neutral-800 bg-neutral-950/50 px-6 py-3 shrink-0">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-6">
-                                    <div className="flex items-center gap-2">
-                                        <div className={`h-1.5 w-1.5 rounded-full ${liveScores.overall >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                                        <span className="text-[10px] font-black uppercase text-neutral-500">Overall:</span>
-                                        <span className="text-xs font-black text-white">{liveScores.overall}</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-black uppercase text-neutral-500">Struct:</span>
-                                        <span className="text-xs font-black text-white">{liveScores.contentStructure}%</span>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-black uppercase text-neutral-500">Read:</span>
-                                        <span className="text-xs font-black text-white">{liveScores.readability}%</span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 text-[10px] font-black uppercase text-neutral-600 hidden md:flex">
-                                    Analylzer Active
-                                </div>
-                            </div>
-                        </div>
                     </div>
-                </div>
-            )}
-
-            {/* Internal Links List (optional) */}
-            {optimizedData.internalLinks && optimizedData.internalLinks.length > 0 && (
-                <div className="mt-6 border-t border-neutral-800 pt-4">
-                    <h3 className="text-neutral-100 mb-2">Internal Links Added</h3>
-                    <ul className="list-disc list-inside space-y-1 text-sm text-neutral-300">
-                        {optimizedData.internalLinks.map((link, idx) => (
-                            <li key={idx}>
-                                <a href={link.href} className="text-emerald-400 underline" target="_blank" rel="noopener noreferrer">
-                                    {link.anchorText}
-                                </a>{" "}({link.target})
-                            </li>
-                        ))}
-                    </ul>
                 </div>
             )}
 

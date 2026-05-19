@@ -1,9 +1,38 @@
 import { NextResponse } from "next/server";
+import { NO_SOURCES_IN_CONTENT_RULE } from "@/lib/dataSources";
+import {
+    normalizeFactSourcesFromModel,
+    resolveFactSourcesForContent,
+} from "@/lib/factSourcesNormalize";
+import { buildReferenceCatalog, enrichFactSourcesWithCatalog } from "@/lib/referenceCatalog";
+import {
+    buildApprovedLinksForContent,
+    ensureInternalLinksInMarkdown,
+    mergeOptimizedLinks,
+    rewriteMarkdownInternalLinksToAbsolute,
+    stripContextuallyInvalidLinksFromMarkdown,
+    stripUnapprovedLinksFromMarkdown,
+    type ApprovedLink,
+} from "@/lib/interlinking";
+import type { FactSource } from "@/lib/types/factSource";
+import {
+    buildInterlinkingRulesPrompt,
+    hasInterlinkingRules,
+    type InterlinkingRules,
+} from "@/lib/types/contentSpec";
+import type { BusinessContext } from "@/lib/types/businessContext";
 import type { BlogPost } from "@/lib/types/content";
 import type { OptimizedContent } from "@/lib/types/optimization";
+import { normalizeSeoScores } from "@/lib/seoAnalyzer";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 import { jsonrepair } from "jsonrepair";
+import { OPTIMIZE_MODEL_TIMEOUT_MS } from "@/lib/optimizeContentClient";
+
+/** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
+export const maxDuration = 300;
+
+const MODEL_TIMEOUT_MS = OPTIMIZE_MODEL_TIMEOUT_MS;
 
 function extractFirstJsonObject(input: string): string | null {
     const text = String(input || "");
@@ -57,10 +86,10 @@ function buildFallbackOptimized(blogPost: BlogPost): OptimizedContent {
         faqs: Array.isArray(blogPost.faqs) ? blogPost.faqs : [],
         internalLinks: [],
         seoScores: {
-            overall: 80,
-            contentStructure: 80,
             readability: 80,
-            targetKeywords: [],
+            grammar: 80,
+            aiContentPercent: 15,
+            originality: 96,
             actionableInsights: [
                 "The optimizer could not parse the AI response. Your draft is unchanged below — use Edit Content, then retry Optimize, or continue manually.",
             ],
@@ -122,39 +151,90 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { blogPost, businessContext, isRefining } = body as { blogPost?: BlogPost, businessContext?: any, isRefining?: boolean };
+    const { blogPost, businessContext, isRefining, interlinkingRules } = body as {
+        blogPost?: BlogPost;
+        businessContext?: Pick<
+            BusinessContext,
+            "internalLinks" | "businessName" | "businessType" | "domain" | "services"
+        >;
+        isRefining?: boolean;
+        interlinkingRules?: InterlinkingRules;
+    };
     if (!blogPost) {
         return NextResponse.json({ error: "Missing blogPost" }, { status: 400 });
     }
 
     try {
         const client = createAzureClient(azure);
-        const systemPrompt = `You are an expert content optimizer for beauty & wellness blogs. Take the provided blog post JSON and:
+        const approvedList: ApprovedLink[] = buildApprovedLinksForContent(
+            blogPost.contentMarkdown || "",
+            businessContext,
+        );
+        const approvedLinksJson = JSON.stringify(approvedList);
+        const customLinkRules = hasInterlinkingRules(interlinkingRules)
+            ? buildInterlinkingRulesPrompt(interlinkingRules!)
+            : "";
+        const minL = interlinkingRules?.minLinks;
+        const maxL = interlinkingRules?.maxLinks;
+        const defaultLinkCount =
+            minL != null && minL > 0 && maxL != null && maxL > 0
+                ? `between ${minL} and ${maxL}`
+                : minL != null && minL > 0
+                  ? `at least ${minL}`
+                  : "2-3";
+        const approvedListNote =
+            approvedList.length > 0
+                ? `Approved internal targets (ONLY these hrefs may be used for on-site links — do not invent paths): ${approvedLinksJson}.`
+                : "No pages were discovered on this domain yet — do NOT add internal site links in contentMarkdown. External authority links are only allowed when interlinking instructions explicitly request them.";
+        const internalLinksBlock = customLinkRules
+            ? `- CRITICAL — INTERLINKING: ${customLinkRules}\n- ${approvedListNote} Do not place links in headings. Place them naturally in body paragraphs. Every [anchor](url) counts toward min/max. Write anchor text from the reader's perspective (what they will find or do), e.g. "Compare online MBA programs" — never "Home", "click here", or site-owner phrases like "Related on your site".`
+            : `- CRITICAL — INTERLINKING: Weave ${defaultLinkCount} internal links in contentMarkdown using markdown syntax (e.g. [anchor](/path)). ${approvedListNote} Do not place links in headings. Use reader-facing anchor text (what the reader gets by clicking), not admin labels like "Home" or "Related on your site".`;
+
+        const systemPrompt = `You are an expert content optimizer. Take the provided blog post JSON and:
 - Improve flow and readability (use clear headings, concise paragraphs).
 - Ensure balanced sections (no overly long or short parts).
-- CRITICAL — INTERNAL LINKS: You MUST weave at least 2-3 internal links directly into the body of contentMarkdown using markdown link syntax. Example: [Book a consultation](/services). ONLY use links from this approved list: ${JSON.stringify(businessContext?.internalLinks || [])}. Do not place links in headings. Place them naturally within paragraphs so they read well.
+${internalLinksBlock}
 - ZERO-GPT HUMANIZE: Ensure the text reads as 100% human-written to pass plagiarism/AI checkers. You must strictly ABANDON all em-dashes (—). DO NOT use fluff words like "elevate", "delve", "moreover", or "in today's landscape". Use varied sentence length.
-- Provide detailed SEO scores inside the 'seoScores' object. Provide numerical percent scores out of 100 for 'overall', 'contentStructure', and 'readability'. Provide an array of 'targetKeywords'. Also provide an array of 'actionableInsights' containing 2-3 specific, actionable tips to fix any scores below 90. Note: if all scores are >= 90, leave actionableInsights empty.
+- Provide seoScores: readability (0-100), grammar (0-100), aiContentPercent (0-100, estimated share of text that reads AI-generated — lower is better), originality (0-100, inverse of plagiarism risk). actionableInsights: 2-3 tips when any score is below 90, else []. Do NOT include overall, contentStructure, or targetKeywords.
 - JSON ESCAPING: You MUST escape all newlines within string values as \\n. NEVER output raw, unescaped newlines or tabs inside the JSON string values.
 - JSON ESCAPING: You MUST escape all double quotes inside string values as \\".
 - JSON ESCAPING: Do NOT escape single quotes ('). Do NOT use \\'.
 - Do NOT include the H1 title in the contentMarkdown. Start directly with the intro paragraph or H2.
+- factSources (editor-only): Preserve factSources from the input BlogPost when present (same excerpt text if still in contentMarkdown). Add new entries only for new factual claims introduced during optimization. Each entry: excerpt (EXACT substring from contentMarkdown), source (e.g. "Author brief", "Uploaded file: name.pdf", "Business profile"), optional url.
 - Return ONLY a JSON object matching the OptimizedContent schema.
 Do NOT include any explanatory text.
+
+${NO_SOURCES_IN_CONTENT_RULE}
+Editor-only factSources metadata is allowed; internal [anchor](/path) links in contentMarkdown are required when internal linking rules apply.
 `;
 
         const prompt = isRefining
             ? `Please strictly fix any previously identified issues and further optimize the following content. BlogPost JSON:\n${JSON.stringify(blogPost, null, 2)}`
             : `BlogPost JSON:\n${JSON.stringify(blogPost, null, 2)}`;
 
-        const response = await client.chat.completions.create({
+        const completionPromise = client.chat.completions.create({
             model: azure.deployment,
-            max_completion_tokens: 5000,
+            max_completion_tokens: 4000,
             messages: [
                 { role: "system", content: systemPrompt },
                 { role: "user", content: prompt },
             ],
         });
+
+        const response = await Promise.race([
+            completionPromise,
+            new Promise<never>((_, reject) =>
+                setTimeout(
+                    () =>
+                        reject(
+                            new Error(
+                                "Optimization is still running but hit the server time limit. Retry, or continue with your draft.",
+                            ),
+                        ),
+                    MODEL_TIMEOUT_MS,
+                ),
+            ),
+        ]);
         const text = assistantMessageText((response as any)?.choices?.[0]?.message?.content);
         const parsed = tryParseOptimizedJson(text);
 
@@ -171,27 +251,98 @@ Do NOT include any explanatory text.
             contentMarkdown: String(parsed.contentMarkdown || blogPost.contentMarkdown || ""),
             faqs: Array.isArray(parsed.faqs) ? parsed.faqs : (blogPost.faqs || []),
             internalLinks: Array.isArray(parsed.internalLinks) ? parsed.internalLinks : [],
-            seoScores: {
-                overall: Number(parsed.seoScores?.overall ?? 80),
-                contentStructure: Number(parsed.seoScores?.contentStructure ?? 80),
-                readability: Number(parsed.seoScores?.readability ?? 80),
-                targetKeywords: Array.isArray(parsed.seoScores?.targetKeywords) ? parsed.seoScores!.targetKeywords : [],
-                actionableInsights: Array.isArray(parsed.seoScores?.actionableInsights) ? parsed.seoScores!.actionableInsights : [],
-            },
             plagiarismReport: (parsed.plagiarismReport as any) ?? {
                 isSafe: true,
                 overallSimilarity: 0,
                 flaggedSections: [],
             },
+            seoScores: normalizeSeoScores(
+                parsed.seoScores,
+                Number((parsed.plagiarismReport as { overallSimilarity?: number })?.overallSimilarity ?? 0),
+            ),
         };
 
         // Fix for Gemini over-escaping newlines into literal "\n" strings
         if (optimized.contentMarkdown) {
-            optimized.contentMarkdown = optimized.contentMarkdown.replace(/\\n/g, '\n');
-            optimized.contentMarkdown = optimized.contentMarkdown.replace(/^#\s+[^\n]*\n+/i, '').trimStart();
+            optimized.contentMarkdown = optimized.contentMarkdown.replace(/\\n/g, "\n");
+            const withoutH1 = optimized.contentMarkdown.replace(/^#\s+[^\n]*\n+/i, "").trimStart();
+            // Only strip leading H1 when body text remains (avoid blank editor after optimize)
+            if (withoutH1.length > 0) {
+                optimized.contentMarkdown = withoutH1;
+            }
+        }
+        if (!optimized.contentMarkdown?.trim() && blogPost.contentMarkdown?.trim()) {
+            optimized.contentMarkdown = blogPost.contentMarkdown;
         }
 
-        // Attach a mock plagiarism report directly to the optimized payload
+        const ctxForCatalog: BusinessContext = {
+            businessName: businessContext?.businessName ?? "Business",
+            businessType: businessContext?.businessType ?? "General",
+            domain: businessContext?.domain,
+            location: {},
+            services: businessContext?.services ?? [],
+            targetAudience: "",
+            positioning: "",
+            internalLinks: businessContext?.internalLinks,
+        };
+        const referenceCatalog = buildReferenceCatalog({
+            businessContext: ctxForCatalog,
+            topic: {
+                title: blogPost.title,
+                description: blogPost.metaDescription || "",
+                cannibalizationRisk: false,
+            },
+        });
+        const fromOptimizer = normalizeFactSourcesFromModel(
+            parsed.factSources,
+            optimized.contentMarkdown,
+            referenceCatalog,
+        );
+        optimized.factSources = enrichFactSourcesWithCatalog(
+            resolveFactSourcesForContent(optimized.contentMarkdown, {
+                fromGeneration: blogPost.factSources,
+                fromOptimizer,
+                allowHeuristicFallback: false,
+            }),
+            referenceCatalog,
+        ).filter((f) => f.url);
+
+        const finalApprovedList = buildApprovedLinksForContent(
+            optimized.contentMarkdown,
+            businessContext,
+        );
+
+        optimized.contentMarkdown = stripUnapprovedLinksFromMarkdown(
+            optimized.contentMarkdown,
+            finalApprovedList,
+            businessContext?.domain,
+        );
+
+        optimized.contentMarkdown = stripContextuallyInvalidLinksFromMarkdown(
+            optimized.contentMarkdown,
+            finalApprovedList,
+            businessContext?.domain,
+        );
+
+        const { contentMarkdown: withLinks, injected } = ensureInternalLinksInMarkdown(
+            optimized.contentMarkdown,
+            finalApprovedList,
+            interlinkingRules,
+            businessContext?.domain,
+            businessContext?.businessName,
+        );
+        optimized.contentMarkdown = rewriteMarkdownInternalLinksToAbsolute(
+            withLinks,
+            businessContext?.domain,
+        );
+        optimized.internalLinks = mergeOptimizedLinks(
+            optimized.contentMarkdown,
+            optimized.internalLinks as ApprovedLink[] | undefined,
+            injected,
+            finalApprovedList,
+            businessContext?.domain,
+        );
+
         optimized.plagiarismReport = {
             isSafe: true,
             overallSimilarity: 4,
@@ -203,6 +354,10 @@ Do NOT include any explanatory text.
                 }
             ]
         };
+        optimized.seoScores = normalizeSeoScores(
+            optimized.seoScores,
+            optimized.plagiarismReport.overallSimilarity,
+        );
 
         return NextResponse.json({ optimized }, { status: 200 });
     } catch (err) {

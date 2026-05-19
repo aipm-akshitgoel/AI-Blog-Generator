@@ -6,6 +6,7 @@ export interface BusinessContextRow {
   platform: "blog" | "linkedin";
   business_name: string;
   business_type: string;
+  domain: string | null;
   location_city: string | null;
   location_region: string | null;
   location_country: string | null;
@@ -17,12 +18,18 @@ export interface BusinessContextRow {
   updated_at: string;
 }
 
+function isMissingDomainColumnError(error: { message?: string } | null): boolean {
+  const msg = String(error?.message ?? "").toLowerCase();
+  return msg.includes("domain") && (msg.includes("schema cache") || msg.includes("column"));
+}
+
 function rowToContext(row: BusinessContextRow): BusinessContext {
   return {
     id: row.id,
     platform: row.platform,
     businessName: row.business_name,
     businessType: row.business_type as BusinessContext["businessType"],
+    domain: row.domain ?? undefined,
     location: {
       city: row.location_city ?? undefined,
       region: row.location_region ?? undefined,
@@ -41,25 +48,46 @@ export async function createBusinessContext(
   data: Omit<BusinessContext, "id" | "createdAt" | "updatedAt">,
   userId: string
 ): Promise<BusinessContext> {
-  const { data: row, error } = await supabase
+  const baseRow = {
+    user_id: userId,
+    platform: data.platform || "blog",
+    business_name: data.businessName,
+    business_type: data.businessType,
+    location_city: data.location.city || null,
+    location_region: data.location.region || null,
+    location_country: data.location.country || null,
+    services: data.services,
+    target_audience: data.targetAudience,
+    positioning: data.positioning,
+    confirmed_at: new Date().toISOString(),
+  };
+
+  const withDomain = {
+    ...baseRow,
+    domain: data.domain ? String(data.domain).trim() : null,
+  };
+
+  let { data: row, error } = await supabase
     .from("business_context")
-    .insert({
-      user_id: userId,
-      platform: data.platform || "blog",
-      business_name: data.businessName,
-      business_type: data.businessType,
-      location_city: data.location.city || null,
-      location_region: data.location.region || null,
-      location_country: data.location.country || null,
-      services: data.services,
-      target_audience: data.targetAudience,
-      positioning: data.positioning,
-      confirmed_at: new Date().toISOString(),
-    })
+    .insert(withDomain)
     .select()
     .single();
 
-  if (error) throw new Error(error.message || "Failed to create business context");
+  if (error && isMissingDomainColumnError(error)) {
+    ({ data: row, error } = await supabase
+      .from("business_context")
+      .insert(baseRow)
+      .select()
+      .single());
+  }
+
+  if (error) {
+    throw new Error(
+      isMissingDomainColumnError(error)
+        ? "Database is missing the business_context.domain column. Run supabase/009_add_domain_to_business_context.sql in Supabase SQL Editor, then try again."
+        : error.message || "Failed to create business context",
+    );
+  }
   return rowToContext(row as BusinessContextRow);
 }
 
@@ -71,6 +99,7 @@ export async function updateBusinessContext(
   if (data.platform) updateData.platform = data.platform;
   if (data.businessName) updateData.business_name = data.businessName;
   if (data.businessType) updateData.business_type = data.businessType;
+  if (data.domain !== undefined) updateData.domain = data.domain ? String(data.domain).trim() : null;
   if (data.location) {
     updateData.location_city = data.location.city || null;
     updateData.location_region = data.location.region || null;
@@ -82,14 +111,30 @@ export async function updateBusinessContext(
 
   updateData.updated_at = new Date().toISOString();
 
-  const { data: row, error } = await supabase
+  let { data: row, error } = await supabase
     .from("business_context")
     .update(updateData)
     .eq("id", id)
     .select()
     .single();
 
-  if (error) throw new Error(error.message || "Failed to update business context");
+  if (error && isMissingDomainColumnError(error) && "domain" in updateData) {
+    const { domain: _d, ...withoutDomain } = updateData;
+    ({ data: row, error } = await supabase
+      .from("business_context")
+      .update(withoutDomain)
+      .eq("id", id)
+      .select()
+      .single());
+  }
+
+  if (error) {
+    throw new Error(
+      isMissingDomainColumnError(error)
+        ? "Database is missing the business_context.domain column. Run supabase/009_add_domain_to_business_context.sql in Supabase SQL Editor, then try again."
+        : error.message || "Failed to update business context",
+    );
+  }
   return rowToContext(row as BusinessContextRow);
 }
 

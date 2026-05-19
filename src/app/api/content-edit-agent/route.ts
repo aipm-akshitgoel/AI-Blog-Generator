@@ -3,6 +3,7 @@ import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConf
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
 
 import type { ContentEditMode } from "@/lib/types/contentEdit";
+import { NO_SOURCES_IN_CONTENT_RULE } from "@/lib/dataSources";
 
 const SYSTEM_PROMPT = `You are an expert blog editor. You receive a full article in Markdown and editing instructions.
 
@@ -12,7 +13,9 @@ RULES:
 - Return ONLY valid JSON: { "contentMarkdown": "..." }
 - The contentMarkdown must be the COMPLETE updated article (not a diff).
 - JSON string escaping: use \\n for newlines inside strings, escape double quotes.
-- Do not wrap JSON in markdown code fences.`;
+- Do not wrap JSON in markdown code fences.
+
+${NO_SOURCES_IN_CONTENT_RULE}`;
 
 function extractFirstJsonObject(input: string): string | null {
     const text = String(input || "");

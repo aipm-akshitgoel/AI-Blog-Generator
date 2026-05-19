@@ -1,47 +1,99 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { type BusinessContext } from "@/lib/types/businessContext";
-import { type TopicOption } from "@/lib/types/strategy";
+import { type StrategySession, type TopicOption } from "@/lib/types/strategy";
 import { type BlogPost } from "@/lib/types/content";
 import type { TopicBrief } from "@/lib/types/topicBrief";
 import { formatApiError } from "@/lib/formatApiError";
+
+const CONTENT_FETCH_TIMEOUT_MS = 200_000;
+
+function estimateGenerationSeconds(wordCount?: number): number {
+    const target = wordCount && wordCount > 0 ? wordCount : 2000;
+    return Math.min(180, Math.max(75, 55 + Math.round(target / 40)));
+}
+
+function loadingMessage(elapsedSec: number, wordCount?: number): string {
+    if (elapsedSec < 40) return "Writing your post…";
+    if (elapsedSec < 90) {
+        return wordCount && wordCount >= 2500
+            ? "Still writing — long posts often take 2–3 minutes"
+            : "Still working on your draft…";
+    }
+    return "Almost there…";
+}
+
+async function fetchContentAgent(
+    body: object,
+    signal?: AbortSignal,
+): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CONTENT_FETCH_TIMEOUT_MS);
+    const onAbort = () => controller.abort();
+    signal?.addEventListener("abort", onAbort);
+
+    try {
+        return await fetch("/api/content-agent", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+        });
+    } finally {
+        clearTimeout(timeoutId);
+        signal?.removeEventListener("abort", onAbort);
+    }
+}
 
 interface ContentAgentProps {
     businessContext: BusinessContext;
     topic: TopicOption;
     topicBrief?: TopicBrief;
+    strategySession?: StrategySession | null;
     onComplete: (post: BlogPost) => void;
 }
 
-export function ContentAgentUI({ businessContext, topic, topicBrief, onComplete }: ContentAgentProps) {
+export function ContentAgentUI({ businessContext, topic, topicBrief, strategySession, onComplete }: ContentAgentProps) {
     const [post, setPost] = useState<BlogPost | null>(null);
     const [loading, setLoading] = useState(true);
-    const [loadingStep, setLoadingStep] = useState(0);
+    const [elapsedSec, setElapsedSec] = useState(0);
+    const [progressPct, setProgressPct] = useState(0);
     const [error, setError] = useState<string | null>(null);
+    const targetWordCount = topicBrief?.contentConstraints?.wordCount;
+    const estimateSec = estimateGenerationSeconds(targetWordCount);
+    const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
         generateContent();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Run once on mount
 
+    useEffect(() => {
+        if (!loading) {
+            if (tickRef.current) clearInterval(tickRef.current);
+            return;
+        }
+        const started = Date.now();
+        tickRef.current = setInterval(() => {
+            const sec = Math.floor((Date.now() - started) / 1000);
+            setElapsedSec(sec);
+            setProgressPct(Math.min(92, Math.round((sec / estimateSec) * 92)));
+        }, 1000);
+        return () => {
+            if (tickRef.current) clearInterval(tickRef.current);
+        };
+    }, [loading, estimateSec]);
+
     const generateContent = async () => {
         setLoading(true);
         setError(null);
-        setLoadingStep(1); // "Drafting SEO Outline..."
-
-        // Faking a tool sequence for UI feel
-        setTimeout(() => setLoadingStep(2), 2500); // "Weaving in local relevance signals..."
-        setTimeout(() => setLoadingStep(3), 5500); // "Writing long-form content..."
-        setTimeout(() => setLoadingStep(4), 8500); // "Formatting FAQs..."
+        setElapsedSec(0);
+        setProgressPct(0);
 
         try {
-            const res = await fetch("/api/content-agent", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ businessContext, topic, topicBrief }),
-            });
+            const res = await fetchContentAgent({ businessContext, topic, topicBrief, strategySession });
 
             const json = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -51,12 +103,19 @@ export function ContentAgentUI({ businessContext, topic, topicBrief, onComplete 
                 throw new Error(formatApiError(json?.error, "No content returned from the server. Please retry."));
             }
 
+            setProgressPct(100);
             setPost(json.data);
         } catch (e) {
-            setError(formatApiError(e, "Unknown error occurred"));
+            const msg = formatApiError(e, "Unknown error occurred");
+            if (msg.toLowerCase().includes("abort")) {
+                setError(
+                    "Generation timed out after 3 minutes. Try a lower word count or retry.",
+                );
+            } else {
+                setError(msg);
+            }
         } finally {
             setLoading(false);
-            setLoadingStep(0);
         }
     };
 
@@ -70,18 +129,19 @@ export function ContentAgentUI({ businessContext, topic, topicBrief, onComplete 
                     </svg>
                 </div>
                 <h3 className="text-lg font-medium text-neutral-200">
-                    {loadingStep === 1 && "Drafting SEO Outline..."}
-                    {loadingStep === 2 && "Weaving in local relevance signals..."}
-                    {loadingStep === 3 && "Writing long-form content & optimizing headers..."}
-                    {loadingStep === 4 && "Formatting FAQs and wrapping up the draft..."}
-                    {loadingStep === 0 && "Finalizing..."}
+                    {loadingMessage(elapsedSec, targetWordCount)}
                 </h3>
-                <p className="mt-2 text-sm text-neutral-500">Intelligent content generation is drafting your post.</p>
+                <p className="mt-2 text-sm text-neutral-500">
+                    {elapsedSec > 0 ? `${elapsedSec}s elapsed` : "Starting…"}
+                    {targetWordCount && targetWordCount >= 2500
+                        ? " · Long articles can take up to 2–3 minutes"
+                        : " · Usually under 90 seconds"}
+                </p>
 
                 <div className="mt-8 h-1.5 w-full bg-neutral-800 overflow-hidden rounded-full">
                     <div
-                        className="h-full bg-emerald-500 transition-all duration-1000 ease-out"
-                        style={{ width: `${(loadingStep / 4) * 100}%` }}
+                        className="h-full bg-emerald-500 transition-all duration-700 ease-out"
+                        style={{ width: `${progressPct}%` }}
                     />
                 </div>
             </div>
@@ -170,7 +230,7 @@ export function ContentAgentUI({ businessContext, topic, topicBrief, onComplete 
                             onClick={() => onComplete(post)}
                             className="rounded-lg bg-emerald-600 px-5 py-2.5 font-medium text-white transition-colors hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
                         >
-                            Proceed to Formatting &amp; Optimization
+                            Proceed to optimization
                         </button>
                     </div>
                 </div>

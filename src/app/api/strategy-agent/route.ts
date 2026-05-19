@@ -1,50 +1,20 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
-import { canGenerateStrategy, mergeContextWithReference, normalizeDomain } from "@/lib/strategyInputs";
+import {
+    buildMinimalBusinessContext,
+    canRunStrategyAgent,
+    mergeContextWithReference,
+    resolveStrategyReferenceDomain,
+} from "@/lib/strategyInputs";
 import { extractRouteError } from "@/lib/formatApiError";
+import {
+    isAzureContentFilterError,
+    userFacingContentFilterMessage,
+} from "@/lib/azureContentFilter";
+import { buildStrategySystemPrompt, buildStrategyUserPrompt } from "@/lib/buildStrategyPrompt";
+import { normalizeBlogStrategyResponse } from "@/lib/contentDirectory";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
-
-const SYSTEM_PROMPT = `
-You are an elite Content Strategist. 
-Depending on the PLATFORM requested, you will act as either an SEO Orchestrator (for Blog) or a Viral Ghostwriter (for LinkedIn).
-
-IF PLATFORM = BLOG:
-- Act as an SEO expert for the beauty/wellness/local business sector.
-- Analyze Google Ads Keyword data and local SERPs.
-- Output: keywordStrategy and topicOptions.
-
-IF PLATFORM = LINKEDIN:
-- Act as a LinkedIn Growth Strategist.
-- Analyze trending industry topics and high-engagement content patterns on LinkedIn.
-- Focus on thought-leadership, industry insights, and viral story-based topics.
-- Output: keywordStrategy(use for pillar themes), topicOptions(the specific posts), trendingTopics, and inspiration.
-
-REQUIRED OUTPUT FORMAT (JSON ONLY):
-{
-  "keywordStrategy": {
-    "primaryKeyword": "...",
-    "secondaryKeywords": ["...", "..."],
-    "searchIntent": "commercial"
-  },
-  "topicOptions": [
-    {
-      "title": "Topic Title",
-      "description": "Topic Description",
-      "cannibalizationRisk": false
-    }
-  ],
-  "trendingTopics": ["Trending Topic 1", "Trending Topic 2"],
-  "inspiration": [
-    {
-      "title": "High performing post title/hook",
-      "url": "https://linkedin.com/feed/...",
-      "engagement": "1,200+ Likes, 50+ Comments",
-      "insights": "Explains why this post performed well (e.g., strong hook, contrarian take)"
-    }
-  ]
-}
-`;
 
 export async function POST(req: Request) {
   const { userId } = await auth();
@@ -60,53 +30,83 @@ export async function POST(req: Request) {
 
   try {
     const { businessContext, referenceDomain, customPrompt, platform = "blog" } = await req.json();
+    const customText = typeof customPrompt === "string" ? customPrompt : "";
+    const platformKey = platform === "linkedin" ? "linkedin" : "blog";
 
-    const refDomain = normalizeDomain(
-      typeof referenceDomain === "string" ? referenceDomain : businessContext?.domain || "",
-    );
+    const refDomain =
+      resolveStrategyReferenceDomain(businessContext, customText) ||
+      (typeof referenceDomain === "string" ? resolveStrategyReferenceDomain(null, referenceDomain) : "");
 
-    if (!canGenerateStrategy(businessContext, refDomain)) {
+    if (!canRunStrategyAgent(businessContext, customText)) {
       return NextResponse.json(
         {
-          error:
-            "Provide a business profile or reference website domain (e.g. yourdegree.com) before generating strategy.",
+          error: "Add a short custom direction (niche, audience, or a website to reference).",
         },
         { status: 400 },
       );
     }
 
-    const ctxForStrategy = mergeContextWithReference(businessContext, refDomain);
+    const baseContext =
+      businessContext ?? buildMinimalBusinessContext({ domain: refDomain, platform: platformKey });
+    const ctxForStrategy = mergeContextWithReference(baseContext, refDomain);
 
     const client = createAzureClient(azure);
+    const systemPrompt = buildStrategySystemPrompt(platformKey);
 
-    let userPrompt = `Here is the verified BusinessContext:\n\n${JSON.stringify(ctxForStrategy, null, 2)}`;
-    if (refDomain) {
-      userPrompt += `\n\nReference domain for research: https://${refDomain}`;
+    const runCompletion = async (minimal: boolean) => {
+      const userPrompt = buildStrategyUserPrompt({
+        ctx: ctxForStrategy,
+        refDomain,
+        customText,
+        platform: platformKey,
+        minimal,
+      });
+
+      return client.chat.completions.create({
+        model: azure.deployment,
+        max_completion_tokens: 2000,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      });
+    };
+
+    let response;
+    try {
+      response = await runCompletion(false);
+    } catch (firstErr) {
+      if (!isAzureContentFilterError(firstErr)) throw firstErr;
+      response = await runCompletion(true);
     }
 
-    if (platform === "linkedin") {
-      userPrompt += "\n\nCRITICAL LINKEDIN INSTRUCTIONS: Research trending LinkedIn topics for this industry. Find mocked high-performing posts for inspiration. Ensure topicOptions are 'hooks' and 'stories', not just articles.";
+    const choice = (response as { choices?: Array<{ finish_reason?: string; message?: { content?: unknown } }> })
+      ?.choices?.[0];
+    if (choice?.finish_reason === "content_filter") {
+      response = await runCompletion(true);
     }
 
-    if (customPrompt && typeof customPrompt === "string" && customPrompt.trim().length > 0) {
-      userPrompt += `\n\nUSER DIRECTIVE: "${customPrompt.trim()}". Prioritize this.`;
+    const text = assistantMessageText(choice?.message?.content);
+    if (!text.trim()) {
+      return NextResponse.json({ error: userFacingContentFilterMessage() }, { status: 422 });
     }
 
-    const response = await client.chat.completions.create({
-      model: azure.deployment,
-      max_completion_tokens: 2000,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT.replace("IF PLATFORM", `CURRENT PLATFORM: ${platform.toUpperCase()}`) },
-        { role: "user", content: userPrompt },
-      ],
-    });
-
-    const text = assistantMessageText((response as any)?.choices?.[0]?.message?.content);
     const cleanText = sanitizeJsonString(stripOuterMarkdownFence(text));
-    const strategyData = JSON.parse(cleanText);
+    const strategyData = JSON.parse(cleanText) as Record<string, unknown>;
 
-    return NextResponse.json({ data: strategyData });
+    const payload =
+      platformKey === "blog"
+        ? normalizeBlogStrategyResponse(strategyData, {
+            businessContextId: ctxForStrategy.id,
+            referenceDomain: refDomain || undefined,
+          })
+        : strategyData;
+
+    return NextResponse.json({ data: payload });
   } catch (err) {
+    if (isAzureContentFilterError(err)) {
+      return NextResponse.json({ error: userFacingContentFilterMessage() }, { status: 422 });
+    }
     const message = extractRouteError(err, "Strategy generation failed");
     console.error("Strategy Agent Error:", message);
     return NextResponse.json({ error: message }, { status: 500 });

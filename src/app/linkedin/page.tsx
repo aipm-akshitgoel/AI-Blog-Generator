@@ -40,12 +40,12 @@ function LinkedinLanding() {
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                    <SignUpButton mode="modal" forceRedirectUrl="/linkedin">
+                    <SignUpButton mode="redirect" forceRedirectUrl="/linkedin">
                         <button className="rounded-2xl bg-blue-600 px-10 py-5 text-sm font-black text-white transition-all hover:bg-blue-500 hover:scale-105 shadow-2xl shadow-blue-900/40 uppercase tracking-widest border border-blue-400/20">
                             Get Your Strategy Now
                         </button>
                     </SignUpButton>
-                    <SignInButton mode="modal" forceRedirectUrl="/linkedin">
+                    <SignInButton mode="redirect" forceRedirectUrl="/linkedin">
                         <button className="text-neutral-500 hover:text-white px-6 py-3 text-xs font-black uppercase tracking-widest transition-colors">
                             Sign In to Dashboard
                         </button>

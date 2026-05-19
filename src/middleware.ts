@@ -4,8 +4,13 @@
  */
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-
-const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/setup(.*)", "/test(.*)"]);
+import { isHardDocumentRefresh } from "@/lib/hardRefresh";
+const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/setup(.*)", "/test(.*)", "/test-dashboard(.*)"]);
+const isAuthRoute = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
+const isOAuthCallbackRoute = createRouteMatcher([
+  "/sign-in/sso-callback",
+  "/sign-up/sso-callback",
+]);
 const FAQ_TENANT_COOKIE_NAME = "faq_tenant_session";
 
 export default clerkMiddleware(async (auth, req) => {
@@ -18,21 +23,11 @@ export default clerkMiddleware(async (auth, req) => {
   ) {
     const loginPath = pathname.startsWith("/ai-faq-test") ? "/ai-faq-test" : "/ai-faq";
     const appPath = pathname.startsWith("/ai-faq-test") ? "/ai-faq-test/app" : "/ai-faq/app";
-    const cacheControl = (req.headers.get("cache-control") || "").toLowerCase();
-    const pragma = (req.headers.get("pragma") || "").toLowerCase();
-    const isHardRefreshHint =
-      cacheControl.includes("no-cache") || cacheControl.includes("max-age=0") || pragma.includes("no-cache");
-    const secFetchDest = (req.headers.get("sec-fetch-dest") || "").toLowerCase();
-    const secFetchMode = (req.headers.get("sec-fetch-mode") || "").toLowerCase();
-    const isDocumentNavigation =
-      req.method === "GET" &&
-      (secFetchDest === "document" || secFetchDest === "iframe") &&
-      (secFetchMode === "navigate" || secFetchMode === "nested-navigate");
     const isFaqPageRoute = pathname === loginPath || pathname.startsWith(appPath);
 
     // Only clear tenant session on explicit browser document reload/navigation.
     // Background fetches during prod push may include no-cache hints and must not log the user out.
-    if (isHardRefreshHint && isDocumentNavigation && isFaqPageRoute) {
+    if (isHardDocumentRefresh(req) && isFaqPageRoute) {
       const response =
         pathname === loginPath
           ? NextResponse.next()
@@ -57,11 +52,20 @@ export default clerkMiddleware(async (auth, req) => {
     }
   }
 
+  const { userId, redirectToSignIn } = await auth();
+
   if (isProtectedRoute(req)) {
-    const { userId, redirectToSignIn } = await auth();
     if (!userId) {
-      return redirectToSignIn();
+      return redirectToSignIn({ returnBackUrl: req.url });
     }
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "private, no-store, no-cache, must-revalidate");
+    return response;
+  }
+
+  // Let Clerk finish OAuth on the callback route before redirecting away.
+  if (isAuthRoute(req) && userId && !isOAuthCallbackRoute(req)) {
+    return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 });
 

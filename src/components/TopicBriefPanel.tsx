@@ -4,19 +4,44 @@ import { useState, useRef } from "react";
 import type { TopicOption } from "@/lib/types/strategy";
 import type { TopicBrief, SupplementaryFile } from "@/lib/types/topicBrief";
 import { extractBriefFileText, isBriefFileSupported } from "@/lib/extractBriefFileText";
+import { normalizeContentConstraints, normalizeInterlinkingRules } from "@/lib/types/contentSpec";
+import { InternalLinkingFields, interlinkingRulesFromFields } from "@/components/InternalLinkingFields";
+import { DEFAULT_INTERLINKING_RULES } from "@/lib/types/topicBrief";
+import { CtaButton } from "@/components/ui/CtaButton";
+import { NumberInput } from "@/components/ui/NumberInput";
 
 interface TopicBriefPanelProps {
     topic: TopicOption;
+    primaryKeyword?: string;
     onConfirm: (brief: TopicBrief) => void;
     onBack: () => void;
 }
 
-export function TopicBriefPanel({ topic, onConfirm, onBack }: TopicBriefPanelProps) {
+function isStrategyDirectoryTopic(topic: TopicOption): boolean {
+    return Boolean(topic.directoryId || (topic.h2Titles && topic.h2Titles.length > 0));
+}
+
+export function TopicBriefPanel({ topic, primaryKeyword, onConfirm, onBack }: TopicBriefPanelProps) {
+    const fromStrategy = isStrategyDirectoryTopic(topic);
     const [userNotes, setUserNotes] = useState("");
     const [files, setFiles] = useState<SupplementaryFile[]>([]);
     const [isDragging, setIsDragging] = useState(false);
     const [fileError, setFileError] = useState<string | null>(null);
     const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+    const [showStructure, setShowStructure] = useState(fromStrategy);
+    const [wordCount, setWordCount] = useState("");
+    const [h1Title, setH1Title] = useState(topic.title || "");
+    const [h2Count, setH2Count] = useState(
+        topic.h2Titles?.length ? String(topic.h2Titles.length) : "",
+    );
+    const [h2TitlesText, setH2TitlesText] = useState((topic.h2Titles ?? []).join("\n"));
+    const [h1PrimaryKeyword, setH1PrimaryKeyword] = useState(primaryKeyword?.trim() || "");
+    const [h1KeywordDensity, setH1KeywordDensity] = useState("");
+    const [showLinking, setShowLinking] = useState(false);
+    const [showSupplementary, setShowSupplementary] = useState(false);
+    const [linkInstructions, setLinkInstructions] = useState("");
+    const [minLinks, setMinLinks] = useState(String(DEFAULT_INTERLINKING_RULES.minLinks ?? ""));
+    const [maxLinks, setMaxLinks] = useState(String(DEFAULT_INTERLINKING_RULES.maxLinks ?? ""));
     const inputRef = useRef<HTMLInputElement>(null);
 
     const addFiles = async (fileList: FileList | File[]) => {
@@ -59,9 +84,26 @@ export function TopicBriefPanel({ topic, onConfirm, onBack }: TopicBriefPanelPro
     };
 
     const handleConfirm = () => {
+        const h2Titles = h2TitlesText
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+        const contentConstraints = normalizeContentConstraints({
+            wordCount: wordCount ? Number(wordCount) : undefined,
+            h1Title: h1Title || undefined,
+            h2Count: h2Titles.length === 0 && h2Count ? Number(h2Count) : undefined,
+            h2Titles: h2Titles.length > 0 ? h2Titles : undefined,
+            h1PrimaryKeyword: h1PrimaryKeyword || undefined,
+            h1KeywordDensityPercent: h1KeywordDensity ? Number(h1KeywordDensity) : undefined,
+        });
+
         onConfirm({
             userNotes: userNotes.trim(),
             supplementaryFiles: files,
+            contentConstraints,
+            interlinkingRules: normalizeInterlinkingRules(
+                interlinkingRulesFromFields(linkInstructions, minLinks, maxLinks),
+            ),
         });
     };
 
@@ -79,7 +121,7 @@ export function TopicBriefPanel({ topic, onConfirm, onBack }: TopicBriefPanelPro
                     <div>
                         <h2 className="text-xl font-bold text-white uppercase tracking-tighter">Your Angle &amp; Data</h2>
                         <p className="text-xs text-neutral-400 font-medium max-w-md mt-1">
-                            Optional — add your take, stats, or reference files. The writing agent will weave these in before drafting.
+                            Optional — your angle, reference files, SEO structure, and internal link targets. The writer drafts first; optimization adds on-site links using your rules below.
                         </p>
                     </div>
                 </div>
@@ -92,14 +134,141 @@ export function TopicBriefPanel({ topic, onConfirm, onBack }: TopicBriefPanelPro
                 </button>
             </div>
 
-            <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-amber-500/80 mb-1">Selected topic</p>
-                <h3 className="text-sm font-black uppercase tracking-tight text-amber-400">{topic.title}</h3>
+            <div className="mb-6 rounded-2xl border border-neutral-800 bg-neutral-950/50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1">Selected topic</p>
+                <h3 className="text-sm font-bold text-white leading-snug">{topic.title}</h3>
                 <p className="mt-1 text-xs text-neutral-400 line-clamp-2">{topic.description}</p>
             </div>
 
-            <label className="block text-sm font-bold text-neutral-400 uppercase tracking-widest mb-3">
-                Your thoughts &amp; direction
+            <div className="mb-6 rounded-2xl border border-neutral-800 bg-neutral-950/40 overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setShowStructure((v) => !v)}
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-900/50 transition-colors"
+                >
+                    <span className="text-sm font-medium text-neutral-300">
+                        SEO structure (optional)
+                    </span>
+                    <span className="text-xs text-neutral-500">
+                        {showStructure ? "Hide" : "Show"}
+                    </span>
+                </button>
+                {showStructure && (
+                    <div className="px-4 pb-4 pt-1 border-t border-neutral-800 space-y-4">
+                        <p className="text-[11px] text-neutral-500 leading-relaxed">
+                            {fromStrategy
+                                ? "Pre-filled from your keyword strategy. Adjust if needed — the writer must follow these targets."
+                                : "If set, the writing agent must follow these targets in the draft."}
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
+                                    Target word count
+                                </label>
+                                <NumberInput
+                                    min={200}
+                                    max={15000}
+                                    value={wordCount}
+                                    onChange={setWordCount}
+                                    placeholder="e.g. 1800"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
+                                    H1 title
+                                </label>
+                                <input
+                                    type="text"
+                                    value={h1Title}
+                                    onChange={(e) => setH1Title(e.target.value)}
+                                    placeholder="Exact H1 / page title"
+                                    className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-2.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-emerald-500"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
+                                    Number of H2 sections
+                                </label>
+                                <NumberInput
+                                    min={1}
+                                    max={12}
+                                    value={h2Count}
+                                    onChange={setH2Count}
+                                    placeholder="e.g. 6"
+                                    disabled={h2TitlesText.trim().length > 0}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
+                                    H1 primary keyword
+                                </label>
+                                <input
+                                    type="text"
+                                    value={h1PrimaryKeyword}
+                                    onChange={(e) => setH1PrimaryKeyword(e.target.value)}
+                                    placeholder="e.g. online MBA India"
+                                    className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-2.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-emerald-500"
+                                />
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
+                                    H2 headings (one per line — overrides count)
+                                </label>
+                                <textarea
+                                    value={h2TitlesText}
+                                    onChange={(e) => setH2TitlesText(e.target.value)}
+                                    placeholder={"What is an online MBA?\nFees and ROI\nTop universities in India"}
+                                    rows={4}
+                                    className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-2.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-emerald-500 resize-y"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
+                                    Keyword density (%)
+                                </label>
+                                <NumberInput
+                                    min={0.1}
+                                    max={10}
+                                    step={0.1}
+                                    value={h1KeywordDensity}
+                                    onChange={setH1KeywordDensity}
+                                    placeholder="e.g. 1.5"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="mb-6 rounded-2xl border border-neutral-800 bg-neutral-950/40 overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setShowLinking((v) => !v)}
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-900/50 transition-colors"
+                >
+                    <span className="text-sm font-medium text-neutral-300">
+                        Internal linking (optional)
+                    </span>
+                    <span className="text-xs text-neutral-500">
+                        {showLinking ? "Hide" : "Show"}
+                    </span>
+                </button>
+                {showLinking && (
+                    <div className="px-4 pb-4 pt-1 border-t border-neutral-800">
+                        <InternalLinkingFields
+                            instructions={linkInstructions}
+                            minLinks={minLinks}
+                            maxLinks={maxLinks}
+                            onInstructionsChange={setLinkInstructions}
+                            onMinLinksChange={setMinLinks}
+                            onMaxLinksChange={setMaxLinks}
+                        />
+                    </div>
+                )}
+            </div>
+
+            <label className="block text-sm font-medium text-neutral-400 mb-3">
+                Your thoughts and direction (optional)
             </label>
             <textarea
                 value={userNotes}
@@ -109,9 +278,21 @@ export function TopicBriefPanel({ topic, onConfirm, onBack }: TopicBriefPanelPro
                 className="w-full rounded-2xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-y min-h-[120px] mb-6"
             />
 
-            <label className="block text-sm font-bold text-neutral-400 uppercase tracking-widest mb-3">
-                Supplementary data
-            </label>
+            <div className="mb-6 rounded-2xl border border-neutral-800 bg-neutral-950/40 overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setShowSupplementary((v) => !v)}
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-neutral-900/50 transition-colors"
+                >
+                    <span className="text-sm font-medium text-neutral-300">
+                        Supplementary data (optional)
+                    </span>
+                    <span className="text-xs text-neutral-500">
+                        {showSupplementary ? "Hide" : "Show"}
+                    </span>
+                </button>
+                {showSupplementary && (
+                    <div className="px-4 pb-4 pt-1 border-t border-neutral-800">
             <div
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
@@ -143,11 +324,11 @@ export function TopicBriefPanel({ topic, onConfirm, onBack }: TopicBriefPanelPro
             </div>
 
             {fileError && (
-                <p className="text-xs text-amber-400/90 mb-4">{fileError}</p>
+                <p className="text-xs text-red-400/90 mb-4">{fileError}</p>
             )}
 
             {files.length > 0 && (
-                <ul className="space-y-2 mb-6">
+                <ul className="space-y-2 mb-4">
                     {files.map((f, i) => (
                         <li
                             key={`${f.name}-${i}`}
@@ -179,19 +360,25 @@ export function TopicBriefPanel({ topic, onConfirm, onBack }: TopicBriefPanelPro
                     ))}
                 </ul>
             )}
+                    </div>
+                )}
+            </div>
 
             <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-neutral-800">
-                <button
+                <CtaButton
                     type="button"
                     onClick={handleConfirm}
-                    disabled={isProcessingFiles}
-                    className="flex-1 flex items-center justify-center gap-3 rounded-2xl bg-emerald-600 px-8 py-5 text-sm font-black text-white transition-all hover:bg-emerald-500 shadow-2xl shadow-emerald-900/40 active:scale-[0.98] uppercase tracking-widest disabled:opacity-50"
+                    loading={isProcessingFiles}
+                    loadingLabel="Processing files…"
+                    className="flex-1 rounded-2xl px-8 py-5 text-sm shadow-2xl shadow-emerald-900/40"
+                    trailingIcon={
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                    }
                 >
                     {hasBrief ? "Start writing with my brief" : "Start writing"}
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                </button>
+                </CtaButton>
             </div>
         </div>
     );

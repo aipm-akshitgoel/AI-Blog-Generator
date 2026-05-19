@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { extractInternalLinksFromHtml } from "@/lib/domainLinks";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 
 export async function POST(req: Request) {
@@ -38,17 +39,19 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: `Failed to fetch URL. Status: ${pageResponse.status}` }, { status: 400 });
         }
 
-        let html = await pageResponse.text();
+        const html = await pageResponse.text();
+        const discoveredLinks = extractInternalLinksFromHtml(html, url);
 
         // 2. Naive cleanup to save tokens (remove head, scripts, styles, svgs)
-        html = html.replace(/<head[^>]*>([\s\S]*?)<\/head>/gi, "");
-        html = html.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, "");
-        html = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, "");
-        html = html.replace(/<svg[^>]*>([\s\S]*?)<\/svg>/gi, "");
-        html = html.replace(/<!--([\s\S]*?)-->/gi, "");
+        let cleanedHtml = html;
+        cleanedHtml = cleanedHtml.replace(/<head[^>]*>([\s\S]*?)<\/head>/gi, "");
+        cleanedHtml = cleanedHtml.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, "");
+        cleanedHtml = cleanedHtml.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, "");
+        cleanedHtml = cleanedHtml.replace(/<svg[^>]*>([\s\S]*?)<\/svg>/gi, "");
+        cleanedHtml = cleanedHtml.replace(/<!--([\s\S]*?)-->/gi, "");
 
         // Strip HTML tags entirely to just get raw text, replacing common block tags with spaces/newlines
-        let text = html
+        let text = cleanedHtml
             .replace(/<\/(div|p|h1|h2|h3|h4|h5|h6|li|tr)>/gi, "\n")
             .replace(/<[^>]+>/g, " ")
             .replace(/\s+/g, " ")
@@ -102,9 +105,9 @@ ${text}`;
         const extractedText = stripOuterMarkdownFence(raw);
         const contextData = JSON.parse(extractedText);
 
-        // Inject the domain back into the data
         const domainUrl = new URL(url);
-        contextData.domain = domainUrl.hostname;
+        contextData.domain = domainUrl.origin;
+        contextData.internalLinks = discoveredLinks;
 
         return NextResponse.json({ data: contextData });
 

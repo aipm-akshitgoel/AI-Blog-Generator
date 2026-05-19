@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
+
 import { useState, useEffect } from "react";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import Link from "next/link";
@@ -158,7 +160,7 @@ export function AnalyticsDashboardClient({ blogId, businessContext }: Props) {
                         helpUrl="https://search.google.com/search-console"
                         connected={hasGSC}
                         credentialLabel="Property URL"
-                        credentialPlaceholder="https://www.yoursalon.com/"
+                        credentialPlaceholder="https://www.yoursite.com/"
                         helpTip="In Google Search Console, copy the URL from the top-left property picker."
                         value={form.gscPropertyUrl}
                         onChange={(val) => setForm(f => ({ ...f, gscPropertyUrl: val }))}
@@ -284,7 +286,8 @@ function IntegrationCard({
                             />
                             <p className="text-[11px] text-neutral-600 italic">{helpTip}</p>
                             <a href={helpUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-emerald-500 hover:underline mb-2 block">{helpLabel}</a>
-                            <button onClick={onSave} disabled={saving} className="w-full text-center text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-lg px-3 py-2 transition-colors">
+                            <button onClick={onSave} disabled={saving} className="w-full inline-flex items-center justify-center gap-2 text-center text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 rounded-lg px-3 py-2 transition-colors">
+                                {saving && <ButtonSpinner size={14} />}
                                 {saving ? "Saving..." : "Connect Now"}
                             </button>
                         </div>
