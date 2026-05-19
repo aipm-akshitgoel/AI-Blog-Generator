@@ -8,6 +8,7 @@ import type { MetaOption } from "@/lib/types/meta";
 import type { SchemaData } from "@/lib/types/schema";
 import { auth } from "@clerk/nextjs/server";
 import { saveBlog, type SavedBlog } from "@/lib/blogDb";
+import { stripFaqFromMarkdownWhenStructured } from "@/lib/contentWordCount";
 
 export async function POST(req: Request) {
     try {
@@ -59,6 +60,14 @@ export async function POST(req: Request) {
         };
 
         // Save the composed blog to our mock database
+        const contentForPublish = {
+            ...optimizedContent,
+            contentMarkdown: stripFaqFromMarkdownWhenStructured(
+                optimizedContent.contentMarkdown,
+                optimizedContent.faqs,
+            ),
+        };
+
         const blogRecord: SavedBlog = {
             id: `blog_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             userId,
@@ -70,7 +79,7 @@ export async function POST(req: Request) {
             liveUrl: liveUrl || undefined,
             category: meta.category,
             payload: {
-                content: optimizedContent,
+                content: contentForPublish,
                 cta,
                 images,
                 meta,

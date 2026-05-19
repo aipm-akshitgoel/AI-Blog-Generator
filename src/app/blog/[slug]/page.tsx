@@ -5,6 +5,7 @@ import Link from "next/link";
 import Script from "next/script";
 import { FAQAccordion } from "@/components/FAQAccordion";
 import { FeedbackPopup } from "@/components/FeedbackPopup";
+import { stripFaqFromMarkdownWhenStructured } from "@/lib/contentWordCount";
 
 // Parul Test Template Components
 import Navbar from "@/components/parul/Navbar";
@@ -34,6 +35,15 @@ function stripLLMCTA(markdown: string): string {
  *  it duplicating the explicit <h1> rendered above the banner image. */
 function stripLeadingH1(markdown: string): string {
     return markdown.replace(/^#\s+[^\n]*\n?/, "").trimStart();
+}
+
+function articleBodyMarkdown(
+    contentMarkdown: string,
+    faqs?: { question: string; answer: string }[],
+): string {
+    return stripLeadingH1(
+        stripLLMCTA(stripFaqFromMarkdownWhenStructured(contentMarkdown, faqs)),
+    );
 }
 
 /**
@@ -89,7 +99,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                             <div className="prose prose-invert prose-lg md:prose-xl max-w-4xl mx-auto
                                 prose-headings:font-black prose-headings:italic prose-headings:uppercase 
                                 prose-a:text-[#02a7b6] hover:prose-a:text-[#342b7c] prose-img:rounded-3xl prose-img:shadow-2xl">
-                                <ReactMarkdown>{stripLeadingH1(stripLLMCTA(content.contentMarkdown))}</ReactMarkdown>
+                                <ReactMarkdown>{articleBodyMarkdown(content.contentMarkdown, content.faqs)}</ReactMarkdown>
                             </div>
                         </div>
                     </section>
@@ -146,7 +156,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                             prose-h2:text-4xl prose-h3:text-2xl
                             prose-a:text-neutral-900 prose-a:underline prose-a:decoration-1 prose-a:underline-offset-4 hover:prose-a:decoration-4
                             prose-img:rounded-none">
-                                    <ReactMarkdown>{stripLeadingH1(stripLLMCTA(content.contentMarkdown))}</ReactMarkdown>
+                                    <ReactMarkdown>{articleBodyMarkdown(content.contentMarkdown, content.faqs)}</ReactMarkdown>
 
                                     {content.faqs && content.faqs.length > 0 && (
                                         <div className="mt-16">
@@ -198,7 +208,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                             <div className="prose prose-lg md:prose-xl prose-neutral max-w-none 
                         prose-headings:font-bold prose-headings:tracking-tight prose-a:text-emerald-600 prose-a:no-underline hover:prose-a:underline
                         prose-img:rounded-2xl prose-img:shadow-lg prose-pre:bg-neutral-900 prose-pre:text-neutral-100">
-                                <ReactMarkdown>{stripLeadingH1(content.contentMarkdown)}</ReactMarkdown>
+                                <ReactMarkdown>{articleBodyMarkdown(content.contentMarkdown, content.faqs)}</ReactMarkdown>
 
                                 {content.faqs && content.faqs.length > 0 && (
                                     <div className="mt-16 bg-neutral-100 rounded-3xl p-8 md:p-12 not-prose">

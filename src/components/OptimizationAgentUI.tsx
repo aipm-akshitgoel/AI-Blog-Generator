@@ -23,6 +23,7 @@ import {
 import { normalizeInterlinkingRules, type InterlinkingRules } from "@/lib/types/contentSpec";
 import { DEFAULT_INTERLINKING_RULES } from "@/lib/types/topicBrief";
 import { linkCountSummary, rewriteMarkdownInternalLinksToAbsolute } from "@/lib/interlinking";
+import { stripFaqFromMarkdownWhenStructured } from "@/lib/contentWordCount";
 import { toAbsoluteSiteHref } from "@/lib/domainLinks";
 import {
     buildHeadingTagRows,

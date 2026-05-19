@@ -23,6 +23,7 @@ import {
 import type { BusinessContext } from "@/lib/types/businessContext";
 import type { BlogPost } from "@/lib/types/content";
 import type { OptimizedContent } from "@/lib/types/optimization";
+import { stripFaqFromMarkdownWhenStructured } from "@/lib/contentWordCount";
 import { normalizeSeoScores } from "@/lib/seoAnalyzer";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
@@ -77,8 +78,19 @@ function extractFirstJsonObject(input: string): string | null {
     return null;
 }
 
-function buildFallbackOptimized(blogPost: BlogPost): OptimizedContent {
+function dedupeFaqsInOptimized(optimized: OptimizedContent): OptimizedContent {
+    if (!optimized.contentMarkdown?.trim()) return optimized;
     return {
+        ...optimized,
+        contentMarkdown: stripFaqFromMarkdownWhenStructured(
+            optimized.contentMarkdown,
+            optimized.faqs,
+        ),
+    };
+}
+
+function buildFallbackOptimized(blogPost: BlogPost): OptimizedContent {
+    return dedupeFaqsInOptimized({
         title: blogPost.title,
         slug: blogPost.slug,
         metaDescription: blogPost.metaDescription,
@@ -99,7 +111,7 @@ function buildFallbackOptimized(blogPost: BlogPost): OptimizedContent {
             overallSimilarity: 0,
             flaggedSections: [],
         },
-    };
+    });
 }
 
 function tryParseOptimizedJson(raw: string): Partial<OptimizedContent> | null {
@@ -274,6 +286,8 @@ Editor-only factSources metadata is allowed; internal [anchor](/path) links in c
         if (!optimized.contentMarkdown?.trim() && blogPost.contentMarkdown?.trim()) {
             optimized.contentMarkdown = blogPost.contentMarkdown;
         }
+
+        optimized.contentMarkdown = dedupeFaqsInOptimized(optimized).contentMarkdown;
 
         const ctxForCatalog: BusinessContext = {
             businessName: businessContext?.businessName ?? "Business",

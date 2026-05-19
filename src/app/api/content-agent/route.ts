@@ -13,7 +13,7 @@ import {
     hasContentConstraints,
     type ContentConstraints,
 } from "@/lib/types/contentSpec";
-import { countMarkdownBodyWords } from "@/lib/contentWordCount";
+import { countMarkdownBodyWords, stripFaqFromMarkdownWhenStructured } from "@/lib/contentWordCount";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { extractRouteError } from "@/lib/formatApiError";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
@@ -40,7 +40,7 @@ Generate a complete, publication-ready blog post from:
 ${targetWords && targetWords >= 1200 ? `CRITICAL — LENGTH: contentMarkdown body (before FAQs) MUST be at least ${Math.round(targetWords * 0.95)} words. Target ${targetWords} words. Under-length drafts fail the task — expand every H2 with examples, criteria, and specifics until the count is met.\n` : ""}REQUIREMENTS:
 1. **Relevance**: Connect to location and audience when provided in BusinessContext.
 2. **Structure**: H2 and H3 markdown headers, short paragraphs, bullets where useful.
-3. **FAQs**: Exactly 3 FAQs with answers at the end (H2/H3).
+3. **FAQs**: Exactly 3 FAQs in the \`faqs\` JSON array only — do NOT add a ## FAQs (or similar) section inside \`contentMarkdown\`; the app renders FAQs in a dedicated block.
 4. **Human voice**: No em-dashes (—). Avoid "delve into", "elevate", "in today's landscape", "moreover", "in conclusion".
 5. **Fact density**: Include at least 10 specific, verifiable claims (fees or fee ranges, eligibility rules, durations, accreditation, stats, exam requirements, etc.). Pull facts from the Reference Catalog and Author Brief — do not invent statistics.
 
@@ -138,6 +138,10 @@ function normalizePostFromParsed(
     if (postData.contentMarkdown) {
         postData.contentMarkdown = postData.contentMarkdown.replace(/\\n/g, "\n");
         postData.contentMarkdown = postData.contentMarkdown.replace(/^#\s+[^\n]*\n+/i, "").trimStart();
+        postData.contentMarkdown = stripFaqFromMarkdownWhenStructured(
+            postData.contentMarkdown,
+            postData.faqs,
+        );
     }
 
     if (constraints?.h1Title?.trim()) {
