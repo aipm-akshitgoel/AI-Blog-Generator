@@ -18,6 +18,7 @@ export function ClerkOAuthCallback() {
         signInFallbackRedirectUrl={CLERK_AFTER_AUTH_URL}
         signUpFallbackRedirectUrl={CLERK_AFTER_AUTH_URL}
       />
+      <div id="clerk-captcha" className="sr-only" aria-hidden />
     </main>
   );
 }
