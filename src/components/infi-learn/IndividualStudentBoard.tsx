@@ -118,6 +118,7 @@ const ACTION_LABEL_BY_ID: Record<string, string> = {
   a3: "Content team feedback",
   b3: "Technical feedback",
 };
+const STUDENT_ACTION_ROTATION = ["a2", "a3", "b3"] as const;
 
 const STUDENT_PROFILES: Record<string, StudentProfile> = {
   "s-1": { grade: "8", city: "Hyderabad", batch: "Evening", enrolledSince: "Jun 2025", attendance: "62%" },
@@ -319,6 +320,10 @@ export default function IndividualStudentBoard({
   const getScoreOffset = (s: Student) => {
     const numericId = Number(s.id.replace("s-", "")) || 0;
     return (numericId % 5) - 2; // -2 to +2 keeps samples varied but realistic.
+  };
+  const getStudentActionId = (s: Student) => {
+    const numericId = Number(s.id.replace("s-", "")) || 1;
+    return STUDENT_ACTION_ROTATION[numericId % STUDENT_ACTION_ROTATION.length];
   };
   const getEngagementScore = (s: Student) => Math.max(0, Math.min(100, Math.round(100 - s.churnLikelihood + getScoreOffset(s))));
   const getEngagementScoreAtLastCall = (s: Student) =>
@@ -594,7 +599,7 @@ export default function IndividualStudentBoard({
     actionStates[`${selectedStudent.cohortId}:${actionId}`]?.completedAt,
   ).length;
   const totalCohortActions = (COHORT_ACTION_KEYS[selectedStudent.cohortId] ?? []).length;
-  const selectedStudentActionIds = COHORT_ACTION_KEYS[selectedStudent.cohortId] ?? [];
+  const selectedStudentActionIds = [getStudentActionId(selectedStudent)];
 
   const hasIndividualExecution =
     Boolean(selectedCallStatus.firstCallCompletedAt || selectedCallStatus.secondCallCompletedAt) ||
@@ -821,11 +826,6 @@ export default function IndividualStudentBoard({
                       <p className="mt-1">Attendance: {getScoreBreakup(s).attendance}</p>
                       <p>Consistency: {getScoreBreakup(s).consistency}</p>
                       <p>Sentiment: {getScoreBreakup(s).sentiment}</p>
-                      <p className="mt-1">
-                        Last checkpoint: {getEngagementScoreAtLastCall(s)} | Movement:{" "}
-                        {getEngagementScore(s) - getEngagementScoreAtLastCall(s) >= 0 ? "+" : ""}
-                        {getEngagementScore(s) - getEngagementScoreAtLastCall(s)}
-                      </p>
                     </span>
                     </span>
                 </div>
