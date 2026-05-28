@@ -191,6 +191,7 @@ export default function CohortInsightsBoard({
   const [selectedCohortId, setSelectedCohortId] = useState(COHORTS[0].id);
   const [noteDraftByAction, setNoteDraftByAction] = useState<Record<string, string>>({});
   const [notesByAction, setNotesByAction] = useState<Record<string, string[]>>({});
+  const [noteTimelineByCohort, setNoteTimelineByCohort] = useState<Record<string, ActionTimelineEvent[]>>({});
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const [timelineScrollMetrics, setTimelineScrollMetrics] = useState({
     scrollTop: 0,
@@ -214,6 +215,7 @@ export default function CohortInsightsBoard({
   );
   const selectedActionTimeline = useMemo(() => {
     const defaultEvents = DEFAULT_TIMELINE_BY_COHORT[selected.id] ?? [];
+    const noteEvents = noteTimelineByCohort[selected.id] ?? [];
     const events = selected.actions.flatMap((action) => {
       const key = `${selected.id}:${action.id}`;
       const st = actionStates[key] ?? {
@@ -240,8 +242,8 @@ export default function CohortInsightsBoard({
       }
       return actionEvents;
     });
-    return [...events, ...defaultEvents].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-  }, [selected, actionStates]);
+    return [...events, ...noteEvents, ...defaultEvents].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  }, [selected, actionStates, noteTimelineByCohort]);
 
   function updateTimelineScrollMetrics() {
     if (!timelineRef.current) return;
@@ -438,6 +440,18 @@ export default function CohortInsightsBoard({
                                 setNotesByAction((prev) => ({
                                   ...prev,
                                   [actionKey]: [val, ...(prev[actionKey] ?? [])],
+                                }));
+                                setNoteTimelineByCohort((prev) => ({
+                                  ...prev,
+                                  [selected.id]: [
+                                    {
+                                      id: `${actionKey}-note-${Date.now()}`,
+                                      at: new Date().toISOString(),
+                                      text: `${action.label} note added: ${val}`,
+                                      dotClass: "bg-indigo-500",
+                                    },
+                                    ...(prev[selected.id] ?? []),
+                                  ],
                                 }));
                                 setNoteDraftByAction((prev) => ({ ...prev, [actionKey]: "" }));
                               }}

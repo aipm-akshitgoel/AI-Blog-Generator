@@ -304,6 +304,7 @@ export default function IndividualStudentBoard({
   const [concernCommentByKey, setConcernCommentByKey] = useState<Record<string, string>>({});
   const [concernCommentDraftByKey, setConcernCommentDraftByKey] = useState<Record<string, string>>({});
   const [concernTimelineEventsByStudent, setConcernTimelineEventsByStudent] = useState<Record<string, TimelineEvent[]>>({});
+  const [activityTimelineEventsByStudent, setActivityTimelineEventsByStudent] = useState<Record<string, TimelineEvent[]>>({});
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"atRisk" | "stable">("atRisk");
   const [atRiskSubFilter, setAtRiskSubFilter] = useState<"all" | "pending" | "worsened">("all");
@@ -345,6 +346,33 @@ export default function IndividualStudentBoard({
     const consistency = Math.max(0, Math.min(100, score - 4 + (numericId % 4)));
     const sentiment = Math.max(0, Math.min(100, score - 2 + (numericId % 3)));
     return { attendance, consistency, sentiment };
+  };
+  const getStudentHighlights = (s: Student) => {
+    const breakup = getScoreBreakup(s);
+    const variants = [
+      [
+        `Attendance trend remains soft (${breakup.attendance}).`,
+        `Learning consistency is uneven (${breakup.consistency}).`,
+        `Sentiment is cautious in recent interactions (${breakup.sentiment}).`,
+      ],
+      [
+        `Recent attendance momentum is low (${breakup.attendance}).`,
+        `Consistency needs mentor reinforcement (${breakup.consistency}).`,
+        `Confidence sentiment is below target (${breakup.sentiment}).`,
+      ],
+      [
+        `Attendance recovery has not stabilized yet (${breakup.attendance}).`,
+        `Routine adherence is fluctuating (${breakup.consistency}).`,
+        `Student tone indicates continued concern (${breakup.sentiment}).`,
+      ],
+      [
+        `Class participation remains inconsistent (${breakup.attendance}).`,
+        `Completion rhythm is weak this week (${breakup.consistency}).`,
+        `Engagement sentiment still needs close follow-up (${breakup.sentiment}).`,
+      ],
+    ] as const;
+    const numericId = Number(s.id.replace("s-", "")) || 0;
+    return variants[numericId % variants.length];
   };
 
   const getDerivedStatus = (s: Student) => {
@@ -562,8 +590,9 @@ export default function IndividualStudentBoard({
       subtitle: item.status,
     }));
     const concernStatusEvents = concernTimelineEventsByStudent[selectedStudent.id] ?? [];
+    const activityEvents = activityTimelineEventsByStudent[selectedStudent.id] ?? [];
     const fallbackExtraEvents =
-      conversationEvents.length + actionEvents.length + concernStatusEvents.length < 6
+      conversationEvents.length + actionEvents.length + concernStatusEvents.length + activityEvents.length < 6
         ? [
             {
               dateTime: getCurrentMonthDateTime(26, 18, 15),
@@ -585,10 +614,10 @@ export default function IndividualStudentBoard({
             },
           ]
         : [];
-    return [...conversationEvents, ...actionEvents, ...concernStatusEvents, ...fallbackExtraEvents].sort(
+    return [...conversationEvents, ...actionEvents, ...concernStatusEvents, ...activityEvents, ...fallbackExtraEvents].sort(
       (a, b) => toTimestamp(a.dateTime) - toTimestamp(b.dateTime),
     );
-  }, [selectedConversationsWithFallback, selectedActionLogsWithFallback, concernTimelineEventsByStudent, selectedStudent.id]);
+  }, [selectedConversationsWithFallback, selectedActionLogsWithFallback, concernTimelineEventsByStudent, activityTimelineEventsByStudent, selectedStudent.id]);
 
   function updateTimelineScrollMetrics() {
     if (!timelineRef.current) return;
@@ -660,8 +689,10 @@ export default function IndividualStudentBoard({
 
   function toggleFirstCall(studentId: string) {
     const now = new Date().toISOString();
+    let markedDone = false;
     setCallStates((prev) => {
       const curr = prev[studentId] ?? { firstCallCompletedAt: null, secondCallCompletedAt: null };
+      markedDone = !curr.firstCallCompletedAt;
       return {
         ...prev,
         [studentId]: {
@@ -670,6 +701,18 @@ export default function IndividualStudentBoard({
         },
       };
     });
+    setActivityTimelineEventsByStudent((prev) => ({
+      ...prev,
+      [studentId]: [
+        {
+          dateTime: getNowDateTime(),
+          dotClass: markedDone ? "bg-emerald-500" : "bg-amber-500",
+          title: "Call status updated",
+          subtitle: markedDone ? "Mentor call marked done." : "Mentor call reset to pending.",
+        },
+        ...(prev[studentId] ?? []),
+      ],
+    }));
   }
 
   function toggleSecondCall(studentId: string) {
@@ -697,6 +740,18 @@ export default function IndividualStudentBoard({
       ...prev,
       [selectedStudent.id]: [next, ...(prev[selectedStudent.id] ?? [])],
     }));
+    setActivityTimelineEventsByStudent((prev) => ({
+      ...prev,
+      [selectedStudent.id]: [
+        {
+          dateTime: getNowDateTime(),
+          dotClass: "bg-indigo-500",
+          title: "Call note added",
+          subtitle: next.text,
+        },
+        ...(prev[selectedStudent.id] ?? []),
+      ],
+    }));
     setNoteInput("");
   }
 
@@ -707,6 +762,18 @@ export default function IndividualStudentBoard({
     setAdditionalNotesByStudent((prev) => ({
       ...prev,
       [selectedStudent.id]: { heading, subheading },
+    }));
+    setActivityTimelineEventsByStudent((prev) => ({
+      ...prev,
+      [selectedStudent.id]: [
+        {
+          dateTime: getNowDateTime(),
+          dotClass: "bg-indigo-500",
+          title: "Additional note saved",
+          subtitle: `${heading}${subheading ? ` — ${subheading}` : ""}`,
+        },
+        ...(prev[selectedStudent.id] ?? []),
+      ],
     }));
     setAdditionalNoteDraft({ heading: "", subheading: "" });
   }
@@ -873,10 +940,10 @@ export default function IndividualStudentBoard({
                       {getEngagementScore(s)}
                     </span>
                     <span className="pointer-events-none absolute right-0 top-6 z-20 hidden w-52 rounded-md border border-slate-200 bg-white p-2 text-[10px] text-slate-700 shadow-md group-hover:block">
-                      <p className="font-semibold text-slate-800">Score breakup</p>
-                      <p className="mt-1">Attendance: {getScoreBreakup(s).attendance}</p>
-                      <p>Consistency: {getScoreBreakup(s).consistency}</p>
-                      <p>Sentiment: {getScoreBreakup(s).sentiment}</p>
+                      <p className="font-semibold text-slate-800">Highlights</p>
+                      {getStudentHighlights(s).map((line) => (
+                        <p key={line} className="mt-1">{line}</p>
+                      ))}
                     </span>
                     </span>
                 </div>
@@ -1124,6 +1191,18 @@ export default function IndividualStudentBoard({
                                 ? `Hello Product Team,\n\nRequesting a feature enhancement based on a student-level intervention pattern.\n\nStudent details:\n- Name: ${selectedStudent.name}\n- Parent: ${selectedStudent.parentName}\n- Grade: ${selectedProfile.grade}\n- City: ${selectedProfile.city}\n- Batch: ${selectedProfile.batch}\n- Engagement score: ${getEngagementScore(selectedStudent)}\n\nIssue summary from latest concerns:\n${concernLines}\n\nIssue summary from recent activity history:\n${recentActivityLines}\n\nFeature request intent:\nEnable mentors to act faster on this recurring pattern and improve closure reliability.\n\nRegards,\nMentor Team`
                                 : `Hello,\n\nSharing a student-level update for follow-up.\n\nStudent details:\n- Name: ${selectedStudent.name}\n- Parent: ${selectedStudent.parentName}\n- Grade: ${selectedProfile.grade}\n- City: ${selectedProfile.city}\n- Batch: ${selectedProfile.batch}\n- Engagement score: ${getEngagementScore(selectedStudent)}\n\nIssue summary from latest concerns:\n${concernLines}\n\nIssue summary from recent activity history:\n${recentActivityLines}\n\nSupport requested:\n${actionLabel}\n\nRegards,\nMentor Team`,
                             });
+                            setActivityTimelineEventsByStudent((prev) => ({
+                              ...prev,
+                              [selectedStudent.id]: [
+                                {
+                                  dateTime: getNowDateTime(),
+                                  dotClass: "bg-indigo-500",
+                                  title: "Action mail sent",
+                                  subtitle: `${actionLabel} mail sent for follow-up.`,
+                                },
+                                ...(prev[selectedStudent.id] ?? []),
+                              ],
+                            }));
                           }}
                           className="rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs text-indigo-700"
                         >
@@ -1131,7 +1210,23 @@ export default function IndividualStudentBoard({
                         </button>
                         <button
                           type="button"
-                          onClick={() => onToggleActionDone(selectedStudent.cohortId, actionId)}
+                          onClick={() => {
+                            const actionKey = `${selectedStudent.cohortId}:${actionId}`;
+                            const currentlyDone = Boolean(actionStates[actionKey]?.completedAt);
+                            onToggleActionDone(selectedStudent.cohortId, actionId);
+                            setActivityTimelineEventsByStudent((prev) => ({
+                              ...prev,
+                              [selectedStudent.id]: [
+                                {
+                                  dateTime: getNowDateTime(),
+                                  dotClass: currentlyDone ? "bg-amber-500" : "bg-emerald-500",
+                                  title: "Action status updated",
+                                  subtitle: `${ACTION_LABEL_BY_ID[actionId] ?? actionId} ${currentlyDone ? "marked pending" : "marked completed"}.`,
+                                },
+                                ...(prev[selectedStudent.id] ?? []),
+                              ],
+                            }));
+                          }}
                           className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700"
                         >
                           {st.completedAt ? "Mark pending" : "Mark completed"}
