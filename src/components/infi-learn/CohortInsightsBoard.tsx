@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { HelpTip } from "@/components/HelpTip";
 
 type ActionState = {
   completedAt: string | null;
@@ -80,6 +81,30 @@ const DEFAULT_TIMELINE_BY_COHORT: Record<string, ActionTimelineEvent[]> = {
       text: "Parent progress update completed.",
       dotClass: "bg-emerald-500",
     },
+    {
+      id: "g8-default-3",
+      at: "2026-04-15T17:25:00.000Z",
+      text: "Teacher feedback requested on pacing changes for weak chapters.",
+      dotClass: "bg-indigo-500",
+    },
+    {
+      id: "g8-default-4",
+      at: "2026-04-18T10:45:00.000Z",
+      text: "Mentor call summary shared with parent and class teacher.",
+      dotClass: "bg-emerald-500",
+    },
+    {
+      id: "g8-default-5",
+      at: "2026-04-22T14:30:00.000Z",
+      text: "Content team feedback acknowledged with remediation timeline.",
+      dotClass: "bg-indigo-500",
+    },
+    {
+      id: "g8-default-6",
+      at: "2026-04-25T12:15:00.000Z",
+      text: "Weekly confidence-check follow-up completed.",
+      dotClass: "bg-emerald-500",
+    },
   ],
   "g9-evening-batch": [
     {
@@ -92,6 +117,30 @@ const DEFAULT_TIMELINE_BY_COHORT: Record<string, ActionTimelineEvent[]> = {
       id: "g9-default-2",
       at: "2026-04-13T18:05:00.000Z",
       text: "Technical issue follow-up completed by mentor.",
+      dotClass: "bg-emerald-500",
+    },
+    {
+      id: "g9-default-3",
+      at: "2026-04-16T09:55:00.000Z",
+      text: "Evening-batch lag reports consolidated and sent for review.",
+      dotClass: "bg-indigo-500",
+    },
+    {
+      id: "g9-default-4",
+      at: "2026-04-19T13:40:00.000Z",
+      text: "Platform fix ETA shared with mentors and parents.",
+      dotClass: "bg-emerald-500",
+    },
+    {
+      id: "g9-default-5",
+      at: "2026-04-23T16:10:00.000Z",
+      text: "Technical feedback re-sent with updated classroom examples.",
+      dotClass: "bg-indigo-500",
+    },
+    {
+      id: "g9-default-6",
+      at: "2026-04-27T11:20:00.000Z",
+      text: "Post-fix engagement check logged as completed.",
       dotClass: "bg-emerald-500",
     },
   ],
@@ -141,6 +190,12 @@ export default function CohortInsightsBoard({
   const [selectedCohortId, setSelectedCohortId] = useState(COHORTS[0].id);
   const [noteDraftByAction, setNoteDraftByAction] = useState<Record<string, string>>({});
   const [notesByAction, setNotesByAction] = useState<Record<string, string[]>>({});
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const [timelineScrollMetrics, setTimelineScrollMetrics] = useState({
+    scrollTop: 0,
+    clientHeight: 1,
+    scrollHeight: 1,
+  });
   const [mailPopup, setMailPopup] = useState<{
     open: boolean;
     actionKey: string | null;
@@ -187,9 +242,43 @@ export default function CohortInsightsBoard({
     return [...events, ...defaultEvents].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   }, [selected, actionStates]);
 
+  function updateTimelineScrollMetrics() {
+    if (!timelineRef.current) return;
+    setTimelineScrollMetrics({
+      scrollTop: timelineRef.current.scrollTop,
+      clientHeight: timelineRef.current.clientHeight || 1,
+      scrollHeight: timelineRef.current.scrollHeight || 1,
+    });
+  }
+
+  useEffect(() => {
+    if (!timelineRef.current) return;
+    timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
+    updateTimelineScrollMetrics();
+  }, [selected.id, selectedActionTimeline]);
+
+  useEffect(() => {
+    updateTimelineScrollMetrics();
+  }, []);
+
+  const timelineThumbHeight = Math.max(
+    24,
+    (timelineScrollMetrics.clientHeight * timelineScrollMetrics.clientHeight) / timelineScrollMetrics.scrollHeight,
+  );
+  const timelineScrollRange = Math.max(1, timelineScrollMetrics.scrollHeight - timelineScrollMetrics.clientHeight);
+  const timelineThumbTop =
+    ((timelineScrollMetrics.clientHeight - timelineThumbHeight) * timelineScrollMetrics.scrollTop) / timelineScrollRange;
+
   return (
     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
-      <h2 className="text-lg font-semibold text-slate-900">Cohort Insights</h2>
+      <div className="flex items-center gap-1.5">
+        <h2 className="text-lg font-semibold text-slate-900">Cohort Insights</h2>
+        <HelpTip
+          side="bottom"
+          variant="light"
+          text="Review this section every morning to prioritize cohort-level actions before starting mentor outreach."
+        />
+      </div>
       <p className="mt-1 text-sm text-slate-600">Use cohorts for shared context and cohort-level interventions.</p>
 
       <div className="mt-3 overflow-x-auto pb-1">
@@ -240,35 +329,47 @@ export default function CohortInsightsBoard({
             ))}
           </div>
           <h4 className="mt-3 text-sm font-semibold text-slate-900">Actions taken timeline</h4>
-          <div className="mt-2 space-y-1">
-            {selectedActionTimeline.length > 0 ? (
-              selectedActionTimeline.map((item, idx) => {
-                const dt = new Date(item.at);
-                const date = dt.toLocaleDateString("en-GB");
-                const time = dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-                return (
-                  <div key={item.id} className="relative grid grid-cols-[96px_14px_1fr] gap-2 pb-3 last:pb-0">
-                    <div className="text-center text-xs text-slate-700">
-                      <p className="font-semibold">{date}</p>
-                      <p className="font-semibold">{time}</p>
+          <div className="relative mt-2">
+            <div
+              ref={timelineRef}
+              onScroll={updateTimelineScrollMetrics}
+              className="infi-scrollbar max-h-48 overflow-y-scroll pr-4"
+            >
+              {selectedActionTimeline.length > 0 ? (
+                selectedActionTimeline.map((item, idx) => {
+                  const dt = new Date(item.at);
+                  const date = dt.toLocaleDateString("en-GB");
+                  const time = dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                  return (
+                    <div key={item.id} className="relative grid grid-cols-[96px_14px_1fr] gap-2 pb-3 last:pb-0">
+                      <div className="text-center text-xs text-slate-700">
+                        <p className="font-semibold">{date}</p>
+                        <p className="font-semibold">{time}</p>
+                      </div>
+                      <div className="relative flex w-4 justify-center">
+                        {idx < selectedActionTimeline.length - 1 ? (
+                          <span className="absolute top-2 left-1/2 h-full w-px -translate-x-1/2 bg-slate-300" />
+                        ) : null}
+                        <span className={`mt-1 inline-block h-2.5 w-2.5 rounded-full ${item.dotClass}`} />
+                      </div>
+                      <div className="text-xs text-slate-700">
+                        <p className="font-medium text-slate-800">{item.text}</p>
+                      </div>
                     </div>
-                    <div className="relative flex w-4 justify-center">
-                      {idx < selectedActionTimeline.length - 1 ? (
-                        <span className="absolute top-2 left-1/2 h-full w-px -translate-x-1/2 bg-slate-300" />
-                      ) : null}
-                      <span className={`mt-1 inline-block h-2.5 w-2.5 rounded-full ${item.dotClass}`} />
-                    </div>
-                    <div className="text-xs text-slate-700">
-                      <p className="font-medium text-slate-800">{item.text}</p>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
-                No action updates logged yet.
-              </p>
-            )}
+                  );
+                })
+              ) : (
+                <p className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+                  No action updates logged yet.
+                </p>
+              )}
+            </div>
+            <div className="pointer-events-none absolute bottom-1 right-1 top-1 w-1.5 rounded-full bg-slate-200">
+              <div
+                className="absolute left-0 w-1.5 rounded-full bg-slate-500"
+                style={{ height: `${timelineThumbHeight}px`, transform: `translateY(${timelineThumbTop}px)` }}
+              />
+            </div>
           </div>
         </article>
 

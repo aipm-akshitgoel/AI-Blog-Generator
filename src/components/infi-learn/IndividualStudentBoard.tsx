@@ -113,6 +113,11 @@ const COHORT_ACTION_KEYS: Record<string, string[]> = {
   "g8-hyd-teacher-x": ["a2", "a3"],
   "g9-evening-batch": ["b3"],
 };
+const ACTION_LABEL_BY_ID: Record<string, string> = {
+  a2: "Teacher feedback",
+  a3: "Content team feedback",
+  b3: "Technical feedback",
+};
 
 const STUDENT_PROFILES: Record<string, StudentProfile> = {
   "s-1": { grade: "8", city: "Hyderabad", batch: "Evening", enrolledSince: "Jun 2025", attendance: "62%" },
@@ -276,8 +281,12 @@ const AT_RISK_POOL_SIZE = 50;
 
 export default function IndividualStudentBoard({
   actionStates,
+  onToggleActionDone,
+  onTriggerAction,
 }: {
   actionStates: Record<string, ActionState>;
+  onToggleActionDone: (cohortId: string, actionId: string) => void;
+  onTriggerAction: (cohortId: string, actionId: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState(STUDENTS[0].id);
   const [callStates, setCallStates] = useState<Record<string, CallStatus>>({});
@@ -297,6 +306,8 @@ export default function IndividualStudentBoard({
   const [statusFilter, setStatusFilter] = useState<"atRisk" | "stable">("atRisk");
   const [atRiskSubFilter, setAtRiskSubFilter] = useState<"all" | "pending" | "worsened">("all");
   const [showAtRiskFilterMenu, setShowAtRiskFilterMenu] = useState(false);
+  const [showAdditionalNoteFields, setShowAdditionalNoteFields] = useState(false);
+  const [showStudentActions, setShowStudentActions] = useState(false);
   const [page, setPage] = useState(1);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const [timelineScrollMetrics, setTimelineScrollMetrics] = useState({
@@ -305,8 +316,21 @@ export default function IndividualStudentBoard({
     scrollHeight: 1,
   });
 
-  const getEngagementScore = (s: Student) => Math.max(0, 100 - s.churnLikelihood);
-  const getEngagementScoreAtLastCall = (s: Student) => Math.max(0, 100 - s.churnAtLastCall);
+  const getScoreOffset = (s: Student) => {
+    const numericId = Number(s.id.replace("s-", "")) || 0;
+    return (numericId % 5) - 2; // -2 to +2 keeps samples varied but realistic.
+  };
+  const getEngagementScore = (s: Student) => Math.max(0, Math.min(100, Math.round(100 - s.churnLikelihood + getScoreOffset(s))));
+  const getEngagementScoreAtLastCall = (s: Student) =>
+    Math.max(0, Math.min(100, Math.round(100 - s.churnAtLastCall + getScoreOffset(s))));
+  const getScoreBreakup = (s: Student) => {
+    const score = getEngagementScore(s);
+    const numericId = Number(s.id.replace("s-", "")) || 1;
+    const attendance = Math.max(0, Math.min(100, score + 6 - (numericId % 5)));
+    const consistency = Math.max(0, Math.min(100, score - 4 + (numericId % 4)));
+    const sentiment = Math.max(0, Math.min(100, score - 2 + (numericId % 3)));
+    return { attendance, consistency, sentiment };
+  };
 
   const getDerivedStatus = (s: Student) => {
     const status = callStates[s.id] ?? { firstCallCompletedAt: null, secondCallCompletedAt: null };
@@ -570,6 +594,7 @@ export default function IndividualStudentBoard({
     actionStates[`${selectedStudent.cohortId}:${actionId}`]?.completedAt,
   ).length;
   const totalCohortActions = (COHORT_ACTION_KEYS[selectedStudent.cohortId] ?? []).length;
+  const selectedStudentActionIds = COHORT_ACTION_KEYS[selectedStudent.cohortId] ?? [];
 
   const hasIndividualExecution =
     Boolean(selectedCallStatus.firstCallCompletedAt || selectedCallStatus.secondCallCompletedAt) ||
@@ -633,7 +658,14 @@ export default function IndividualStudentBoard({
   return (
     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h2 className="text-lg font-semibold text-slate-900">1:1 Student Grievance Redressal Queue</h2>
+        <div className="flex items-center gap-1.5">
+          <h2 className="text-lg font-semibold text-slate-900">1:1 Student Grievance Redressal Queue</h2>
+          <HelpTip
+            side="bottom"
+            variant="light"
+            text="Students are prioritized by overall engagement score. Hover on any score to view its breakup and movement from the last mentor checkpoint."
+          />
+        </div>
         <div className="flex justify-end">
           <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700">
             Calls this month: {callsMadeThisMonthDisplay} | Avg/day: {averageCallsPerDayDisplay}
@@ -780,8 +812,21 @@ export default function IndividualStudentBoard({
               >
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-semibold text-slate-900">{s.name}</p>
+                    <span className="group relative inline-flex">
                     <span className={`rounded-full px-2 py-0.5 text-xs ${getChurnScoreTone(getEngagementScore(s))}`}>
                       {getEngagementScore(s)}
+                    </span>
+                    <span className="pointer-events-none absolute right-0 top-6 z-20 hidden w-52 rounded-md border border-slate-200 bg-white p-2 text-[10px] text-slate-700 shadow-md group-hover:block">
+                      <p className="font-semibold text-slate-800">Score breakup</p>
+                      <p className="mt-1">Attendance: {getScoreBreakup(s).attendance}</p>
+                      <p>Consistency: {getScoreBreakup(s).consistency}</p>
+                      <p>Sentiment: {getScoreBreakup(s).sentiment}</p>
+                      <p className="mt-1">
+                        Last checkpoint: {getEngagementScoreAtLastCall(s)} | Movement:{" "}
+                        {getEngagementScore(s) - getEngagementScoreAtLastCall(s) >= 0 ? "+" : ""}
+                        {getEngagementScore(s) - getEngagementScoreAtLastCall(s)}
+                      </p>
+                    </span>
                     </span>
                 </div>
                 <p className="mt-1 text-xs text-slate-600">Parent: {s.parentName}</p>
@@ -939,75 +984,120 @@ export default function IndividualStudentBoard({
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">
-            <div className="mt-3 rounded-md border border-slate-200 bg-white p-2">
-              <p className="text-xs font-medium text-slate-700">Call notes</p>
-              <div className="mt-2 flex gap-2">
-                <input
-                  value={noteInput}
-                  onChange={(e) => setNoteInput(e.target.value)}
-                  placeholder="Add mentor note..."
-                  className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-xs"
-                />
-                <button type="button" onClick={addNote} className="rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-xs text-indigo-700">
-                  Add note
-                </button>
-              </div>
-              <div className="mt-2 space-y-1">
-                {selectedNotes.map((note) => (
-                  <div key={note.id} className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
-                    <p>{note.text}</p>
-                    <p className="mt-1 text-[10px] text-slate-500">Logged at {formatTime(note.createdAt)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => toggleFirstCall(selectedStudent.id)}
-                disabled={selectedNotes.length === 0}
-                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {selectedCallStatus.firstCallCompletedAt ? "Marked done" : "Mark done"}
+          <div>
+            <p className="text-xs font-medium text-slate-700">Call notes</p>
+            <div className="mt-2 flex gap-2">
+              <input
+                value={noteInput}
+                onChange={(e) => setNoteInput(e.target.value)}
+                placeholder="Add mentor note..."
+                className="flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-xs"
+              />
+              <button type="button" onClick={addNote} className="rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1.5 text-xs text-indigo-700">
+                Add note
               </button>
-              <HelpTip side="top" variant="light" text="Add notes to enable mark done" />
             </div>
-            <p className="mt-1 text-xs text-slate-600">
-              {selectedCallStatus.firstCallCompletedAt
-                ? `Completed at ${formatTime(selectedCallStatus.firstCallCompletedAt)}`
-                : null}
-            </p>
+            <div className="mt-2 space-y-1">
+              {selectedNotes.map((note) => (
+                <div key={note.id} className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
+                  <p>{note.text}</p>
+                  <p className="mt-1 text-[10px] text-slate-500">Logged at {formatTime(note.createdAt)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => toggleFirstCall(selectedStudent.id)}
+              disabled={selectedNotes.length === 0}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {selectedCallStatus.firstCallCompletedAt ? "Marked done" : "Mark done"}
+            </button>
+            <HelpTip side="top" variant="light" text="Add notes to enable mark done" />
+          </div>
+          <p className="mt-1 text-xs text-slate-600">
+            {selectedCallStatus.firstCallCompletedAt
+              ? `Completed at ${formatTime(selectedCallStatus.firstCallCompletedAt)}`
+              : null}
+          </p>
+
+          <div className="mt-4 border-t border-slate-200 pt-3 text-xs">
+            <button
+              type="button"
+              onClick={() => setShowStudentActions((prev) => !prev)}
+              className="flex w-full items-center justify-between text-left text-xs font-medium text-slate-700"
+            >
+              <span>Actions</span>
+              <span className="text-slate-500">{showStudentActions ? "Click to collapse" : "Click to expand"}</span>
+            </button>
+            {showStudentActions ? (
+              <div className="mt-2 space-y-2">
+                {selectedStudentActionIds.map((actionId) => {
+                  const actionKey = `${selectedStudent.cohortId}:${actionId}`;
+                  const st = actionStates[actionKey] ?? { completedAt: null, triggerStatus: "idle" as const, triggeredAt: null };
+                  return (
+                    <div key={actionKey} className="rounded-md border border-slate-200 bg-slate-50 p-2">
+                      <p className="text-xs font-medium text-slate-800">{ACTION_LABEL_BY_ID[actionId] ?? actionId}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onTriggerAction(selectedStudent.cohortId, actionId)}
+                          className="rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs text-indigo-700"
+                        >
+                          {st.triggerStatus === "triggered" ? "Mail again" : "Mail"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onToggleActionDone(selectedStudent.cohortId, actionId)}
+                          className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-700"
+                        >
+                          {st.completedAt ? "Mark pending" : "Mark completed"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
 
-          <div className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-xs">
-            <div className="mt-3 rounded-md border border-slate-200 bg-white p-2">
-              <p className="text-xs font-medium text-slate-700">Additional notes</p>
+          <div className="mt-4 border-t border-slate-200 pt-3 text-xs">
+            <button
+              type="button"
+              onClick={() => setShowAdditionalNoteFields((prev) => !prev)}
+              className="flex w-full items-center justify-between text-left text-xs font-medium text-slate-700"
+            >
+              <span>Additional notes</span>
+              <span className="text-slate-500">{showAdditionalNoteFields ? "Click to collapse" : "Click to expand"}</span>
+            </button>
+            {showAdditionalNoteFields ? (
               <div className="mt-2 space-y-2">
-              <input
-                type="text"
-                value={additionalNoteDraft.heading}
-                onChange={(e) =>
-                  setAdditionalNoteDraft((prev) => ({
-                    ...prev,
-                    heading: e.target.value,
-                  }))
-                }
-                placeholder="Add heading..."
-                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-700"
-              />
-              <textarea
-                value={additionalNoteDraft.subheading}
-                onChange={(e) =>
-                  setAdditionalNoteDraft((prev) => ({
-                    ...prev,
-                    subheading: e.target.value,
-                  }))
-                }
-                placeholder="Add sub-heading..."
-                rows={2}
-                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-700"
-              />
+                <input
+                  type="text"
+                  value={additionalNoteDraft.heading}
+                  onChange={(e) =>
+                    setAdditionalNoteDraft((prev) => ({
+                      ...prev,
+                      heading: e.target.value,
+                    }))
+                  }
+                  placeholder="Add heading..."
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-700"
+                />
+                <textarea
+                  value={additionalNoteDraft.subheading}
+                  onChange={(e) =>
+                    setAdditionalNoteDraft((prev) => ({
+                      ...prev,
+                      subheading: e.target.value,
+                    }))
+                  }
+                  placeholder="Add description..."
+                  rows={2}
+                  className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs text-slate-700"
+                />
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -1017,10 +1107,10 @@ export default function IndividualStudentBoard({
                   >
                     Save additional note
                   </button>
-                  <HelpTip side="top" variant="light" text="Fill both heading and sub-heading to enable this action." />
+                  <HelpTip side="top" variant="light" text="Fill both heading and description to enable this action." />
                 </div>
               </div>
-            </div>
+            ) : null}
             {selectedAdditionalNote ? (
               <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
                 <p className="font-medium text-slate-800">{selectedAdditionalNote.heading || "Untitled"}</p>

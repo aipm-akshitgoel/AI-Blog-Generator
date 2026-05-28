@@ -46,7 +46,11 @@ export default function InfiLearnDashboardClient() {
         onToggleActionDone={toggleActionDone}
         onTriggerAction={triggerAction}
       />
-      <IndividualStudentBoard actionStates={actionStates} />
+      <IndividualStudentBoard
+        actionStates={actionStates}
+        onToggleActionDone={toggleActionDone}
+        onTriggerAction={triggerAction}
+      />
     </>
   );
 }
