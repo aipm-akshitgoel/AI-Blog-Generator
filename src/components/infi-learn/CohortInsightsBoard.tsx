@@ -43,7 +43,6 @@ const COHORTS: Cohort[] = [
     actions: [
       { id: "a2", label: "Teacher feedback", systemTriggerable: true },
       { id: "a3", label: "Content team feedback", systemTriggerable: true },
-      { id: "a4", label: "Request feature", systemTriggerable: true },
     ],
   },
   {

@@ -110,7 +110,7 @@ const BASE_STUDENTS: Student[] = [
 ];
 
 const COHORT_ACTION_KEYS: Record<string, string[]> = {
-  "g8-hyd-teacher-x": ["a2", "a3", "a4"],
+  "g8-hyd-teacher-x": ["a2", "a3"],
   "g9-evening-batch": ["b3", "b4"],
 };
 const ACTION_LABEL_BY_ID: Record<string, string> = {
@@ -415,6 +415,26 @@ export default function IndividualStudentBoard({
       return getEngagementScore(s) >= 50;
     });
     if (statusFilter === "atRisk") {
+      if (atRiskSubFilter === "all") {
+        const pending = matching
+          .filter((s) => !getDerivedStatus(s).hasCall)
+          .sort((a, b) => getEngagementScore(a) - getEngagementScore(b));
+        const worsened = matching
+          .filter((s) => getDerivedStatus(s).worsenedAfterCall)
+          .sort((a, b) => getEngagementScore(a) - getEngagementScore(b));
+        const otherAtRisk = matching
+          .filter((s) => getDerivedStatus(s).hasCall && !getDerivedStatus(s).worsenedAfterCall)
+          .sort((a, b) => getEngagementScore(a) - getEngagementScore(b));
+
+        // Interleave pending and worsened so both are visible in the first card row.
+        const interleaved: Student[] = [];
+        const maxLen = Math.max(pending.length, worsened.length);
+        for (let i = 0; i < maxLen; i += 1) {
+          if (pending[i]) interleaved.push(pending[i]);
+          if (worsened[i]) interleaved.push(worsened[i]);
+        }
+        return [...interleaved, ...otherAtRisk];
+      }
       // Lowest engagement first so urgency is obvious.
       return [...matching].sort((a, b) => getEngagementScore(a) - getEngagementScore(b));
     }
