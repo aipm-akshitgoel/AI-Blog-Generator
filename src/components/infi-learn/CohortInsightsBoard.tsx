@@ -43,6 +43,7 @@ const COHORTS: Cohort[] = [
     actions: [
       { id: "a2", label: "Teacher feedback", systemTriggerable: true },
       { id: "a3", label: "Content team feedback", systemTriggerable: true },
+      { id: "a4", label: "Request feature", systemTriggerable: true },
     ],
   },
   {
@@ -63,6 +64,7 @@ const COHORTS: Cohort[] = [
     ],
     actions: [
       { id: "b3", label: "Technical feedback", systemTriggerable: true },
+      { id: "b4", label: "Request feature", systemTriggerable: true },
     ],
   },
 ];
@@ -398,11 +400,14 @@ export default function CohortInsightsBoard({
                         type="button"
                         onClick={() => {
                           onTriggerAction(selected.id, action.id);
+                                const isFeatureRequest = action.label.toLowerCase().includes("request feature");
                                 setMailPopup({
                                   open: true,
                                   actionKey,
                                   subject: `${action.label} | ${selected.title}`,
-                                  body: `Hello,\n\nSharing an update for ${selected.title}.\n\nCurrent classroom concern:\n${selected.summary}\n\nWhat students and parents are reporting:\n- ${selected.conversations.join("\n- ")}\n\nRequested support from your side:\n${action.label}\n\nPlease share next steps and expected timeline so we can align mentor follow-up with your plan.\n\nRegards,\nMentor Team`,
+                                  body: isFeatureRequest
+                                    ? `Hello Product Team,\n\nRequesting a feature enhancement based on repeated classroom intervention patterns.\n\nCohort details:\n- ${selected.title}\n- Students impacted: ${selected.students}\n\nCurrent classroom concern:\n${selected.summary}\n\nObserved signals from students and parents:\n- ${selected.conversations.join("\n- ")}\n\nRequested feature outcome:\nEnable mentors to resolve this concern type faster with clearer actionability and closure tracking.\n\nPlease share feasibility, expected timeline, and next steps.\n\nRegards,\nMentor Team`
+                                    : `Hello,\n\nSharing an update for ${selected.title}.\n\nCurrent classroom concern:\n${selected.summary}\n\nWhat students and parents are reporting:\n- ${selected.conversations.join("\n- ")}\n\nRequested support from your side:\n${action.label}\n\nPlease share next steps and expected timeline so we can align mentor follow-up with your plan.\n\nRegards,\nMentor Team`,
                                 });
                         }}
                         className="rounded-md border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs text-indigo-700"

@@ -110,15 +110,16 @@ const BASE_STUDENTS: Student[] = [
 ];
 
 const COHORT_ACTION_KEYS: Record<string, string[]> = {
-  "g8-hyd-teacher-x": ["a2", "a3"],
-  "g9-evening-batch": ["b3"],
+  "g8-hyd-teacher-x": ["a2", "a3", "a4"],
+  "g9-evening-batch": ["b3", "b4"],
 };
 const ACTION_LABEL_BY_ID: Record<string, string> = {
   a2: "Teacher feedback",
   a3: "Content team feedback",
   b3: "Technical feedback",
+  f1: "Request feature",
 };
-const STUDENT_ACTION_ROTATION = ["a2", "a3", "b3"] as const;
+const STUDENT_ACTION_ROTATION = ["a2", "a3", "b3", "f1"] as const;
 
 const STUDENT_PROFILES: Record<string, StudentProfile> = {
   "s-1": { grade: "8", city: "Hyderabad", batch: "Evening", enrolledSince: "Jun 2025", attendance: "62%" },
@@ -309,6 +310,15 @@ export default function IndividualStudentBoard({
   const [showAtRiskFilterMenu, setShowAtRiskFilterMenu] = useState(false);
   const [showAdditionalNoteFields, setShowAdditionalNoteFields] = useState(false);
   const [showStudentActions, setShowStudentActions] = useState(false);
+  const [mailPopup, setMailPopup] = useState<{
+    open: boolean;
+    subject: string;
+    body: string;
+  }>({
+    open: false,
+    subject: "",
+    body: "",
+  });
   const [page, setPage] = useState(1);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const [timelineScrollMetrics, setTimelineScrollMetrics] = useState({
@@ -319,7 +329,7 @@ export default function IndividualStudentBoard({
 
   const getScoreOffset = (s: Student) => {
     const numericId = Number(s.id.replace("s-", "")) || 0;
-    return (numericId % 5) - 2; // -2 to +2 keeps samples varied but realistic.
+    return ((numericId * 11) % 9) - 4; // -4 to +4 gives clearer score variation in samples.
   };
   const getStudentActionId = (s: Student) => {
     const numericId = Number(s.id.replace("s-", "")) || 1;
@@ -392,7 +402,7 @@ export default function IndividualStudentBoard({
   const filteredStudents = useMemo(() => {
     const q = query.trim().toLowerCase();
     const sourceStudents = statusFilter === "stable" ? calledStableStudents : atRiskStudents;
-    return sourceStudents.filter((s) => {
+    const matching = sourceStudents.filter((s) => {
       const matchesQuery =
         !q || s.name.toLowerCase().includes(q) || s.parentName.toLowerCase().includes(q) || s.id.toLowerCase().includes(q);
       if (!matchesQuery) return false;
@@ -404,6 +414,11 @@ export default function IndividualStudentBoard({
       }
       return getEngagementScore(s) >= 50;
     });
+    if (statusFilter === "atRisk") {
+      // Lowest engagement first so urgency is obvious.
+      return [...matching].sort((a, b) => getEngagementScore(a) - getEngagementScore(b));
+    }
+    return [...matching].sort((a, b) => getEngagementScore(b) - getEngagementScore(a));
   }, [atRiskStudents, calledStableStudents, query, statusFilter, atRiskSubFilter]);
 
   const atRiskStudentsCount = atRiskStudents.length;
@@ -1043,7 +1058,37 @@ export default function IndividualStudentBoard({
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => onTriggerAction(selectedStudent.cohortId, actionId)}
+                          onClick={() => {
+                            onTriggerAction(selectedStudent.cohortId, actionId);
+                            const actionLabel = ACTION_LABEL_BY_ID[actionId] ?? actionId;
+                            const concernLines = selectedConcernsWithFallback.slice(0, 3).map((c) => `- ${c}`).join("\n");
+                            const recentActivityLines = [
+                              ...selectedActionLogsWithFallback.map((item) => ({
+                                dateTime: item.dateTime,
+                                text: `${item.action} (${item.status})`,
+                              })),
+                              ...selectedConversationsWithFallback.map((item) => ({
+                                dateTime: item.dateTime,
+                                text: `${item.channel}: ${item.summary}`,
+                              })),
+                            ]
+                              .sort(
+                                (a, b) =>
+                                  new Date(b.dateTime.replace(" ", "T")).getTime() -
+                                  new Date(a.dateTime.replace(" ", "T")).getTime(),
+                              )
+                              .slice(0, 3)
+                              .map((item) => `- ${item.dateTime}: ${item.text}`)
+                              .join("\n");
+                            const isFeatureRequest = actionId === "f1";
+                            setMailPopup({
+                              open: true,
+                              subject: `${actionLabel} | ${selectedStudent.name} | ${selectedStudent.id.toUpperCase()}`,
+                              body: isFeatureRequest
+                                ? `Hello Product Team,\n\nRequesting a feature enhancement based on a student-level intervention pattern.\n\nStudent details:\n- Name: ${selectedStudent.name}\n- Parent: ${selectedStudent.parentName}\n- Grade: ${selectedProfile.grade}\n- City: ${selectedProfile.city}\n- Batch: ${selectedProfile.batch}\n- Engagement score: ${getEngagementScore(selectedStudent)}\n\nIssue summary from latest concerns:\n${concernLines}\n\nIssue summary from recent activity history:\n${recentActivityLines}\n\nFeature request intent:\nEnable mentors to act faster on this recurring pattern and improve closure reliability.\n\nRegards,\nMentor Team`
+                                : `Hello,\n\nSharing a student-level update for follow-up.\n\nStudent details:\n- Name: ${selectedStudent.name}\n- Parent: ${selectedStudent.parentName}\n- Grade: ${selectedProfile.grade}\n- City: ${selectedProfile.city}\n- Batch: ${selectedProfile.batch}\n- Engagement score: ${getEngagementScore(selectedStudent)}\n\nIssue summary from latest concerns:\n${concernLines}\n\nIssue summary from recent activity history:\n${recentActivityLines}\n\nSupport requested:\n${actionLabel}\n\nRegards,\nMentor Team`,
+                            });
+                          }}
                           className="rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs text-indigo-700"
                         >
                           {st.triggerStatus === "triggered" ? "Mail again" : "Mail"}
@@ -1122,6 +1167,51 @@ export default function IndividualStudentBoard({
           </div>
         </div>
       </div>
+      {mailPopup.open ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4">
+          <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-4 shadow-lg">
+            <div className="flex items-center justify-between gap-2">
+              <h5 className="text-sm font-semibold text-slate-900">Student action mail draft</h5>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMailPopup((prev) => ({ ...prev, open: false }))}
+                  className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMailPopup((prev) => ({ ...prev, open: false }))}
+                  className="rounded border border-indigo-300 bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700"
+                >
+                  Send mail
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 space-y-2">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">Subject</p>
+                <input
+                  type="text"
+                  value={mailPopup.subject}
+                  onChange={(e) => setMailPopup((prev) => ({ ...prev, subject: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-700"
+                />
+              </div>
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">Body</p>
+                <textarea
+                  value={mailPopup.body}
+                  onChange={(e) => setMailPopup((prev) => ({ ...prev, body: e.target.value }))}
+                  rows={11}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-700"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
