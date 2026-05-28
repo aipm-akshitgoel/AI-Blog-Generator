@@ -380,16 +380,32 @@ export default function IndividualStudentBoard({
     return [...STUDENTS].sort((a, b) => priorityScore(b) - priorityScore(a));
   }, [callStates]);
 
-  const atRiskStudents = useMemo(
-    () =>
-      [...sortedStudents]
-        .filter((s) => {
-          const engagement = getEngagementScore(s);
-          return engagement < 50;
-        })
-        .slice(0, AT_RISK_POOL_SIZE),
-    [sortedStudents],
-  );
+  const atRiskStudents = useMemo(() => {
+    const allAtRisk = [...sortedStudents].filter((s) => getEngagementScore(s) < 50);
+    const pendingAtRisk = allAtRisk
+      .filter((s) => !getDerivedStatus(s).hasCall)
+      .sort((a, b) => getEngagementScore(a) - getEngagementScore(b));
+    const worsenedAtRisk = allAtRisk
+      .filter((s) => getDerivedStatus(s).worsenedAfterCall)
+      .sort((a, b) => getEngagementScore(a) - getEngagementScore(b));
+    const otherAtRisk = allAtRisk
+      .filter((s) => getDerivedStatus(s).hasCall && !getDerivedStatus(s).worsenedAfterCall)
+      .sort((a, b) => getEngagementScore(a) - getEngagementScore(b));
+
+    // Keep the at-risk pool balanced so worsened cases are always visible.
+    const balanced: Student[] = [];
+    const maxLen = Math.max(pendingAtRisk.length, worsenedAtRisk.length);
+    for (let i = 0; i < maxLen; i += 1) {
+      if (pendingAtRisk[i]) balanced.push(pendingAtRisk[i]);
+      if (worsenedAtRisk[i]) balanced.push(worsenedAtRisk[i]);
+      if (balanced.length >= AT_RISK_POOL_SIZE) break;
+    }
+    for (const student of otherAtRisk) {
+      if (balanced.length >= AT_RISK_POOL_SIZE) break;
+      balanced.push(student);
+    }
+    return balanced.slice(0, AT_RISK_POOL_SIZE);
+  }, [sortedStudents]);
   const calledStableStudents = useMemo(
     () =>
       [...sortedStudents].filter((s) => {
