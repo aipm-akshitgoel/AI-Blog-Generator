@@ -149,7 +149,7 @@ export function HelpTip({ text, side = "top", variant = "dark" }: HelpTipProps) 
                     else open();
                 }}
             >
-                ?
+                i
             </button>
             {tooltip}
         </>

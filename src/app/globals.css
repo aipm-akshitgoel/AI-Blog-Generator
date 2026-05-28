@@ -215,6 +215,32 @@ body {
   scrollbar-color: rgba(255, 255, 255, 0.1) rgba(0, 0, 0, 0.2);
 }
 
+/* Visible light-theme scrollbar for Infi timeline */
+.infi-scrollbar {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e2e8f0;
+}
+
+.infi-scrollbar::-webkit-scrollbar {
+  display: block;
+  width: 5px;
+}
+
+.infi-scrollbar::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 9999px;
+}
+
+.infi-scrollbar::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 9999px;
+}
+
+.infi-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
 /* Hide native number spinners — use custom green chevrons in NumberInput */
 .no-number-spinner::-webkit-outer-spin-button,
 .no-number-spinner::-webkit-inner-spin-button {
