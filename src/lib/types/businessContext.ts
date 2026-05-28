@@ -27,6 +27,14 @@ export interface SeoDefaults {
   canonicalBaseUrl?: string;
 }
 
+/** Account-wide rules injected into blog writing and optimization prompts. */
+export interface ContentGuidelines {
+  /** One rule per entry — e.g. "Cite UGC, AICTE, or university official pages for accreditation claims". */
+  dos?: string[];
+  /** One rule per entry — e.g. "Do not name or link to competitor aggregators". */
+  donts?: string[];
+}
+
 export interface BusinessContext {
   id?: string;
   platform?: "blog" | "linkedin";
@@ -36,10 +44,14 @@ export interface BusinessContext {
   location: BusinessContextLocation;
   services: string[];
   targetAudience: string;
+  /** Voice/style (e.g. authoritative, friendly). Distinct from positioning. */
+  brandTone?: string;
   positioning: string;
   internalLinks?: { href: string; anchorText: string; target: "blog" | "service" | "page" }[];
   integrations?: IntegrationCredentials;
   seoDefaults?: SeoDefaults;
+  /** Domain-level Do's and Don'ts for all blog posts on this account. */
+  contentGuidelines?: ContentGuidelines;
   confirmedAt?: string; // ISO timestamp when user confirmed
   createdAt?: string;
   updatedAt?: string;

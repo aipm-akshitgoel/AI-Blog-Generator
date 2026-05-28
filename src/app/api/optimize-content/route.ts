@@ -17,7 +17,10 @@ import {
 import type { FactSource } from "@/lib/types/factSource";
 import {
     buildInterlinkingRulesPrompt,
+    buildTocLockedOptimizePrompt,
     hasInterlinkingRules,
+    isTocFinalized,
+    type ContentConstraints,
     type InterlinkingRules,
 } from "@/lib/types/contentSpec";
 import type { BusinessContext } from "@/lib/types/businessContext";
@@ -29,6 +32,14 @@ import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 import { jsonrepair } from "jsonrepair";
 import { OPTIMIZE_MODEL_TIMEOUT_MS } from "@/lib/optimizeContentClient";
+import { runAiHumanizationLoop } from "@/lib/aiHumanizationLoop";
+import { applyZeroGptDetectionToScores, detectAiContentPercent } from "@/lib/zerogptAiDetection";
+import {
+    measureFinalReadability,
+    runReadabilityImprovementLoop,
+} from "@/lib/readabilityImprovement";
+import { verifyKeywordPlanForPost } from "@/lib/keywordPlanVerification";
+import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
 export const maxDuration = 300;
@@ -163,14 +174,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { blogPost, businessContext, isRefining, interlinkingRules } = body as {
+    const { blogPost, businessContext, isRefining, interlinkingRules, contentConstraints } = body as {
         blogPost?: BlogPost;
         businessContext?: Pick<
             BusinessContext,
-            "internalLinks" | "businessName" | "businessType" | "domain" | "services"
+            | "internalLinks"
+            | "businessName"
+            | "businessType"
+            | "domain"
+            | "services"
+            | "contentGuidelines"
         >;
         isRefining?: boolean;
         interlinkingRules?: InterlinkingRules;
+        contentConstraints?: ContentConstraints | null;
     };
     if (!blogPost) {
         return NextResponse.json({ error: "Missing blogPost" }, { status: 400 });
@@ -199,12 +216,19 @@ export async function POST(req: Request) {
                 ? `Approved internal targets (ONLY these hrefs may be used for on-site links — do not invent paths): ${approvedLinksJson}.`
                 : "No pages were discovered on this domain yet — do NOT add internal site links in contentMarkdown. External authority links are only allowed when interlinking instructions explicitly request them.";
         const internalLinksBlock = customLinkRules
-            ? `- CRITICAL — INTERLINKING: ${customLinkRules}\n- ${approvedListNote} Do not place links in headings. Place them naturally in body paragraphs. Every [anchor](url) counts toward min/max. Write anchor text from the reader's perspective (what they will find or do), e.g. "Compare online MBA programs" — never "Home", "click here", or site-owner phrases like "Related on your site".`
-            : `- CRITICAL — INTERLINKING: Weave ${defaultLinkCount} internal links in contentMarkdown using markdown syntax (e.g. [anchor](/path)). ${approvedListNote} Do not place links in headings. Use reader-facing anchor text (what the reader gets by clicking), not admin labels like "Home" or "Related on your site".`;
+            ? `- CRITICAL — INTERLINKING: ${customLinkRules}\n- ${approvedListNote} Do not place links in headings. Place them naturally in body paragraphs. Every [anchor](url) counts toward min/max. Write anchor text from the reader's perspective (what they will find or do), e.g. "Compare online MBA programs" — never "Home", "click here", or site-owner phrases like "Related on your site". Generic phrases like "degree programs" or "online learning" must link to the site homepage (/) or a broad hub — never to a specific university or specialization URL unless that institution and program are named in the same paragraph.`
+            : `- CRITICAL — INTERLINKING: Weave ${defaultLinkCount} internal links in contentMarkdown using markdown syntax (e.g. [anchor](/path)). ${approvedListNote} Do not place links in headings. Use reader-facing anchor text (what the reader gets by clicking), not admin labels like "Home" or "Related on your site". Generic phrases like "degree programs" must use homepage (/) or a broad hub, not a deep program page unless that program is named in the paragraph.`;
 
+        const guidelinesBlock = buildContentGuidelinesPrompt(businessContext?.contentGuidelines);
+        const tocLocked = isTocFinalized(contentConstraints);
+        const tocBlock = tocLocked && contentConstraints
+            ? `\n${buildTocLockedOptimizePrompt(contentConstraints)}\n`
+            : "";
+        const flowBlock = tocLocked
+            ? "- Improve flow and readability within each existing section (paragraphs only). Do NOT change ## or ### heading text, order, or count."
+            : "- Improve flow and readability (clear headings, concise paragraphs).\n- Ensure balanced sections (no overly long or short parts).";
         const systemPrompt = `You are an expert content optimizer. Take the provided blog post JSON and:
-- Improve flow and readability (use clear headings, concise paragraphs).
-- Ensure balanced sections (no overly long or short parts).
+${flowBlock}
 ${internalLinksBlock}
 - ZERO-GPT HUMANIZE: Ensure the text reads as 100% human-written to pass plagiarism/AI checkers. You must strictly ABANDON all em-dashes (—). DO NOT use fluff words like "elevate", "delve", "moreover", or "in today's landscape". Use varied sentence length.
 - Provide seoScores: readability (0-100), grammar (0-100), aiContentPercent (0-100, estimated share of text that reads AI-generated — lower is better), originality (0-100, inverse of plagiarism risk). actionableInsights: 2-3 tips when any score is below 90, else []. Do NOT include overall, contentStructure, or targetKeywords.
@@ -218,7 +242,7 @@ Do NOT include any explanatory text.
 
 ${NO_SOURCES_IN_CONTENT_RULE}
 Editor-only factSources metadata is allowed; internal [anchor](/path) links in contentMarkdown are required when internal linking rules apply.
-`;
+${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
 
         const prompt = isRefining
             ? `Please strictly fix any previously identified issues and further optimize the following content. BlogPost JSON:\n${JSON.stringify(blogPost, null, 2)}`
@@ -372,6 +396,127 @@ Editor-only factSources metadata is allowed; internal [anchor](/path) links in c
             optimized.seoScores,
             optimized.plagiarismReport.overallSimilarity,
         );
+
+        try {
+            // 1–4: Readability improvement (keep lowest grade across up to 3 attempts)
+            const readability = await runReadabilityImprovementLoop(
+                azure,
+                blogPost,
+                optimized.contentMarkdown,
+            );
+            optimized.contentMarkdown = readability.contentMarkdown;
+
+            // AI humanize until ZeroGPT AI < 20% (max 3 humanize passes)
+            const humanized = await runAiHumanizationLoop(optimized.contentMarkdown);
+            optimized.contentMarkdown = humanized.contentMarkdown;
+
+            // 5: Final readability after humanization (dashboard score)
+            const finalReadability = await measureFinalReadability(optimized.contentMarkdown);
+
+            const insights = [...optimized.seoScores.actionableInsights];
+
+            if (finalReadability.readabilityGrade) {
+                optimized.seoScores = {
+                    ...optimized.seoScores,
+                    readability: finalReadability.readabilityPercent,
+                    readabilityGrade: finalReadability.readabilityGrade,
+                };
+                if (!finalReadability.readabilityGrade.targetMet) {
+                    insights.push(
+                        `Readability is ${finalReadability.readabilityGrade.gradeLabel} after humanization. Target is 8th grade or below.`,
+                    );
+                }
+            } else if (readability.readabilityGrade) {
+                optimized.seoScores = {
+                    ...optimized.seoScores,
+                    readability: readability.readabilityPercent,
+                    readabilityGrade: readability.readabilityGrade,
+                };
+            } else if (readability.skippedReason || finalReadability.skippedReason) {
+                console.warn(
+                    "[optimize-content]",
+                    finalReadability.skippedReason ?? readability.skippedReason,
+                );
+            }
+
+            // Always re-score final markdown with ZeroGPT (matches zerogpt.com on published body).
+            const finalAiDetection = await detectAiContentPercent(optimized.contentMarkdown);
+            if (finalAiDetection) {
+                optimized.seoScores = applyZeroGptDetectionToScores(
+                    optimized.seoScores,
+                    finalAiDetection,
+                    humanized.aiDetection?.attempts ?? 0,
+                );
+                if (!finalAiDetection.targetMet) {
+                    insights.push(
+                        `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT). Target is below ${20}%.`,
+                    );
+                }
+            } else if (humanized.aiDetection) {
+                optimized.seoScores = applyZeroGptDetectionToScores(
+                    optimized.seoScores,
+                    {
+                        aiPercent: humanized.aiDetection.aiPercent,
+                        humanPercent: humanized.aiDetection.humanPercent,
+                        targetMet: humanized.aiDetection.targetMet,
+                        confidence: humanized.aiDetection.confidence,
+                    },
+                    humanized.aiDetection.attempts,
+                );
+            } else {
+                console.warn(
+                    "[optimize-content]",
+                    humanized.skippedReason ?? "ZeroGPT detection unavailable",
+                );
+                insights.push(
+                    "ZeroGPT could not verify AI % — the bar may show an optimizer estimate. Use Refresh in the editor or check ZEROGPT_API_KEY.",
+                );
+            }
+
+            const postForKeywords: BlogPost = {
+                ...blogPost,
+                title: optimized.title,
+                h1Title: blogPost.h1Title || optimized.title,
+                metaDescription: optimized.metaDescription,
+                contentMarkdown: optimized.contentMarkdown,
+                keywordPlan: blogPost.keywordPlan,
+            };
+            const keywordVerification = await verifyKeywordPlanForPost(
+                postForKeywords,
+                optimized.contentMarkdown,
+                {
+                    constraints: contentConstraints ?? null,
+                    strategyPrimary: contentConstraints?.domainPrimaryKeyword?.trim(),
+                },
+            );
+            if (keywordVerification) {
+                optimized.seoScores = {
+                    ...optimized.seoScores,
+                    keywordDensity: keywordVerification,
+                    keywordPlan: keywordVerification.plan,
+                };
+                if (keywordVerification.skippedReason) {
+                    insights.push(keywordVerification.skippedReason);
+                }
+                for (const row of keywordVerification.rows) {
+                    const delta = row.actualDensityPercent - row.targetDensityPercent;
+                    if (Math.abs(delta) > 0.4) {
+                        insights.push(
+                            `${row.tier} keyword "${row.phrase}": ${row.actualDensityPercent}% actual vs ${row.targetDensityPercent}% target (SEO Review Tools).`,
+                        );
+                    }
+                }
+            }
+
+            optimized.seoScores = {
+                ...optimized.seoScores,
+                actionableInsights: insights.slice(0, 5),
+            };
+
+            optimized.contentMarkdown = dedupeFaqsInOptimized(optimized).contentMarkdown;
+        } catch (postErr) {
+            console.warn("[optimize-content] Post-optimize pipeline failed:", postErr);
+        }
 
         return NextResponse.json({ optimized }, { status: 200 });
     } catch (err) {

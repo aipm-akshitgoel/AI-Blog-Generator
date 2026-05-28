@@ -20,6 +20,11 @@ import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConf
 import { NO_SOURCES_IN_CONTENT_RULE } from "@/lib/dataSources";
 import { normalizeFactSourcesFromModel } from "@/lib/factSourcesNormalize";
 import type { FactSource } from "@/lib/types/factSource";
+import {
+    inferKeywordPlanFromBrief,
+    normalizeKeywordPlanFromModel,
+} from "@/lib/keywordPlanVerification";
+import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 
 export const maxDuration = 180;
 
@@ -28,14 +33,16 @@ const MAX_BRIEF_CHARS = 24_000;
 function buildSystemPrompt(businessContext: BusinessContext, targetWords?: number): string {
     const industry = businessContext.businessType || "the client's industry";
     const audience = businessContext.targetAudience || "their target audience";
+    const guidelinesBlock = buildContentGuidelinesPrompt(businessContext.contentGuidelines);
     return `
 You are an elite SEO copywriter. Write for ${businessContext.businessName || "the business"} (${industry}), targeting ${audience}.
-Match the positioning and tone in BusinessContext exactly.
+Match brandTone (voice) and positioning (market position) in BusinessContext exactly.
 
 Generate a complete, publication-ready blog post from:
-1. BusinessContext (name, location, audience, positioning, services)
+1. BusinessContext (name, location, audience, brandTone, positioning, services)
 2. TopicOption (title and description)
-3. Optional TopicBrief — author notes, reference files, and optional ContentConstraints (word count, H1, H2s, keyword density). When constraints are provided, they override default structure choices and MUST be met in the output.
+3. Optional TopicBrief — author notes, reference files, and optional ContentConstraints (word count, H1, H2s, keyword hints). When constraints are provided, they override default structure choices and MUST be met in the output.
+4. **keywordPlan** — YOU finalize the primary, secondary, and tertiary keywords for this article AND a realistic target density % for each (based on how prominently each phrase should appear in its scope). This plan is measured after publish via SEO Review Tools.
 
 ${targetWords && targetWords >= 1200 ? `CRITICAL — LENGTH: contentMarkdown body (before FAQs) MUST be at least ${Math.round(targetWords * 0.95)} words. Target ${targetWords} words. Under-length drafts fail the task — expand every H2 with examples, criteria, and specifics until the count is met.\n` : ""}REQUIREMENTS:
 1. **Relevance**: Connect to location and audience when provided in BusinessContext.
@@ -43,8 +50,11 @@ ${targetWords && targetWords >= 1200 ? `CRITICAL — LENGTH: contentMarkdown bod
 3. **FAQs**: Exactly 3 FAQs in the \`faqs\` JSON array only — do NOT add a ## FAQs (or similar) section inside \`contentMarkdown\`; the app renders FAQs in a dedicated block.
 4. **Human voice**: No em-dashes (—). Avoid "delve into", "elevate", "in today's landscape", "moreover", "in conclusion".
 5. **Fact density**: Include at least 10 specific, verifiable claims (fees or fee ranges, eligibility rules, durations, accreditation, stats, exam requirements, etc.). Pull facts from the Reference Catalog and Author Brief — do not invent statistics.
+6. **keywordPlan**: After writing, set realistic targetDensityPercent values for primary / secondary / tertiary keywords you used (verified with SEO Review Tools after optimize).
 
-OUTPUT: ONLY valid JSON with keys: title, h1Title, h2Suggestions (array 3-6 strings), slug, metaDescription, contentMarkdown, faqs (array of {question, answer}), factSources (array).
+OUTPUT: ONLY valid JSON with keys: title, h1Title, h2Suggestions (array 3-6 strings), slug, metaDescription, contentMarkdown, faqs (array of {question, answer}), factSources (array), keywordPlan (object).
+- keywordPlan: { "primary": { "phrase": "...", "targetDensityPercent": 1.5, "tier": "primary" }, "secondary": [{ "phrase": "...", "targetDensityPercent": 1.0, "tier": "secondary", "sectionTitle": "H2 heading if paired" }], "tertiary": [{ "phrase": "...", "targetDensityPercent": 0.8, "tier": "tertiary", "sectionTitle": "H3 heading if paired" }] }
+- Choose targetDensityPercent deliberately (typical ranges: primary 1.0–2.0, secondary 0.8–1.5, tertiary 0.5–1.2). Use secondary/tertiary only when they fit the article; arrays may be empty.
 - factSources: One entry per factual claim in contentMarkdown (aim for 10–15).
   - excerpt: EXACT substring from contentMarkdown (phrase or sentence containing the fact).
   - source: Publisher or site name from the Reference Catalog (e.g. "UGC India", "NMIMS", "BusinessName") — NEVER use "Approved topic", "Reference", or "Program data".
@@ -55,7 +65,7 @@ OUTPUT: ONLY valid JSON with keys: title, h1Title, h2Suggestions (array 3-6 stri
 
 ${NO_SOURCES_IN_CONTENT_RULE}
 Editor-only factSources metadata is required; do not cite sources inside contentMarkdown body text.
-`;
+${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}`;
 }
 
 function extractFirstJsonObject(input: string): string | null {
@@ -158,6 +168,13 @@ function normalizePostFromParsed(
         postData.h2Suggestions = topic.h2Titles.map((t) => t.trim()).filter(Boolean);
     } else if (!postData.h2Suggestions?.length) {
         postData.h2Suggestions = extractH2Suggestions(postData.contentMarkdown);
+    }
+
+    const plan =
+        normalizeKeywordPlanFromModel((parsed as { keywordPlan?: unknown }).keywordPlan) ??
+        inferKeywordPlanFromBrief(postData, constraints);
+    if (plan) {
+        postData.keywordPlan = plan;
     }
 
     return postData;

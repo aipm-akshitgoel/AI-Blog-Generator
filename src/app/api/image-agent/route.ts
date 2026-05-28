@@ -16,10 +16,18 @@ import {
     generateGeminiImageDataUrl,
     getGeminiApiKey,
 } from "@/lib/geminiImageGen";
+import { ensureBlogImageDataUrl } from "@/lib/blogImageCompress";
+
+/** Enforce Supabase bucket size limit on generated data URLs; drop oversized blobs. */
+async function finalizeGeneratedImageUrl(url: string | null): Promise<string | null> {
+    if (!url?.trim()) return null;
+    if (!url.startsWith("data:")) return url;
+    return ensureBlogImageDataUrl(url);
+}
 
 function azureImageToDataUrl(image: { b64_json?: string; url?: string }): string | null {
     const b64 = typeof image?.b64_json === "string" ? image.b64_json : "";
-    if (b64) return `data:image/png;base64,${b64}`;
+    if (b64) return `data:image/jpeg;base64,${b64}`;
     const url = typeof image?.url === "string" ? image.url : "";
     return url || null;
 }
@@ -53,7 +61,8 @@ async function generateAzureImageUrl(
             prompt,
             size: square ? "1024x1024" : "1536x1024",
         } as Parameters<typeof client.images.generate>[0]);
-        return azureImageToDataUrl((resp as { data?: { b64_json?: string; url?: string }[] })?.data?.[0] ?? {});
+        const raw = azureImageToDataUrl((resp as { data?: { b64_json?: string; url?: string }[] })?.data?.[0] ?? {});
+        return finalizeGeneratedImageUrl(raw);
     } catch (err) {
         console.error("[image-agent] Azure image generation failed", err);
         return null;
@@ -183,6 +192,9 @@ export async function POST(req: Request) {
         if (!ctaUrl) ctaUrl = buildPollinationsUrl(searchQuery, "square");
         if (!bannerUrl) bannerUrl = buildPicsumFallbackUrl(searchQuery, "banner");
         if (!ctaUrl) ctaUrl = buildPicsumFallbackUrl(searchQuery, "square");
+
+        bannerUrl = (await finalizeGeneratedImageUrl(bannerUrl)) ?? buildPollinationsUrl(searchQuery, "banner");
+        ctaUrl = (await finalizeGeneratedImageUrl(ctaUrl)) ?? buildPollinationsUrl(searchQuery, "square");
 
         const imageMetadata: ImageMetadata = {
             bannerImageUrl: bannerUrl,

@@ -33,6 +33,7 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
         country: "",
         services: "",
         targetAudience: "",
+        brandTone: "",
         positioning: "",
         primaryKeyword: "",
         searchIntent: "informational" as "informational" | "navigational" | "commercial" | "transactional",
@@ -86,6 +87,7 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
             country: context.location?.country ?? "",
             services: context.services?.join(", ") ?? "",
             targetAudience: context.targetAudience ?? "",
+            brandTone: context.brandTone ?? "",
             positioning: context.positioning ?? "",
             primaryKeyword: strategy?.keywordStrategy?.primaryKeyword ?? "",
             searchIntent: strategy?.keywordStrategy?.searchIntent ?? "informational",
@@ -108,6 +110,7 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                 },
                 services: editForm.services.split(",").map((s: string) => s.trim()).filter(Boolean),
                 targetAudience: editForm.targetAudience.trim(),
+                brandTone: editForm.brandTone.trim() || undefined,
                 positioning: editForm.positioning.trim(),
             };
 
@@ -319,7 +322,13 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                                             className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 outline-none transition-all resize-none" required />
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1.5">Brand Positioning</label>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1.5">Brand tone</label>
+                                        <textarea value={editForm.brandTone} onChange={e => setEditForm(f => ({ ...f, brandTone: e.target.value }))} rows={2}
+                                            placeholder="e.g. Authoritative, data-driven, not salesy"
+                                            className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 outline-none transition-all resize-none" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-1.5">Positioning</label>
                                         <textarea value={editForm.positioning} onChange={e => setEditForm(f => ({ ...f, positioning: e.target.value }))} rows={2}
                                             className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 outline-none transition-all resize-none" required />
                                     </div>
@@ -407,7 +416,10 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                                                 {context.businessType}
                                             </span>
                                         </div>
-                                        <p className="text-xl text-neutral-300 font-medium leading-relaxed max-w-3xl opacity-90">{context.positioning}</p>
+                                        {context.brandTone?.trim() ? (
+                                            <p className="text-lg text-emerald-400/90 font-semibold leading-relaxed max-w-3xl">{context.brandTone}</p>
+                                        ) : null}
+                                        <p className={`text-xl text-neutral-300 font-medium leading-relaxed max-w-3xl opacity-90 ${context.brandTone?.trim() ? "mt-2" : ""}`}>{context.positioning}</p>
                                     </div>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-10 border-y border-neutral-800/50 py-8">
@@ -458,7 +470,7 @@ export function StrategyManagement({ mockContext, mockStrategy }: StrategyManage
                                             </div>
                                             <div className="space-y-4">
                                                 <h4 className="text-[10px] uppercase font-black text-emerald-500 tracking-[0.2em] opacity-70">
-                                                    Content directory (H1 + H2)
+                                                    Content directory
                                                     {getDirectoryFromSession(strategy).length > 0 && (
                                                         <span className="text-neutral-600 font-bold normal-case tracking-normal ml-2">
                                                             {getDirectoryFromSession(strategy).filter((e) => e.completed).length}/

@@ -7,8 +7,10 @@ import { IntegrationsPanel } from "@/components/IntegrationsPanel";
 import { BlogHubSettings } from "@/components/BlogHubSettings";
 import { StrategyManagement } from "@/components/StrategyManagement";
 import { DomainSetupPanel } from "@/components/DomainSetupPanel";
+import { ContentGuidelinesPanel } from "@/components/ContentGuidelinesPanel";
 import { PaymentsPanel } from "@/components/PaymentsPanel";
 import { SupportPanel } from "@/components/SupportPanel";
+import { DeleteAccountPanel } from "@/components/DeleteAccountPanel";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { listBusinessContexts } from "@/lib/businessContextDb";
@@ -167,11 +169,13 @@ export default async function DashboardPage({ searchParams }: { searchParams?: P
                 {tab === "settings" && (
                     <div className="space-y-8 animate-in fade-in duration-500">
                         <StrategyManagement />
+                        <ContentGuidelinesPanel businessContext={businessContext} />
                         <DomainSetupPanel businessContext={businessContext} />
                         <BlogHubSettings />
                         <IntegrationsPanel businessContext={businessContext} />
                         <PaymentsPanel />
                         <SupportPanel />
+                        <DeleteAccountPanel />
                     </div>
                 )}
             </div>

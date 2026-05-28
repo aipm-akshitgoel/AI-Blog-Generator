@@ -2,6 +2,8 @@
 
 export const CLERK_SIGN_IN_URL = "/sign-in";
 export const CLERK_SIGN_UP_URL = "/sign-up";
+/** After account deletion — home (not dashboard) so users see the marketing page and can sign up again. */
+export const CLERK_AFTER_ACCOUNT_DELETE_URL = "/?deleted=1";
 /** OAuth returns here (on your domain), then Clerk sends users to the dashboard. */
 export const CLERK_SIGN_IN_SSO_CALLBACK = `${CLERK_SIGN_IN_URL}/sso-callback`;
 export const CLERK_SIGN_UP_SSO_CALLBACK = `${CLERK_SIGN_UP_URL}/sso-callback`;

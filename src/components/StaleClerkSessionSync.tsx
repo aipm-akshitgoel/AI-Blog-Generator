@@ -3,7 +3,11 @@
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { CLERK_SIGN_IN_URL, isClerkOAuthCallbackPath } from "@/lib/clerkAuth";
+import {
+    CLERK_AFTER_ACCOUNT_DELETE_URL,
+    CLERK_SIGN_IN_URL,
+    isClerkOAuthCallbackPath,
+} from "@/lib/clerkAuth";
 
 async function serverSessionReady(maxAttempts = 6, delayMs = 350): Promise<boolean> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -46,7 +50,12 @@ export function StaleClerkSessionSync() {
       try {
         const authenticated = await serverSessionReady();
         if (authenticated) return;
-        await signOut({ redirectUrl: CLERK_SIGN_IN_URL });
+        const afterDelete =
+            typeof window !== "undefined" &&
+            new URLSearchParams(window.location.search).get("deleted") === "1";
+        await signOut({
+            redirectUrl: afterDelete ? CLERK_AFTER_ACCOUNT_DELETE_URL : CLERK_SIGN_IN_URL,
+        });
       } catch {
         isChecking.current = false;
       }

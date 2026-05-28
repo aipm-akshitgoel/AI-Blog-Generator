@@ -35,3 +35,4 @@ test-*.js
 scripts/*
 !scripts/generate-prod-push-otp.mjs
 !scripts/reset-prod-users.mjs
+.env*

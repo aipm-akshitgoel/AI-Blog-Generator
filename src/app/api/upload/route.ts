@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
+import { BLOG_IMAGE_MAX_BYTES, formatBlogImageSizeError } from "@/lib/blogImageLimits";
+import { ensureBlogImageBuffer } from "@/lib/blogImageCompress";
 
 export async function POST(req: Request) {
     try {
@@ -12,7 +14,13 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
         }
 
-        const buffer = Buffer.from(await file.arrayBuffer());
+        if (file.size > BLOG_IMAGE_MAX_BYTES) {
+            return NextResponse.json({ error: formatBlogImageSizeError("Upload") }, { status: 400 });
+        }
+
+        const rawBuffer = Buffer.from(await file.arrayBuffer());
+        const contentType = file.type || "image/png";
+        const { buffer, ext } = await ensureBlogImageBuffer(rawBuffer, contentType);
 
         // Ensure the public/uploads directory exists
         const uploadDir = path.join(process.cwd(), "public", "uploads");
@@ -22,7 +30,6 @@ export async function POST(req: Request) {
             // Ignore if directory already exists
         }
 
-        const ext = file.name.split('.').pop() || 'png';
         const filename = `${crypto.randomBytes(8).toString("hex")}.${ext}`;
         const filepath = path.join(uploadDir, filename);
 

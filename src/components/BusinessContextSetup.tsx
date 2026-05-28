@@ -3,8 +3,16 @@
 import { CtaButton } from "@/components/ui/CtaButton";
 import { isValidPublicDomain, normalizeDomain } from "@/lib/strategyInputs";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type BusinessContext as BusinessContextType } from "@/lib/types/businessContext";
+import {
+  buildContentGuidelinesFromText,
+  guidelinesToText,
+} from "@/lib/contentGuidelines";
+import {
+  persistLocalContentGuidelines,
+  readLocalContentGuidelines,
+} from "@/lib/businessSetupStorage";
 
 export function BusinessContextSetup({
   onComplete,
@@ -32,6 +40,8 @@ export function BusinessContextSetup({
   const [editSchemaType, setEditSchemaType] = useState<"Article" | "BlogPosting">("BlogPosting");
   const [editCanonicalBaseUrl, setEditCanonicalBaseUrl] = useState("");
   const [editIncludeFaqSchema, setEditIncludeFaqSchema] = useState(true);
+  const [editDosText, setEditDosText] = useState("");
+  const [editDontsText, setEditDontsText] = useState("");
 
   const createEmptyDraftContext = (): BusinessContextType => ({
     businessName: "",
@@ -40,11 +50,20 @@ export function BusinessContextSetup({
     location: { city: "", region: "", country: "" },
     services: [],
     targetAudience: "",
+    brandTone: "",
     positioning: "",
     platform,
   });
 
   const domainReady = isValidPublicDomain(url);
+
+  useEffect(() => {
+    if (step !== "verify") return;
+    const local = readLocalContentGuidelines();
+    if (!local) return;
+    if (!editDosText.trim()) setEditDosText(guidelinesToText(local.dos));
+    if (!editDontsText.trim()) setEditDontsText(guidelinesToText(local.donts));
+  }, [step, editDosText, editDontsText]);
 
   const handleScrape = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,6 +110,8 @@ export function BusinessContextSetup({
       setEditSchemaType(contextData.seoDefaults?.defaultSchemaType || "BlogPosting");
       setEditCanonicalBaseUrl(contextData.seoDefaults?.canonicalBaseUrl || "");
       setEditIncludeFaqSchema(contextData.seoDefaults?.includeFaqSchemaByDefault ?? true);
+      setEditDosText(guidelinesToText(contextData.contentGuidelines?.dos));
+      setEditDontsText(guidelinesToText(contextData.contentGuidelines?.donts));
       setStep("verify");
 
     } catch (err: any) {
@@ -110,6 +131,7 @@ export function BusinessContextSetup({
       businessName: contextToSave.businessName?.trim() || "My Business",
       businessType: contextToSave.businessType?.trim() || "General Business",
       targetAudience: contextToSave.targetAudience?.trim() || "Prospective customers searching online",
+      brandTone: contextToSave.brandTone?.trim() || "Professional and helpful",
       positioning: contextToSave.positioning?.trim() || "Helpful and trustworthy",
       location: {
         city: contextToSave.location?.city?.trim() || "",
@@ -123,6 +145,7 @@ export function BusinessContextSetup({
         includeFaqSchemaByDefault: editIncludeFaqSchema,
         canonicalBaseUrl: editCanonicalBaseUrl.trim() || "",
       },
+      contentGuidelines: buildContentGuidelinesFromText(editDosText, editDontsText),
     };
 
     const finishSave = (savedContext: BusinessContextType) => {
@@ -147,7 +170,9 @@ export function BusinessContextSetup({
         ...data,
         domain: (data.domain as string | undefined)?.trim() || finalDeps.domain,
         seoDefaults: finalDeps.seoDefaults,
+        contentGuidelines: data.contentGuidelines ?? finalDeps.contentGuidelines,
       };
+      persistLocalContentGuidelines(hydratedSaved.contentGuidelines);
       finishSave(hydratedSaved);
       return true;
     } catch (e: any) {
@@ -207,6 +232,8 @@ export function BusinessContextSetup({
     setEditSchemaType("BlogPosting");
     setEditCanonicalBaseUrl(canonical);
     setEditIncludeFaqSchema(true);
+    setEditDosText("");
+    setEditDontsText("");
 
     const ok = await persistContext(draft, true);
     if (!ok) {
@@ -339,7 +366,7 @@ export function BusinessContextSetup({
           </div>
           <h2 className="text-xl font-black text-white mb-2 uppercase tracking-tight">AI Analyst at Work</h2>
           <p className="text-neutral-400 text-sm max-w-xs mx-auto animate-pulse">
-            Reading your website copy to extract brand positioning, services, and target demographic...
+            Reading your website copy to extract brand tone, positioning, services, and target demographic...
           </p>
         </div>
       )}
@@ -367,8 +394,8 @@ export function BusinessContextSetup({
 
           {error && <p className="mb-6 text-sm text-red-400 font-medium bg-red-900/20 px-4 py-3 rounded-xl border border-red-900/50">{error}</p>}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="space-y-4">
+          <div className="space-y-4 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">Business Name</label>
                 <input
@@ -378,88 +405,128 @@ export function BusinessContextSetup({
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Type</label>
-                  <input
-                    type="text"
-                    value={draftContext.businessType || ""}
-                    onChange={e => setDraftContext({ ...draftContext, businessType: e.target.value })}
-                    placeholder="e.g. Salon, Agency"
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">
-                    Website domain <span className="text-neutral-600">(required)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={draftContext.domain || ""}
-                    onChange={e => setDraftContext({ ...draftContext, domain: e.target.value })}
-                    placeholder="https://www.yoursite.com"
-                    required
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
               <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Location</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="City"
-                    value={draftContext.location?.city || ""}
-                    onChange={e => setDraftContext({ ...draftContext, location: { ...draftContext.location, city: e.target.value, country: draftContext.location?.country || "" } })}
-                    className="w-1/2 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Country"
-                    value={draftContext.location?.country || ""}
-                    onChange={e => setDraftContext({ ...draftContext, location: { ...draftContext.location, country: e.target.value, city: draftContext.location?.city || "" } })}
-                    className="w-1/2 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+                <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">
+                  Website domain <span className="text-neutral-600">(required)</span>
+                </label>
+                <input
+                  type="text"
+                  value={draftContext.domain || ""}
+                  onChange={e => setDraftContext({ ...draftContext, domain: e.target.value })}
+                  placeholder="https://www.yoursite.com"
+                  required
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
+                />
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">Services</label>
-                <textarea
-                  value={editServicesStr}
-                  onChange={e => setEditServicesStr(e.target.value)}
-                  placeholder="e.g. online MBA programs, admissions consulting"
-                  rows={2}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
+                <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Type</label>
+                <input
+                  type="text"
+                  value={draftContext.businessType || ""}
+                  onChange={e => setDraftContext({ ...draftContext, businessType: e.target.value })}
+                  placeholder="e.g. Online education"
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
                 />
-                <p className="text-[10px] mt-1 text-neutral-500 uppercase">Separate with commas</p>
               </div>
+              <div>
+                <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">City</label>
+                <input
+                  type="text"
+                  placeholder="City"
+                  value={draftContext.location?.city || ""}
+                  onChange={e => setDraftContext({ ...draftContext, location: { ...draftContext.location, city: e.target.value, country: draftContext.location?.country || "" } })}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Country</label>
+                <input
+                  type="text"
+                  placeholder="Country"
+                  value={draftContext.location?.country || ""}
+                  onChange={e => setDraftContext({ ...draftContext, location: { ...draftContext.location, country: e.target.value, city: draftContext.location?.city || "" } })}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">Target Audience</label>
-                <textarea
-                  value={draftContext.targetAudience || ""}
-                  onChange={e => setDraftContext({ ...draftContext, targetAudience: e.target.value })}
-                  placeholder="e.g. Modern professionals looking for luxury"
-                  rows={2}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">Services</label>
+              <textarea
+                value={editServicesStr}
+                onChange={e => setEditServicesStr(e.target.value)}
+                placeholder="e.g. online MBA programs, admissions consulting"
+                rows={2}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
+              />
+              <p className="text-[10px] mt-1 text-neutral-500 uppercase">Separate with commas</p>
+            </div>
 
+            <div>
+              <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">Target Audience</label>
+              <textarea
+                value={draftContext.targetAudience || ""}
+                onChange={e => setDraftContext({ ...draftContext, targetAudience: e.target.value })}
+                placeholder="e.g. Modern professionals looking for luxury"
+                rows={2}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
+              />
+            </div>
+
+            <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-4 space-y-4">
               <div>
-                <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">Brand Tone & Positioning</label>
+                <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 mb-1">
+                  Content guidelines — Do&apos;s &amp; Don&apos;ts
+                </h3>
+                <p className="text-[11px] text-neutral-500">
+                  One rule per line. Used in every blog draft and optimization (e.g. no competitors, cite UGC only).
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs font-black uppercase tracking-widest text-emerald-500/90 mb-1.5">Do&apos;s</label>
                 <textarea
-                  value={draftContext.positioning || ""}
-                  onChange={e => setDraftContext({ ...draftContext, positioning: e.target.value })}
-                  placeholder="e.g. High-end, exclusive, slightly casual"
-                  rows={2}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
+                  value={editDosText}
+                  onChange={(e) => setEditDosText(e.target.value)}
+                  rows={3}
+                  placeholder={"One rule per line\ne.g. Cite UGC or official university pages for accreditation"}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-y min-h-[72px] leading-relaxed"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-black uppercase tracking-widest text-red-400/80 mb-1.5">Don&apos;ts</label>
+                <textarea
+                  value={editDontsText}
+                  onChange={(e) => setEditDontsText(e.target.value)}
+                  rows={3}
+                  placeholder={"One rule per line\ne.g. Do not name or link to competitor sites"}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-y min-h-[72px] leading-relaxed"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">Brand tone</label>
+              <textarea
+                value={draftContext.brandTone || ""}
+                onChange={e => setDraftContext({ ...draftContext, brandTone: e.target.value })}
+                placeholder="e.g. Authoritative, data-driven, not salesy"
+                rows={2}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-black uppercase tracking-widest text-emerald-500 mb-1.5">Positioning</label>
+              <textarea
+                value={draftContext.positioning || ""}
+                onChange={e => setDraftContext({ ...draftContext, positioning: e.target.value })}
+                placeholder="e.g. Career-focused online degree aggregator with accredited programs"
+                rows={2}
+                className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 resize-none"
+              />
             </div>
           </div>
 

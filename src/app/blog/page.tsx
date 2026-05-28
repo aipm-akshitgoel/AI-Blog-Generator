@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import { getAllBlogs } from '@/lib/blogDb';
 import BlogHubClient from './BlogHubClient';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  title: "Blog",
+  robots: { index: false, follow: true },
+};
 
 export default async function BlogIndexPage({ searchParams }: { searchParams: Promise<{ category?: string }> }) {
     const blogs = await getAllBlogs();

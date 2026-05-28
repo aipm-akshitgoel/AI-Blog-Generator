@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { HelpTip } from "./HelpTip";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BusinessContext } from "@/lib/types/businessContext";
@@ -18,38 +18,48 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
     const [error, setError] = useState<string | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [editedSchema, setEditedSchema] = useState<string>("");
+    const [customPrompt, setCustomPrompt] = useState("");
+    const [referencePostTitle, setReferencePostTitle] = useState<string | null>(null);
+
+    const fetchSchema = useCallback(async (promptText?: string) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await fetch("/api/schema-gen", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    optimizedContent,
+                    businessContext,
+                    meta,
+                    seoDefaults: businessContext.seoDefaults,
+                    customPrompt: promptText ?? customPrompt,
+                }),
+            });
+
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.error || "Failed to generate Schema JSON-LD.");
+            }
+
+            const data = await res.json();
+            setSchemaData(data.schemaData);
+            setReferencePostTitle(data.usedReferenceFrom ?? null);
+            try {
+                setEditedSchema(JSON.stringify(JSON.parse(data.schemaData.jsonLd), null, 2));
+            } catch {
+                setEditedSchema(data.schemaData.jsonLd);
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "An error occurred.");
+        } finally {
+            setLoading(false);
+        }
+    }, [optimizedContent, businessContext, meta, customPrompt]);
 
     useEffect(() => {
-        const fetchSchema = async () => {
-            setLoading(true);
-            try {
-                const res = await fetch("/api/schema-gen", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ optimizedContent, businessContext, meta, seoDefaults: businessContext.seoDefaults }),
-                });
-
-                if (!res.ok) {
-                    const errData = await res.json();
-                    throw new Error(errData.error || "Failed to generate Schema JSON-LD.");
-                }
-
-                const data = await res.json();
-                setSchemaData(data.schemaData);
-                try {
-                    setEditedSchema(JSON.stringify(JSON.parse(data.schemaData.jsonLd), null, 2));
-                } catch {
-                    setEditedSchema(data.schemaData.jsonLd);
-                }
-            } catch (err) {
-                setError(err instanceof Error ? err.message : "An error occurred.");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchSchema();
-    }, [optimizedContent, businessContext, meta]);
+        void fetchSchema("");
+    }, [optimizedContent, businessContext, meta]); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (loading) {
         return (
@@ -61,7 +71,7 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
                     </svg>
                 </div>
                 <h3 className="text-lg font-medium text-neutral-200">Structuring Data for Search Engines...</h3>
-                <p className="mt-2 text-sm text-neutral-500">Generating JSON-LD schema (Article, LocalBusiness, FAQ).</p>
+                <p className="mt-2 text-sm text-neutral-500">Page-level JSON-LD (BlogPosting, FAQ). Matching your last published post if available.</p>
             </div>
         );
     }
@@ -76,9 +86,13 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
                 </div>
                 <h3 className="text-lg font-medium text-neutral-100 mb-2">Generation Failed</h3>
                 <p className="text-red-400 text-sm mb-4">{error}</p>
-                <div className="inline-block rounded-lg bg-neutral-900 border border-neutral-800 p-3">
-                    <p className="text-neutral-300 text-sm font-medium">✨ Nudge: If this is an API rate limit issue, please wait 1 minute and try again.</p>
-                </div>
+                <button
+                    type="button"
+                    onClick={() => fetchSchema()}
+                    className="rounded-lg bg-neutral-800 border border-neutral-700 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-700"
+                >
+                    Try again
+                </button>
             </div>
         );
     }
@@ -97,7 +111,7 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
                     <div>
                         <div className="flex items-center gap-2">
                             <h2 className="text-xl font-semibold text-neutral-100">Schema &amp; Technical SEO</h2>
-                            <HelpTip text="Invisible code that helps Google understand your business. Unlocks rich results like FAQ dropdowns and star ratings in search." />
+                            <HelpTip text="Page-level JSON-LD for this post — BlogPosting and optional FAQ rich results. Domain-wide Organization or LocalBusiness markup is not included." />
                         </div>
                         <div className="flex items-center gap-1.5">
                             <p className="text-xs text-neutral-400">JSON-LD structured data for rich snippets</p>
@@ -116,8 +130,41 @@ export function SchemaAgentUI({ optimizedContent, businessContext, meta, onCompl
                 )}
             </div>
 
+            {referencePostTitle && (
+                <p className="text-xs text-emerald-400/90 mb-4 bg-emerald-950/30 border border-emerald-900/40 rounded-lg px-3 py-2">
+                    Structure matched your last published post: <span className="font-semibold">{referencePostTitle}</span>
+                </p>
+            )}
+
+            <p className="text-[11px] text-neutral-500 mb-4">
+                Page-level only. Domain schemas (Organization, LocalBusiness, WebSite) are not generated or published.
+            </p>
+
+            <div className="mb-4 flex flex-col sm:flex-row gap-2">
+                <input
+                    type="text"
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            e.preventDefault();
+                            void fetchSchema(customPrompt);
+                        }
+                    }}
+                    placeholder="Optional: add missing schema via instructions (e.g. BreadcrumbList)…"
+                    className="flex-1 bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+                />
+                <button
+                    type="button"
+                    onClick={() => fetchSchema(customPrompt)}
+                    className="shrink-0 px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-[10px] font-black text-neutral-300 uppercase tracking-widest border border-neutral-700"
+                >
+                    Regenerate
+                </button>
+            </div>
+
             <div className="flex items-center justify-between mb-4">
-                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Extracted Schema JSON-LD</label>
+                <label className="text-[10px] font-black text-neutral-500 uppercase tracking-widest">Page Schema JSON-LD</label>
                 <button
                     onClick={() => setIsEditing(!isEditing)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${isEditing

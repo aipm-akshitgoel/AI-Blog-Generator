@@ -1,3 +1,8 @@
+import {
+    getEntrySections,
+    normalizeDirectoryEntry,
+    sectionsFromRaw,
+} from "@/lib/contentDirectorySections";
 import type { ContentDirectoryEntry, KeywordStrategy, StrategySession, TopicOption } from "@/lib/types/strategy";
 
 export type BlogTitleRef = { title: string; slug: string; status?: string };
@@ -24,15 +29,16 @@ export function applyBlogCompletionToDirectory(
     blogs: BlogTitleRef[],
 ): ContentDirectoryEntry[] {
     return entries.map((entry) => {
-        const entryNorm = normalizeTitle(entry.h1);
+        const normalized = normalizeDirectoryEntry(entry);
+        const entryNorm = normalizeTitle(normalized.h1);
         const entrySlug = slugify(entry.h1);
         const match = blogs.find((b) => {
             const t = normalizeTitle(b.title);
             return t === entryNorm || b.slug === entrySlug || normalizeTitle(b.slug.replace(/-/g, " ")) === entryNorm;
         });
-        if (!match) return { ...entry, completed: false, completedSlug: undefined, completedTitle: undefined };
+        if (!match) return { ...normalized, completed: false, completedSlug: undefined, completedTitle: undefined };
         return {
-            ...entry,
+            ...normalized,
             completed: true,
             completedSlug: match.slug,
             completedTitle: match.title,
@@ -43,19 +49,34 @@ export function applyBlogCompletionToDirectory(
 export function directoryToTopicOptions(entries: ContentDirectoryEntry[]): TopicOption[] {
     return [...entries]
         .sort((a, b) => a.order - b.order)
-        .map((entry) => ({
-            title: entry.h1,
-            description:
-                entry.h2s.length > 0
-                    ? `H2 outline: ${entry.h2s.join(" · ")}`
-                    : "No H2s listed — add sections during drafting.",
-            h2Titles: entry.h2s.length > 0 ? [...entry.h2s] : undefined,
-            directoryId: entry.id,
-            priority: entry.order,
-            completed: entry.completed,
-            completedSlug: entry.completedSlug,
-            cannibalizationRisk: false,
-        }));
+        .map((entry) => {
+            const normalized = normalizeDirectoryEntry(entry);
+            const sections = getEntrySections(normalized);
+            const h2Titles = sections.map((s) => s.h2);
+            const h3Titles = sections.flatMap((s) => s.h3s);
+            return {
+                title: normalized.h1,
+                description:
+                    h2Titles.length > 0
+                        ? `H2 outline: ${h2Titles.join(" · ")}`
+                        : "No H2s listed — add sections during drafting.",
+                primaryKeyword: normalized.primaryKeyword?.trim() || undefined,
+                sections: sections.length > 0 ? sections : undefined,
+                h2Titles: h2Titles.length > 0 ? h2Titles : undefined,
+                secondaryKeywords: normalized.secondaryKeywords?.length
+                    ? [...normalized.secondaryKeywords]
+                    : undefined,
+                h3Titles: h3Titles.length > 0 ? h3Titles : undefined,
+                tertiaryKeywords: normalized.tertiaryKeywords?.length
+                    ? [...normalized.tertiaryKeywords]
+                    : undefined,
+                directoryId: normalized.id,
+                priority: normalized.order,
+                completed: normalized.completed,
+                completedSlug: normalized.completedSlug,
+                cannibalizationRisk: false,
+            };
+        });
 }
 
 export function buildManualStrategySession(input: {
@@ -66,12 +87,16 @@ export function buildManualStrategySession(input: {
 }): StrategySession {
     const directory = applyBlogCompletionToDirectory(input.directory, []);
     const topicOptions = directoryToTopicOptions(directory);
+    const strategyPrimary =
+        input.primaryKeyword.trim() ||
+        directory.find((e) => e.primaryKeyword?.trim())?.primaryKeyword?.trim() ||
+        "";
 
     return {
         businessContextId: input.businessContextId ?? "",
         platform: input.platform ?? "blog",
         keywordStrategy: {
-            primaryKeyword: input.primaryKeyword.trim(),
+            primaryKeyword: strategyPrimary,
             secondaryKeywords: [],
             searchIntent: "informational",
             strategySource: "manual",
@@ -120,15 +145,22 @@ export function getDirectoryFromSession(session: StrategySession | null | undefi
     const topics = session?.topicOptions;
     if (!Array.isArray(topics) || topics.length === 0) return [];
 
-    return topics.map((t, i) => ({
-        id: t.directoryId ?? `legacy-${i}`,
-        order: t.priority ?? i,
-        h1: t.title,
-        h2s: t.h2Titles?.length ? [...t.h2Titles] : parseH2FromDescription(t.description),
-        completed: t.completed,
-        completedSlug: t.completedSlug,
-        completedTitle: t.title,
-    }));
+    return topics.map((t, i) =>
+        normalizeDirectoryEntry({
+            id: t.directoryId ?? `legacy-${i}`,
+            order: t.priority ?? i,
+            h1: t.title,
+            primaryKeyword: t.primaryKeyword?.trim() || undefined,
+            sections: t.sections?.length ? t.sections : undefined,
+            h2s: t.h2Titles?.length ? [...t.h2Titles] : parseH2FromDescription(t.description),
+            secondaryKeywords: t.secondaryKeywords?.length ? [...t.secondaryKeywords] : undefined,
+            h3s: t.h3Titles?.length ? [...t.h3Titles] : undefined,
+            tertiaryKeywords: t.tertiaryKeywords?.length ? [...t.tertiaryKeywords] : undefined,
+            completed: t.completed,
+            completedSlug: t.completedSlug,
+            completedTitle: t.title,
+        }),
+    );
 }
 
 export function isManualKeywordStrategy(session: StrategySession | null | undefined): boolean {
@@ -138,6 +170,25 @@ export function isManualKeywordStrategy(session: StrategySession | null | undefi
 function parseH2List(value: unknown): string[] {
     if (!Array.isArray(value)) return [];
     return value.map((h) => String(h ?? "").trim()).filter(Boolean).slice(0, 12);
+}
+
+function mapRawDirectoryRow(r: Record<string, unknown>, i: number): ContentDirectoryEntry {
+    const secondaryKeywords = parseH2List(r.secondaryKeywords);
+    const tertiaryKeywords = parseH2List(r.tertiaryKeywords);
+    const h2s = parseH2List(r.h2s ?? r.h2Titles ?? r.h2);
+    const flatH3s = parseH2List(r.h3s ?? r.h3Titles);
+    const sections = sectionsFromRaw(r.sections, h2s);
+    return normalizeDirectoryEntry({
+        id: String(r.id ?? `ai-${i}`),
+        order: typeof r.order === "number" ? r.order : i,
+        h1: String(r.h1 ?? r.title ?? r.h1Title ?? "").trim(),
+        primaryKeyword: String(r.primaryKeyword ?? "").trim() || undefined,
+        sections: sections.length > 0 ? sections : undefined,
+        h2s,
+        h3s: flatH3s.length > 0 ? flatH3s : undefined,
+        ...(secondaryKeywords.length ? { secondaryKeywords } : {}),
+        ...(tertiaryKeywords.length ? { tertiaryKeywords } : {}),
+    });
 }
 
 function parseH2FromDescription(description: string): string[] {
@@ -165,40 +216,49 @@ export function normalizeBlogStrategyResponse(
     if (Array.isArray(fromKsDir) && fromKsDir.length > 0) {
         directory = fromKsDir.map((row, i) => {
             const r = row as Record<string, unknown>;
-            return {
-                id: String(r.id ?? `ai-${i}`),
-                order: typeof r.order === "number" ? r.order : i,
-                h1: String(r.h1 ?? r.title ?? r.h1Title ?? "").trim(),
-                h2s: parseH2List(r.h2s ?? r.h2Titles ?? r.h2),
-            };
+            return mapRawDirectoryRow(r, i);
         });
     } else if (Array.isArray(fromRootDir) && fromRootDir.length > 0) {
         directory = fromRootDir.map((row, i) => {
             const r = row as Record<string, unknown>;
-            return {
-                id: String(r.id ?? `ai-${i}`),
-                order: i,
-                h1: String(r.h1 ?? r.title ?? "").trim(),
-                h2s: parseH2List(r.h2s ?? r.h2Titles),
-            };
+            return mapRawDirectoryRow(r, i);
         });
     } else if (Array.isArray(raw.topicOptions)) {
-        directory = (raw.topicOptions as Record<string, unknown>[]).map((t, i) => ({
-            id: String(t.directoryId ?? `legacy-${i}`),
-            order: i,
-            h1: String(t.title ?? "").trim(),
-            h2s: (() => {
+        directory = (raw.topicOptions as Record<string, unknown>[]).map((t, i) => {
+            const h2s = (() => {
                 const fromTitles = parseH2List(t.h2Titles);
                 if (fromTitles.length > 0) return fromTitles;
                 return parseH2FromDescription(String(t.description ?? ""));
-            })(),
-        }));
+            })();
+            return mapRawDirectoryRow(
+                {
+                    ...t,
+                    h1: t.title,
+                    h2s,
+                    h3s: t.h3Titles,
+                },
+                i,
+            );
+        });
     }
 
-    directory = directory.filter((e) => e.h1.length > 0);
+    directory = directory
+        .filter((e) => e.h1.length > 0)
+        .map((e, i) =>
+            normalizeDirectoryEntry({
+                ...e,
+                order: typeof e.order === "number" ? e.order : i,
+                primaryKeyword: e.primaryKeyword?.trim() || primaryKeyword || undefined,
+            }),
+        );
+
+    const resolvedPrimary =
+        primaryKeyword ||
+        directory.find((e) => e.primaryKeyword?.trim())?.primaryKeyword?.trim() ||
+        "";
 
     const keywordStrategy: KeywordStrategy = {
-        primaryKeyword,
+        primaryKeyword: resolvedPrimary,
         secondaryKeywords: [],
         searchIntent,
         strategySource: "ai",

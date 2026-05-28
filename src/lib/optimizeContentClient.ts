@@ -1,6 +1,6 @@
 import type { BlogPost } from "@/lib/types/content";
 import type { OptimizedContent } from "@/lib/types/optimization";
-import type { InterlinkingRules } from "@/lib/types/contentSpec";
+import type { ContentConstraints, InterlinkingRules } from "@/lib/types/contentSpec";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import { applyInterlinkingToContent, deriveApprovedLinks } from "@/lib/interlinking";
 
@@ -51,6 +51,7 @@ export function slimBlogPostForOptimize(post: BlogPost): Pick<
     | "h1Title"
     | "h2Suggestions"
     | "factSources"
+    | "keywordPlan"
 > {
     return {
         title: post.title,
@@ -61,6 +62,7 @@ export function slimBlogPostForOptimize(post: BlogPost): Pick<
         h1Title: post.h1Title,
         h2Suggestions: post.h2Suggestions,
         factSources: post.factSources,
+        keywordPlan: post.keywordPlan,
     };
 }
 
@@ -140,7 +142,11 @@ export async function requestContentOptimization(
     post: BlogPost,
     businessContext: BusinessContext,
     interlinkingRules: InterlinkingRules | null,
-    options?: { isRefining?: boolean; signal?: AbortSignal },
+    options?: {
+        isRefining?: boolean;
+        signal?: AbortSignal;
+        contentConstraints?: ContentConstraints | null;
+    },
 ): Promise<OptimizeContentResult> {
     const blogLinks = await fetchPublishedBlogLinks(options?.signal);
     let discoveredLinks: { href: string; anchorText: string; target: "blog" | "service" | "page" }[] = [];
@@ -176,6 +182,7 @@ export async function requestContentOptimization(
                 },
                 isRefining: options?.isRefining ?? false,
                 interlinkingRules,
+                contentConstraints: options?.contentConstraints ?? null,
             }),
         },
         OPTIMIZE_REQUEST_TIMEOUT_MS,

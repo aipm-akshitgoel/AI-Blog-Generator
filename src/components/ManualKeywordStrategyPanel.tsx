@@ -5,6 +5,7 @@ import type { StrategySession } from "@/lib/types/strategy";
 import { applyBlogCompletionToDirectory, buildManualStrategySession } from "@/lib/contentDirectory";
 import { parseKeywordPlanFile } from "@/lib/parseKeywordPlanSpreadsheet";
 import type { ContentDirectoryEntry } from "@/lib/types/strategy";
+import { ContentDirectoryList } from "@/components/ContentDirectoryList";
 import { CtaButton } from "@/components/ui/CtaButton";
 
 interface ManualKeywordStrategyPanelProps {
@@ -20,8 +21,9 @@ export function ManualKeywordStrategyPanel({
     onBack,
     onSkip,
 }: ManualKeywordStrategyPanelProps) {
-    const [primaryKeyword, setPrimaryKeyword] = useState("");
+    const [legacyPrimaryKeyword, setLegacyPrimaryKeyword] = useState("");
     const [entries, setEntries] = useState<ContentDirectoryEntry[]>([]);
+    const [needsLegacyPrimary, setNeedsLegacyPrimary] = useState(false);
     const [fileError, setFileError] = useState<string | null>(null);
     const [isParsing, setIsParsing] = useState(false);
     const [blogsLoaded, setBlogsLoaded] = useState(false);
@@ -60,32 +62,35 @@ export function ManualKeywordStrategyPanel({
         setBlogsLoaded(false);
         try {
             const parsed = await parseKeywordPlanFile(file);
-            if (parsed.length === 0) {
-                throw new Error("No H1 topics found. Use column A for H1 and column B for H2s.");
-            }
+            const legacy = parsed.some((e) => !e.primaryKeyword?.trim());
+            setNeedsLegacyPrimary(legacy);
             const enriched = await refreshCompletion(parsed);
             setEntries(enriched);
             setBlogsLoaded(true);
         } catch (e) {
             setFileError(e instanceof Error ? e.message : "Could not read spreadsheet");
             setEntries([]);
+            setNeedsLegacyPrimary(false);
         } finally {
             setIsParsing(false);
         }
     };
 
+    const canSave =
+        entries.length > 0 &&
+        (!needsLegacyPrimary || legacyPrimaryKeyword.trim().length > 0);
+
     const handleApprove = () => {
-        const kw = primaryKeyword.trim();
-        if (!kw) {
-            setFileError("Enter your primary keyword.");
-            return;
-        }
         if (entries.length === 0) {
             setFileError("Upload a spreadsheet with at least one H1 topic.");
             return;
         }
+        if (needsLegacyPrimary && !legacyPrimaryKeyword.trim()) {
+            setFileError("Enter a primary keyword for legacy 2-column spreadsheets, or use the 6-column template with column B filled per row.");
+            return;
+        }
         const session = buildManualStrategySession({
-            primaryKeyword: kw,
+            primaryKeyword: legacyPrimaryKeyword.trim(),
             directory: entries,
             businessContextId,
             platform: "blog",
@@ -107,7 +112,7 @@ export function ManualKeywordStrategyPanel({
                     <div>
                         <h2 className="text-xl font-bold text-white uppercase tracking-tighter">Manual keyword strategy</h2>
                         <p className="text-xs text-neutral-400 font-medium max-w-lg mt-1 leading-relaxed">
-                            Set your primary keyword and upload a 2-column spreadsheet (H1 = blog topics in priority order, H2 = section headings for that post). This becomes your official content directory — topics you&apos;ve already published show as completed.
+                            Upload a spreadsheet with one row per blog topic. H1 and primary keyword are required per row; H2s, secondary keywords, H3s, and tertiary keywords are optional. Row order = publishing priority.
                         </p>
                     </div>
                 </div>
@@ -121,17 +126,6 @@ export function ManualKeywordStrategyPanel({
                     </button>
                 )}
             </div>
-
-            <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
-                Primary keyword
-            </label>
-            <input
-                type="text"
-                value={primaryKeyword}
-                onChange={(e) => setPrimaryKeyword(e.target.value)}
-                placeholder="e.g. online MBA India"
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-2.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-emerald-500 mb-6"
-            />
 
             <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
                 Content directory (.xlsx, .xls, .csv)
@@ -149,16 +143,38 @@ export function ManualKeywordStrategyPanel({
                 <p className="text-sm font-medium text-neutral-300">
                     {isParsing ? "Reading file…" : "Drop Excel/CSV or click to upload"}
                 </p>
-                <p className="text-[11px] text-neutral-500 mt-1 text-center max-w-md">
-                    Column A: H1 (each row = one blog topic, top to bottom = priority). Column B: H2s (comma, semicolon, or pipe separated).
+                <p className="text-[11px] text-neutral-500 mt-2 text-center max-w-lg leading-relaxed">
+                    <span className="text-neutral-400">Required:</span> A = H1 · B = primary keyword
+                    <br />
+                    <span className="text-neutral-400">Optional:</span> C = H2s · D = secondary · E = H3s per H2 · F = tertiary
+                    <br />
+                    <span className="text-neutral-600">C &amp; F: comma or semicolon. E: use | between H2 groups, ; within a group.</span>
                 </p>
             </label>
+
+            {needsLegacyPrimary && (
+                <div className="mb-6">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-neutral-500 mb-2">
+                        Primary keyword (legacy 2-column file)
+                    </label>
+                    <input
+                        type="text"
+                        value={legacyPrimaryKeyword}
+                        onChange={(e) => setLegacyPrimaryKeyword(e.target.value)}
+                        placeholder="e.g. online MBA India"
+                        className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-2.5 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-emerald-500"
+                    />
+                    <p className="text-[10px] text-neutral-500 mt-1.5">
+                        Your file uses the older A = H1, B = H2s layout. Add a single primary keyword here, or re-upload with column B as primary keyword per row.
+                    </p>
+                </div>
+            )}
 
             {fileError && <p className="text-xs text-amber-400 mb-4">{fileError}</p>}
 
             {entries.length > 0 && (
-                <div className="mb-6 rounded-2xl border border-neutral-800 overflow-hidden">
-                    <div className="px-4 py-3 border-b border-neutral-800 bg-neutral-950/80 flex flex-wrap items-center justify-between gap-2">
+                <div className="mb-6">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                         <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">
                             Official directory · {entries.length} topics
                         </span>
@@ -166,43 +182,10 @@ export function ManualKeywordStrategyPanel({
                             {completedCount} published / draft matched
                         </span>
                     </div>
-                    <div className="max-h-[min(360px,50vh)] overflow-y-auto custom-scrollbar">
-                        <table className="w-full text-left text-xs">
-                            <thead className="sticky top-0 bg-neutral-900 text-[10px] font-black uppercase tracking-widest text-neutral-500">
-                                <tr>
-                                    <th className="px-3 py-2 w-10">#</th>
-                                    <th className="px-3 py-2 w-8" />
-                                    <th className="px-3 py-2">H1 — blog topic</th>
-                                    <th className="px-3 py-2">H2 sections</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {entries.map((entry) => (
-                                    <tr
-                                        key={entry.id}
-                                        className={`border-t border-neutral-800/80 ${entry.completed ? "bg-emerald-950/20" : ""}`}
-                                    >
-                                        <td className="px-3 py-2.5 text-neutral-500 font-mono">{entry.order + 1}</td>
-                                        <td className="px-3 py-2.5">
-                                            {entry.completed ? (
-                                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-neutral-950" title="Already written">
-                                                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                    </svg>
-                                                </span>
-                                            ) : (
-                                                <span className="inline-block h-5 w-5 rounded-full border border-neutral-700" />
-                                            )}
-                                        </td>
-                                        <td className="px-3 py-2.5 font-semibold text-neutral-200">{entry.h1}</td>
-                                        <td className="px-3 py-2.5 text-neutral-400 leading-snug">
-                                            {entry.h2s.length > 0 ? entry.h2s.join(" · ") : "—"}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                    <ContentDirectoryList
+                        entries={entries}
+                        variant="review"
+                    />
                 </div>
             )}
 
@@ -212,7 +195,7 @@ export function ManualKeywordStrategyPanel({
                     onClick={handleApprove}
                     loading={isParsing}
                     loadingLabel="Reading spreadsheet…"
-                    disabled={entries.length === 0 || !primaryKeyword.trim()}
+                    disabled={!canSave}
                     className="flex-1 rounded-lg px-4 py-3 text-xs disabled:opacity-40"
                 >
                     Save keyword strategy &amp; directory

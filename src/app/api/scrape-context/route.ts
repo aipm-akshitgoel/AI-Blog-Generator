@@ -80,7 +80,8 @@ REQUIRED JSON FORMAT:
   },
   "services": ["Service 1", "Service 2", "etc (max 10)"],
   "targetAudience": "A 1-sentence description of who they are trying to reach based on their copy/vibes",
-  "positioning": "A 1-sentence description of their brand tone (e.g., High-end luxury, fast & affordable, holistic & organic)"
+  "brandTone": "Short voice descriptor ONLY (3–8 words): how they sound, not what they sell (e.g. authoritative and data-driven, warm and encouraging, premium and understated)",
+  "positioning": "One sentence: what they are and their market position (e.g. career-focused online degree aggregator with accredited programs)"
 }
 
 CRITICAL INSTRUCTIONS:

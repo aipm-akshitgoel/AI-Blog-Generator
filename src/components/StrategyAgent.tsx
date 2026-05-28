@@ -10,7 +10,12 @@ import {
     resolveStrategyReferenceDomain,
 } from "@/lib/strategyInputs";
 import { formatApiError } from "@/lib/formatApiError";
-import { isAzureContentFilterError, userFacingContentFilterMessage } from "@/lib/azureContentFilter";
+import {
+    isAzureContentFilterError,
+    isAzureRateLimitError,
+    userFacingContentFilterMessage,
+    userFacingRateLimitMessage,
+} from "@/lib/azureContentFilter";
 import { ManualKeywordStrategyPanel } from "@/components/ManualKeywordStrategyPanel";
 import {
     enrichStrategyWithBlogProgress,
@@ -114,9 +119,13 @@ export function StrategyAgentUI({
             const json = await res.json().catch(() => ({}));
             if (!res.ok) {
                 const apiErr = formatApiError(json?.error, "Failed to generate strategy");
-                throw new Error(
-                    isAzureContentFilterError(apiErr) ? userFacingContentFilterMessage() : apiErr,
-                );
+                if (res.status === 429 || isAzureRateLimitError(apiErr)) {
+                    throw new Error(userFacingRateLimitMessage());
+                }
+                if (res.status === 422 || isAzureContentFilterError(apiErr)) {
+                    throw new Error(userFacingContentFilterMessage());
+                }
+                throw new Error(apiErr);
             }
 
             const raw = json.data as Record<string, unknown>;
@@ -140,9 +149,11 @@ export function StrategyAgentUI({
             );
         } catch (e) {
             setError(
-                isAzureContentFilterError(e)
-                    ? userFacingContentFilterMessage()
-                    : formatApiError(e, "Unknown error occurred"),
+                isAzureRateLimitError(e)
+                    ? userFacingRateLimitMessage()
+                    : isAzureContentFilterError(e)
+                      ? userFacingContentFilterMessage()
+                      : formatApiError(e, "Unknown error occurred"),
             );
         } finally {
             setLoading(false);
@@ -227,8 +238,24 @@ export function StrategyAgentUI({
                         </div>
                         <h4 className="font-semibold text-red-400 mb-1">Strategy Generation Failed</h4>
                         <p className="text-sm text-red-300/80 mb-3">{error}</p>
-                        <div className="rounded bg-neutral-900/80 border border-neutral-800 p-2.5 w-full">
-                            <p className="text-neutral-300 text-xs font-medium">✨ Nudge: If this is an API rate limit issue, please wait 1 minute and try again.</p>
+                        <div className="rounded bg-neutral-900/80 border border-neutral-800 p-2.5 w-full space-y-2">
+                            {error.includes("rate limit") || error.includes("temporarily busy") ? (
+                                <p className="text-neutral-300 text-xs font-medium">
+                                    Wait about one minute, then click Generate again.
+                                </p>
+                            ) : error.includes("blocked") ? (
+                                <>
+                                    <p className="text-neutral-300 text-xs font-medium">
+                                        Try shorter, neutral wording in Custom direction, or switch to{" "}
+                                        <strong className="text-emerald-400">Manual directory (Excel)</strong> to
+                                        upload your H1/keyword plan.
+                                    </p>
+                                </>
+                            ) : (
+                                <p className="text-neutral-300 text-xs font-medium">
+                                    Try again, or use Manual directory (Excel) to upload your plan.
+                                </p>
+                            )}
                         </div>
                     </div>
                 )}
@@ -355,14 +382,17 @@ export function StrategyAgentUI({
                 {platform === "blog" && getDirectoryFromSession(strategy).length > 0 && (
                 <div className="mb-8">
                     <h3 className="mb-3 text-[10px] font-black uppercase tracking-widest text-neutral-500">
-                        Content directory (H1 + H2)
+                        Content directory
                         <span className="text-neutral-600 font-bold normal-case tracking-normal">
                             {" "}
                             · {getDirectoryFromSession(strategy).filter((e) => e.completed).length}/
                             {getDirectoryFromSession(strategy).length} written
                         </span>
                     </h3>
-                    <ContentDirectoryList entries={getDirectoryFromSession(strategy)} variant="review" />
+                    <ContentDirectoryList
+                        entries={getDirectoryFromSession(strategy)}
+                        variant="review"
+                    />
                 </div>
                 )}
 

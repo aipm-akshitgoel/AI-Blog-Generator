@@ -3,6 +3,8 @@ import { getBlogById } from "@/lib/blogDb";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { AnalyticsDashboardClient } from "@/components/AnalyticsDashboardClient";
+import { AiDetectionBadge } from "@/components/ZeroGptBadge";
+import { ReadabilityGradeBadge } from "@/components/SeoReviewToolsBadge";
 import { RawPayloadViewer } from "@/components/RawPayloadViewer";
 import { listBusinessContexts } from "@/lib/businessContextDb";
 
@@ -65,6 +67,45 @@ export default async function BlogDetailPage({ params }: { params: Promise<{ id:
             </header>
 
             <div className="max-w-6xl mx-auto px-4 md:px-12 mt-10">
+                {(blog.payload?.content?.seoScores?.readabilityGrade ||
+                    blog.payload?.content?.seoScores?.aiDetection) && (
+                    <section className="mb-8 rounded-2xl border border-neutral-800 bg-neutral-900/50 p-6 space-y-6">
+                        {blog.payload.content.seoScores.readabilityGrade ? (
+                            <div>
+                                <h2 className="text-sm font-black uppercase tracking-widest text-neutral-400 mb-3">
+                                    Readability
+                                </h2>
+                                <ReadabilityGradeBadge
+                                    gradeLabel={blog.payload.content.seoScores.readabilityGrade.gradeLabel}
+                                    gradeLevel={blog.payload.content.seoScores.readabilityGrade.gradeLevel}
+                                    targetMet={blog.payload.content.seoScores.readabilityGrade.targetMet}
+                                    fleschScore={blog.payload.content.seoScores.readabilityGrade.fleschScore}
+                                />
+                                <p className="mt-3 text-sm text-neutral-500">
+                                    {blog.payload.content.seoScores.readabilityGrade.isFinal
+                                        ? "Final score after humanization (SEO Review Tools)."
+                                        : "Verified during optimization."}
+                                </p>
+                            </div>
+                        ) : null}
+                        {blog.payload.content.seoScores.aiDetection ? (
+                            <div>
+                                <h2 className="text-sm font-black uppercase tracking-widest text-neutral-400 mb-3">
+                                    AI detection
+                                </h2>
+                                <AiDetectionBadge
+                                    aiPercent={blog.payload.content.seoScores.aiDetection.aiPercent}
+                                    targetMet={blog.payload.content.seoScores.aiDetection.targetMet}
+                                    attempts={blog.payload.content.seoScores.aiDetection.attempts}
+                                />
+                                <p className="mt-3 text-sm text-neutral-500">
+                                    Verified with ZeroGPT during optimization. Target: below 20% AI.
+                                </p>
+                            </div>
+                        ) : null}
+                    </section>
+                )}
+
                 {/* 11. Analytics & Observability Agent Component */}
                 <AnalyticsDashboardClient blogId={blog.id} businessContext={businessContext} />
 

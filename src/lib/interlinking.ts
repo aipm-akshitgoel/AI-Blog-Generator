@@ -372,6 +372,76 @@ function isAmbiguousPhrase(phrase: string): boolean {
     return words.length === 1 && AMBIGUOUS_SLUG_WORDS.has(words[0].toLowerCase());
 }
 
+/** Body phrases that are too broad to point at a university/specialization URL. */
+const GENERIC_BODY_PHRASES = new Set([
+    "degree programs",
+    "degree program",
+    "online learning",
+    "online education",
+    "higher education",
+    "business school",
+    "college degree",
+    "career goals",
+]);
+
+function isGenericBodyPhrase(phrase: string): boolean {
+    const p = phrase.trim().toLowerCase();
+    if (GENERIC_BODY_PHRASES.has(p)) return true;
+    const words = p.split(/\s+/);
+    if (words.length === 2 && words.every((w) => AMBIGUOUS_SLUG_WORDS.has(w))) return true;
+    return false;
+}
+
+function linkPathDepth(link: ApprovedLink, domain?: string): number {
+    return linkPathSegments(link, domain).length;
+}
+
+/** Program pages like /online-mba/university/finance — not valid for generic anchors. */
+function isDeepProgramPath(link: ApprovedLink, domain?: string): boolean {
+    const segs = linkPathSegments(link, domain);
+    if (segs.length >= 3) return true;
+    const path = segs.join("/").toLowerCase();
+    if (segs.length >= 2 && /university|college|patil|amity|chandigarh|finance|marketing|human.resource|hr\b|bba|bca|mca/i.test(path)) {
+        return true;
+    }
+    return false;
+}
+
+/** Whether this phrase may use the given target URL (generic phrases → homepage or shallow hubs only). */
+function linkAllowedForPhrase(phrase: string, link: ApprovedLink, domain?: string): boolean {
+    const phraseLower = phrase.trim().toLowerCase();
+    const origin = siteOriginFromDomain(domain);
+    const path = normalizeSitePath(toAbsoluteSiteHref(link.href, domain) || link.href, origin) ?? "";
+
+    if (isGenericBodyPhrase(phrase)) {
+        if (/^degree\s+programs?$/.test(phraseLower) || /^online\s+(learning|education)$/.test(phraseLower) || phraseLower === "higher education") {
+            return path === "/" || path === "";
+        }
+        if (/^mba\s+programs?$/.test(phraseLower) || phraseLower === "online mba") {
+            const depth = linkPathDepth(link, domain);
+            return depth === 0 || (depth === 1 && /^online-mba$/i.test(linkPathSegments(link, domain)[0] ?? ""));
+        }
+        return !isDeepProgramPath(link, domain) && linkPathDepth(link, domain) <= 1;
+    }
+
+    if (isDeepProgramPath(link, domain)) return false;
+    return true;
+}
+
+function sortApprovedShallowFirst(links: ApprovedLink[], domain?: string): ApprovedLink[] {
+    const origin = siteOriginFromDomain(domain);
+    return [...links].sort((a, b) => {
+        const da = linkPathDepth(a, domain);
+        const db = linkPathDepth(b, domain);
+        if (da !== db) return da - db;
+        const pa = normalizeSitePath(a.href, origin);
+        const pb = normalizeSitePath(b.href, origin);
+        if (pa === "/") return -1;
+        if (pb === "/") return 1;
+        return 0;
+    });
+}
+
 /** Phrases to search in paragraph text, longest first — multi-word and contextual only. */
 function phraseCandidatesForLink(link: ApprovedLink, domain?: string): string[] {
     const segments = linkPathSegments(link, domain);
@@ -471,6 +541,8 @@ function paragraphMatchesLinkForEnforcement(
 ): boolean {
     if (paragraphMatchesLinkContext(paragraph, link, domain)) return true;
 
+    if (isDeepProgramPath(link, domain)) return false;
+
     const plain = paragraphPlainText(paragraph);
     const pathLower = linkPathSegments(link, domain).join("/").toLowerCase();
     const anchorLower = link.anchorText.toLowerCase();
@@ -544,7 +616,8 @@ function insertLinkForEnforcement(
         if (!result) continue;
         if (isAmbiguousPhrase(phrase)) continue;
         if (paragraphMatchesLinkContext(result, link, domain)) return result;
-        if (phrase.split(/\s+/).length >= 2) return result;
+        if (!linkAllowedForPhrase(phrase, link, domain)) continue;
+        if (!isDeepProgramPath(link, domain)) return result;
     }
     return null;
 }
@@ -581,8 +654,15 @@ export function stripContextuallyInvalidLinksFromMarkdown(
     for (let i = 0; i < paragraphs.length; i++) {
         paragraphs[i] = paragraphs[i].replace(MARKDOWN_LINK_RE, (full, anchor, href) => {
             const path = normalizeSitePath(href, origin);
-            if (!path || !byPath.has(path)) return full;
-            const link = byPath.get(path)!;
+            const link: ApprovedLink =
+                path && byPath.has(path)
+                    ? byPath.get(path)!
+                    : { href, anchorText: anchor, target: "page" };
+            if (isGenericBodyPhrase(anchor) && isDeepProgramPath(link, domain)) return anchor;
+            if (!path || !byPath.has(path)) {
+                if (paragraphMatchesLinkContext(paragraphs[i], link, domain)) return full;
+                return anchor;
+            }
             if (paragraphMatchesLinkContext(paragraphs[i], link, domain)) return full;
             return anchor;
         });
@@ -633,7 +713,7 @@ export function ensureInternalLinksInMarkdown(
         return { contentMarkdown: markdown, injected: [] };
     }
 
-    const approvedAbs = withAbsoluteHrefs(approved, domain);
+    const approvedAbs = sortApprovedShallowFirst(withAbsoluteHrefs(approved, domain), domain);
     const injected: ApprovedLink[] = [];
     const paragraphs = splitBodyParagraphs(markdown).paragraphs;
     const linkableIdx = paragraphs
@@ -645,28 +725,41 @@ export function ensureInternalLinksInMarkdown(
     }
 
     let count = countMarkdownLinks(markdown);
-    let linkIdx = 0;
     let paraCursor = 0;
-    const maxAttempts = Math.max(min * 6, linkableIdx.length * approved.length * 3);
+    const maxAttempts = Math.max(min * 6, linkableIdx.length * approvedAbs.length * 3);
 
     for (let attempt = 0; attempt < maxAttempts && count < min; attempt++) {
         if (max > 0 && count >= max) break;
-        const link = approvedAbs[linkIdx % approvedAbs.length];
         const pIdx = linkableIdx[paraCursor % linkableIdx.length];
         paraCursor++;
-        linkIdx++;
 
-        if (paragraphHasHref(paragraphs[pIdx], link.href, domain)) continue;
         if (paragraphAlreadyHasLink(paragraphs[pIdx])) continue;
 
-        let updated = insertLinkContextual(paragraphs[pIdx], link, domain);
-        if (!updated) {
-            updated = insertLinkForEnforcement(paragraphs[pIdx], link, domain);
+        let updated: string | null = null;
+        let usedLink: ApprovedLink | null = null;
+
+        for (const link of approvedAbs) {
+            if (paragraphHasHref(paragraphs[pIdx], link.href, domain)) continue;
+            updated = insertLinkContextual(paragraphs[pIdx], link, domain);
+            if (updated) {
+                usedLink = link;
+                break;
+            }
         }
-        if (!updated) continue;
+        if (!updated) {
+            for (const link of approvedAbs) {
+                if (paragraphHasHref(paragraphs[pIdx], link.href, domain)) continue;
+                updated = insertLinkForEnforcement(paragraphs[pIdx], link, domain);
+                if (updated) {
+                    usedLink = link;
+                    break;
+                }
+            }
+        }
+        if (!updated || !usedLink) continue;
 
         paragraphs[pIdx] = updated;
-        injected.push(link);
+        injected.push(usedLink);
         count++;
     }
 

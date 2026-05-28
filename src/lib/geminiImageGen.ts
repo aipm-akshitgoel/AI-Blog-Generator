@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { parseJsonFromModelText } from "@/lib/parseModelJson";
+import { ensureBlogImageDataUrl } from "@/lib/blogImageCompress";
 
 export type ImageDirectorBrief = {
     searchQuery: string;
@@ -23,7 +24,7 @@ function imageBytesToDataUrl(bytes: string | undefined): string | null {
     if (!bytes?.trim()) return null;
     const trimmed = bytes.trim();
     if (trimmed.startsWith("data:image/")) return trimmed;
-    return `data:image/png;base64,${trimmed}`;
+    return `data:image/jpeg;base64,${trimmed}`;
 }
 
 /**
@@ -48,13 +49,17 @@ export async function generateGeminiImageDataUrl(
                 numberOfImages: 1,
                 aspectRatio,
                 includeRaiReason: true,
-                outputMimeType: "image/png",
+                outputMimeType: "image/jpeg",
             },
         });
 
         const first = response.generatedImages?.[0];
-        const dataUrl = imageBytesToDataUrl(first?.image?.imageBytes);
-        if (dataUrl) return dataUrl;
+        const rawUrl = imageBytesToDataUrl(first?.image?.imageBytes);
+        if (rawUrl) {
+            const withinLimit = await ensureBlogImageDataUrl(rawUrl);
+            if (withinLimit) return withinLimit;
+            console.warn("[gemini-image] Generated image exceeded storage limit after compression");
+        }
 
         const reason = first?.raiFilteredReason;
         if (reason) {

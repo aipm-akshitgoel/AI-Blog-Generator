@@ -7,6 +7,7 @@ import {
 } from "@/lib/businessContextDb";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import { auth } from "@clerk/nextjs/server";
+import { formatSupabaseWriteError } from "@/lib/supabaseServerClient";
 
 export async function GET(req: Request) {
   const { userId } = await auth();
@@ -19,7 +20,9 @@ export async function GET(req: Request) {
     const list = await listBusinessContexts(userId, platform || undefined);
     return NextResponse.json(list);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to list";
+    const message = formatSupabaseWriteError(
+      err instanceof Error ? err.message : "Failed to list",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -44,6 +47,8 @@ export async function POST(req: Request) {
     services,
     targetAudience,
     positioning,
+    brandTone,
+    contentGuidelines,
   } = body;
 
   if (
@@ -79,17 +84,32 @@ export async function POST(req: Request) {
       services: services.map(String).filter(Boolean),
       targetAudience: String(targetAudience).trim(),
       positioning: String(positioning).trim(),
+      brandTone: brandTone ? String(brandTone).trim() : undefined,
+      contentGuidelines: contentGuidelines ?? undefined,
     };
+
+    const guidelinesFromBody = body.contentGuidelines;
+    const brandToneFromBody = body.brandTone?.trim() || undefined;
 
     if (existing && existing.id) {
       const updated = await updateBusinessContext(existing.id, contextData);
-      return NextResponse.json(updated);
+      return NextResponse.json({
+        ...updated,
+        brandTone: updated.brandTone ?? brandToneFromBody,
+        contentGuidelines: updated.contentGuidelines ?? guidelinesFromBody,
+      });
     } else {
       const created = await createBusinessContext(contextData, userId);
-      return NextResponse.json(created);
+      return NextResponse.json({
+        ...created,
+        brandTone: created.brandTone ?? brandToneFromBody,
+        contentGuidelines: created.contentGuidelines ?? guidelinesFromBody,
+      });
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to save business context";
+    const message = formatSupabaseWriteError(
+      err instanceof Error ? err.message : "Failed to save business context",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -109,7 +129,9 @@ export async function DELETE(req: Request) {
     await deleteBusinessContext(id);
     return NextResponse.json({ success: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to delete";
+    const message = formatSupabaseWriteError(
+      err instanceof Error ? err.message : "Failed to delete",
+    );
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

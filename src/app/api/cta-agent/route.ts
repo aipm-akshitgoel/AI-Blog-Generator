@@ -56,7 +56,7 @@ function sanitizeUrl(input: string, fallback: string): string {
 }
 
 function inferDefaultButton(ctx: BusinessContext, articleTitle: string): string {
-    const blob = `${ctx.businessType} ${ctx.businessName} ${ctx.positioning} ${articleTitle}`.toLowerCase();
+    const blob = `${ctx.businessType} ${ctx.businessName} ${ctx.brandTone ?? ""} ${ctx.positioning} ${articleTitle}`.toLowerCase();
     if (/\b(degree|education|university|college|mba|course|program|learn|student|career)\b/.test(blob)) {
         return "Explore Programs";
     }
@@ -183,6 +183,7 @@ Business:
 - Type: ${businessContext.businessType}
 - Domain / site: ${siteUrl || businessContext.domain || "(not set — use a sensible path on the brand domain if you know it)"}
 - Audience: ${businessContext.targetAudience || "(general)"}
+- Brand tone: ${businessContext.brandTone?.trim() || "(none)"}
 - Positioning: ${businessContext.positioning || "(none)"}
 - Services: ${services || "(none)"}
 

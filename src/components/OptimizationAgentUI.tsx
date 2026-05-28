@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
 import type { OptimizedContent } from "@/lib/types/optimization";
 import type { BlogPost } from "@/lib/types/content";
@@ -12,57 +12,97 @@ import {
 } from "@/lib/optimizeContentClient";
 import {
     OPTIMIZATION_LINKS_PHASE,
-    OPTIMIZATION_LOADING_STEPS,
     OPTIMIZATION_LOADING_TITLE,
     OPTIMIZATION_TIMING_NOTE,
     OPTIMIZED_CONTENT_SUBTITLE,
-    REFINE_LOADING_DETAIL,
-    REFINE_LOADING_TITLE,
+    getOptimizationLoadingSteps,
     optimizationLoadingStepIndex,
 } from "@/lib/optimizationCopy";
-import { normalizeInterlinkingRules, type InterlinkingRules } from "@/lib/types/contentSpec";
+import {
+    isTocFinalized,
+    normalizeInterlinkingRules,
+    type ContentConstraints,
+    type InterlinkingRules,
+} from "@/lib/types/contentSpec";
 import { DEFAULT_INTERLINKING_RULES } from "@/lib/types/topicBrief";
 import { linkCountSummary, rewriteMarkdownInternalLinksToAbsolute } from "@/lib/interlinking";
 import { stripFaqFromMarkdownWhenStructured } from "@/lib/contentWordCount";
 import { toAbsoluteSiteHref } from "@/lib/domainLinks";
+import { normalizeSeoScores, type KeywordDensityRow } from "@/lib/seoAnalyzer";
 import {
-    buildHeadingTagRows,
-    normalizeSeoScores,
-    seoQualityTotal,
-    type HeadingTagRow,
-} from "@/lib/seoAnalyzer";
+    buildLocalKeywordPlanVerification,
+    keywordDensitySourceLabel,
+    keywordVerificationToDensityRows,
+    resolveKeywordPlanForPost,
+} from "@/lib/keywordPlanVerification";
+import type { KeywordDensityVerification } from "@/lib/types/keywordPlan";
 import type { SeoScores } from "@/lib/types/optimization";
+import {
+    AI_DETECTION_TARGET_PERCENT_MAX,
+    getEffectiveAiContentPercent,
+} from "@/lib/zerogptAiDetection";
+
+const METRIC_BAR_GOOD = "bg-emerald-500";
+const METRIC_BAR_WARN = "bg-amber-500";
+const METRIC_BAR_READABILITY_MID = "bg-[#eab308]";
+const METRIC_BAR_AI_MID = "bg-[#a855f7]";
+
+/** Flesch ease bar + grade target: green when at or below 8th grade or ease ≥ 60. */
+function readabilityBarClass(scores: SeoScores): string {
+    if (scores.readabilityGrade?.targetMet === true) return METRIC_BAR_GOOD;
+    if (scores.readabilityGrade?.targetMet === false) return METRIC_BAR_WARN;
+    if (scores.readability >= 60) return METRIC_BAR_GOOD;
+    if (scores.readability >= 45) return METRIC_BAR_READABILITY_MID;
+    return METRIC_BAR_WARN;
+}
+
+/** Lower AI % is better: green when below 20% target. */
+function aiContentBarClass(scores: SeoScores): string {
+    const { percent, verified } = getEffectiveAiContentPercent(scores);
+    if (!verified) return METRIC_BAR_AI_MID;
+    if (scores.aiDetection?.targetMet === true) return METRIC_BAR_GOOD;
+    if (percent < AI_DETECTION_TARGET_PERCENT_MAX) return METRIC_BAR_GOOD;
+    if (percent < 50) return METRIC_BAR_WARN;
+    return METRIC_BAR_WARN;
+}
+import { AiDetectionBadge, ZeroGptBadge } from "@/components/ZeroGptBadge";
+import { SeoReviewToolsBadge } from "@/components/SeoReviewToolsBadge";
+import { refreshOptimizerMetrics } from "@/lib/refreshOptimizerMetricsClient";
 
 interface OptimizationAgentProps {
     post: BlogPost;
     businessContext: import("@/lib/types/businessContext").BusinessContext;
     interlinkingRules?: InterlinkingRules | null;
+    contentConstraints?: ContentConstraints | null;
     primaryKeyword?: string;
     onComplete?: (optimized: OptimizedContent) => void;
 }
 
 type SeoScoreDeltas = {
     readability: number;
-    grammar: number;
-    originality: number;
+    aiContentPercent: number;
 };
 
-type RefineFeedback =
-    | { type: "improved"; message: string }
-    | { type: "discarded"; message: string };
-
 function SeoMetricBar({
-    label, value, max = 100, barClass, help, suffix, delta,
+    label, value, max = 100, barClass, help, suffix, delta, brand,
 }: {
-    label: string; value: number; max?: number; barClass: string; help: string; suffix?: string; delta?: number;
+    label: string;
+    value: number;
+    max?: number;
+    barClass: string;
+    help: string;
+    suffix?: string;
+    delta?: number;
+    brand?: ReactNode;
 }) {
     const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
     return (
         <div>
             <div className="flex justify-between items-start mb-2">
                 <div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-semibold text-[#4A5568] block">{label}</span>
+                    <div className="flex items-center gap-2">
+                        {brand}
+                        <span className="text-sm font-semibold text-[#4A5568]">{label}</span>
                         <HelpTip text={help} />
                     </div>
                 </div>
@@ -116,40 +156,71 @@ function EditContentMetric({
     );
 }
 
-function HeadingTagsPanel({ rows }: { rows: HeadingTagRow[] }) {
-    const h1Rows = rows.filter((r) => r.level === "h1");
-    const h2Rows = rows.filter((r) => r.level === "h2");
+function densityStatus(actual: number, target?: number): string | null {
+    if (target == null || target <= 0) return null;
+    const delta = actual - target;
+    if (Math.abs(delta) <= 0.3) return "on target";
+    return delta < 0 ? "below target" : "above target";
+}
 
-    const renderRow = (row: HeadingTagRow) => (
-        <tr key={`${row.level}-${row.title}`} className="border-t border-neutral-100">
-            <td className="px-4 py-3.5 align-top text-sm leading-relaxed text-[#2D3748]">
-                <span className="font-medium">{row.title}</span>
-                {row.missing && (
-                    <span className="mt-1 block text-[11px] font-semibold text-amber-600">
-                        Section not found in draft
-                    </span>
-                )}
-            </td>
-            <td className="w-[5.5rem] px-4 py-3.5 align-top text-right tabular-nums text-sm font-semibold text-[#2D3748]">
-                {row.densityPercent}%
-            </td>
-        </tr>
-    );
-
-    const renderGroupHeader = (level: string) => (
-        <tr className="bg-[#EDF2F7]">
-            <th
-                colSpan={2}
-                className="border-t border-neutral-200 px-4 py-2 text-left text-[10px] font-black uppercase tracking-widest text-[#718096]"
-            >
-                {level}
-            </th>
-        </tr>
-    );
-
-    if (rows.length === 0) {
-        return <p className="text-sm text-[#A0AEC0]">No headings detected yet.</p>;
+function keywordTierColumnLabel(level: KeywordDensityRow["level"]): string {
+    switch (level) {
+        case "primary":
+            return "Primary keyword";
+        case "secondary":
+            return "Secondary keyword";
+        case "tertiary":
+            return "Tertiary keyword";
+        case "domain":
+            return "Domain keyword";
+        default:
+            return "Keyword";
     }
+}
+
+/** Section hint from labels like "Secondary keyword · Section title". */
+function keywordSectionHint(label: string): string | null {
+    const parts = label.split("·").map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 2) return null;
+    const head = parts[0]!.toLowerCase();
+    if (!head.includes("keyword")) return null;
+    return parts.slice(1).join(" · ");
+}
+
+function KeywordDensitySourceBanner({
+    verification,
+}: {
+    verification: KeywordDensityVerification | null | undefined;
+}) {
+    if (!verification) {
+        return (
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+                <span className="font-semibold">No keyword plan.</span> The writer must set primary, secondary,
+                and tertiary keywords (keywordPlan) before density can be verified.
+            </p>
+        );
+    }
+
+    const isApi = verification.provider === "seo-review-tools";
+    const isMixed = verification.provider === "mixed";
+    const tone = isApi
+        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+        : isMixed
+          ? "border-amber-200 bg-amber-50 text-amber-900"
+          : "border-amber-200 bg-amber-50 text-amber-900";
+
+    return (
+        <p className={`mb-3 rounded-lg border px-3 py-2 text-[11px] leading-relaxed ${tone}`}>
+            <span className="font-semibold">
+                {isApi ? "Verified via API." : isMixed ? "Partially verified." : "Local counter."}
+            </span>{" "}
+            {keywordDensitySourceLabel(verification)}
+        </p>
+    );
+}
+
+function KeywordDensityPanel({ rows }: { rows: KeywordDensityRow[] }) {
+    if (rows.length === 0) return null;
 
     return (
         <div className="overflow-hidden rounded-lg border border-neutral-200">
@@ -157,70 +228,74 @@ function HeadingTagsPanel({ rows }: { rows: HeadingTagRow[] }) {
                 <thead>
                     <tr className="border-b border-neutral-200 bg-[#F7FAFC]">
                         <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-[#718096]">
-                            Section
+                            Type
                         </th>
-                        <th className="w-[5.5rem] px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#718096]">
-                            <span className="inline-flex items-center justify-end gap-1">
-                                Density
-                                <HelpTip
-                                    side="bottom"
-                                    variant="light"
-                                    text="Share of words in that section (heading + body) that match this heading’s key terms — higher means the copy reinforces the H1/H2 topic."
-                                />
-                            </span>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-[#718096]">
+                            Keyword
+                        </th>
+                        <th className="w-[4.5rem] px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#718096]">
+                            Target
+                        </th>
+                        <th className="w-[4.5rem] px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#718096]">
+                            Actual
                         </th>
                     </tr>
                 </thead>
                 <tbody className="bg-white">
-                    {h1Rows.length > 0 && (
-                        <>
-                            {renderGroupHeader("H1")}
-                            {h1Rows.map(renderRow)}
-                        </>
-                    )}
-                    {h2Rows.length > 0 && (
-                        <>
-                            {renderGroupHeader("H2")}
-                            {h2Rows.map(renderRow)}
-                        </>
-                    )}
+                    {rows.map((row) => {
+                        const status = densityStatus(row.densityPercent, row.targetPercent);
+                        const sectionHint = keywordSectionHint(row.label);
+                        return (
+                            <tr key={`${row.level}-${row.label}-${row.keyword}`} className="border-t border-neutral-100">
+                                <td className="px-4 py-3 align-top text-sm font-medium text-[#2D3748]">
+                                    {keywordTierColumnLabel(row.level)}
+                                </td>
+                                <td className="px-4 py-3 align-top text-sm text-[#2D3748]">
+                                    <span className="font-medium">{row.keyword}</span>
+                                    {sectionHint ? (
+                                        <span className="mt-1 block text-[11px] text-[#718096]">{sectionHint}</span>
+                                    ) : null}
+                                    {row.missing && (
+                                        <span className="mt-1 block text-[11px] font-semibold text-amber-600">
+                                            Section empty or missing
+                                        </span>
+                                    )}
+                                </td>
+                                <td className="px-4 py-3 align-top text-right text-sm tabular-nums text-[#718096]">
+                                    {row.targetPercent != null ? `${row.targetPercent}%` : "—"}
+                                </td>
+                                <td className="px-4 py-3 align-top text-right">
+                                    <span className="text-sm font-semibold tabular-nums text-[#2D3748]">
+                                        {row.densityPercent}%
+                                    </span>
+                                    {row.provider && (
+                                        <span
+                                            className={`mt-1 block text-[10px] font-bold uppercase tracking-wide ${
+                                                row.provider === "seo-review-tools"
+                                                    ? "text-emerald-700"
+                                                    : "text-neutral-500"
+                                            }`}
+                                        >
+                                            {row.provider === "seo-review-tools" ? "API" : "Local"}
+                                        </span>
+                                    )}
+                                    {status && (
+                                        <span
+                                            className={`mt-0.5 block text-[11px] font-semibold ${
+                                                status === "on target" ? "text-emerald-600" : "text-amber-600"
+                                            }`}
+                                        >
+                                            {status}
+                                        </span>
+                                    )}
+                                </td>
+                            </tr>
+                        );
+                    })}
                 </tbody>
             </table>
         </div>
     );
-}
-
-function getHeuristic(markdown: string) {
-    const sentences = markdown.split(/[.!?]+/).filter(s => s.trim().length > 0);
-    const words = markdown.split(/\s+/).filter(w => w.trim().length > 0);
-    const headings = markdown.split('\n').filter(line => line.trim().startsWith('#'));
-
-    const avgWordsPerSentence = sentences.length > 0 ? words.length / sentences.length : 15;
-    const wordsPerHeading = headings.length > 0 ? words.length / headings.length : words.length;
-
-    let read = 100;
-    if (avgWordsPerSentence > 20) read -= (avgWordsPerSentence - 20) * 2;
-    if (avgWordsPerSentence < 8) read -= 5;
-
-    let struct = 100;
-    if (headings.length === 0) struct -= 50;
-    if (wordsPerHeading > 300) struct -= (wordsPerHeading - 300) * 0.1;
-
-    return { read, struct };
-}
-
-function computeSeoScoresFromMarkdown(
-    markdown: string,
-    fallback: SeoScores,
-    plagiarismSimilarity = 0,
-): SeoScores {
-    const h = getHeuristic(markdown);
-    const base = normalizeSeoScores(fallback, plagiarismSimilarity);
-    return {
-        ...base,
-        readability: Math.min(100, Math.max(0, Math.round(h.read))),
-        grammar: Math.min(100, Math.max(0, Math.round(h.struct))),
-    };
 }
 
 function resolveEditorMarkdown(
@@ -228,7 +303,10 @@ function resolveEditorMarkdown(
     post: BlogPost,
     domain?: string,
 ): string {
-    const raw = String(contentMarkdown || post.contentMarkdown || "").trim();
+    const raw = stripFaqFromMarkdownWhenStructured(
+        String(contentMarkdown || post.contentMarkdown || "").trim(),
+        post.faqs,
+    );
     return rewriteMarkdownInternalLinksToAbsolute(
         applyHeadingStructureForEditor(raw, post),
         domain,
@@ -259,12 +337,12 @@ export function OptimizationAgentUI({
     post,
     businessContext,
     interlinkingRules = null,
+    contentConstraints = null,
     primaryKeyword,
     onComplete,
 }: OptimizationAgentProps) {
     const [optimizedData, setOptimizedData] = useState<OptimizedContent | null>(null);
     const [loading, setLoading] = useState(false);
-    const [isRefining, setIsRefining] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isEditing, setIsEditing] = useState(false);
     const [editedContent, setEditedContent] = useState("");
@@ -277,7 +355,6 @@ export function OptimizationAgentUI({
     const [isAiEditing, setIsAiEditing] = useState(false);
     const [aiEditError, setAiEditError] = useState<string | null>(null);
     const [scoreDeltas, setScoreDeltas] = useState<SeoScoreDeltas | null>(null);
-    const [refineFeedback, setRefineFeedback] = useState<RefineFeedback | null>(null);
     const [highlightScores, setHighlightScores] = useState(false);
     const [factSources, setFactSources] = useState<FactSource[]>([]);
     const [factModeEnabled, setFactModeEnabled] = useState(false);
@@ -285,9 +362,12 @@ export function OptimizationAgentUI({
     const [loadingPhase, setLoadingPhase] = useState<"links" | "optimize">("optimize");
     const [loadingSeconds, setLoadingSeconds] = useState(0);
     const [isRefreshingMetrics, setIsRefreshingMetrics] = useState(false);
+    const [metricsRefreshError, setMetricsRefreshError] = useState<string | null>(null);
     const optimizeAbortRef = useRef<AbortController | null>(null);
     const resultsTopRef = useRef<HTMLDivElement>(null);
     const postOptimizeKey = `${post.slug}|${post.contentMarkdown?.length ?? 0}`;
+    const tocFinalized = isTocFinalized(contentConstraints);
+    const optimizationLoadingSteps = getOptimizationLoadingSteps(tocFinalized);
 
     useEffect(() => {
         if (loading || !optimizedData) return;
@@ -327,26 +407,145 @@ export function OptimizationAgentUI({
         return () => window.clearTimeout(t);
     }, [scoreDeltas, highlightScores]);
 
-    // Live update scores as user types
     useEffect(() => {
-        if (!isEditing || !optimizedData?.seoScores) return;
+        if (!optimizedData || isEditing) return;
+        if (liveScores?.keywordDensity?.rows?.length) return;
 
-        const baseH = getHeuristic(optimizedData.contentMarkdown);
-        const currH = getHeuristic(editedContent);
-
-        const deltaRead = currH.read - baseH.read;
-        const deltaStruct = currH.struct - baseH.struct;
-        const base = normalizeSeoScores(
-            optimizedData.seoScores,
-            optimizedData.plagiarismReport?.overallSimilarity ?? 0,
+        const plan = resolveKeywordPlanForPost(
+            {
+                ...post,
+                contentMarkdown: optimizedData.contentMarkdown,
+                keywordPlan: post.keywordPlan ?? optimizedData.seoScores?.keywordPlan,
+            },
+            contentConstraints,
+            primaryKeyword,
         );
+        if (!plan) return;
 
-        setLiveScores({
-            ...base,
-            readability: Math.min(100, Math.max(0, Math.round(base.readability + deltaRead))),
-            grammar: Math.min(100, Math.max(0, Math.round(base.grammar + deltaStruct * 0.5))),
-        });
-    }, [editedContent, isEditing, optimizedData]);
+        let cancelled = false;
+        void fetch("/api/keyword-density", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                markdown: optimizedData.contentMarkdown,
+                post: {
+                    ...post,
+                    contentMarkdown: optimizedData.contentMarkdown,
+                    keywordPlan: plan,
+                },
+                constraints: contentConstraints ?? null,
+                strategyPrimary: primaryKeyword,
+            }),
+        })
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data: KeywordDensityVerification | null) => {
+                if (cancelled || !data?.rows?.length) return;
+                setLiveScores((prev) => {
+                    const base =
+                        prev ??
+                        normalizeSeoScores(
+                            optimizedData.seoScores,
+                            optimizedData.plagiarismReport?.overallSimilarity ?? 0,
+                        );
+                    return { ...base, keywordDensity: data, keywordPlan: data.plan };
+                });
+                setOptimizedData((prev) =>
+                    prev
+                        ? {
+                              ...prev,
+                              seoScores: {
+                                  ...prev.seoScores,
+                                  keywordDensity: data,
+                                  keywordPlan: data.plan,
+                              },
+                          }
+                        : prev,
+                );
+            })
+            .catch(() => undefined);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [optimizedData, isEditing, post, contentConstraints, primaryKeyword, liveScores?.keywordDensity]);
+
+    useEffect(() => {
+        if (!optimizedData || isEditing) return;
+        if (liveScores?.aiDetection?.provider === "zerogpt") return;
+
+        let cancelled = false;
+        void fetch("/api/ai-detection", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ markdown: optimizedData.contentMarkdown }),
+        })
+            .then((res) => (res.ok ? res.json() : null))
+            .then(
+                (
+                    data: {
+                        aiPercent?: number;
+                        humanPercent?: number;
+                        targetMet?: boolean;
+                        confidence?: string;
+                        error?: string;
+                    } | null,
+                ) => {
+                if (cancelled || !data || data.error || typeof data.aiPercent !== "number") return;
+                const aiPct = data.aiPercent;
+                setLiveScores((prev) => {
+                    const base =
+                        prev ??
+                        normalizeSeoScores(
+                            optimizedData.seoScores,
+                            optimizedData.plagiarismReport?.overallSimilarity ?? 0,
+                        );
+                    return {
+                        ...base,
+                        aiContentPercent: Math.round(aiPct),
+                        aiDetection: {
+                            aiPercent: aiPct,
+                            humanPercent: data.humanPercent ?? 100 - aiPct,
+                            targetMet: Boolean(data.targetMet),
+                            attempts: 0,
+                            provider: "zerogpt",
+                            confidence: data.confidence,
+                        },
+                    };
+                });
+            },
+            )
+            .catch(() => undefined);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [optimizedData, isEditing, liveScores?.aiDetection]);
+
+    const metricsRefreshOptions = {
+        post: { ...post, contentMarkdown: optimizedData?.contentMarkdown ?? post.contentMarkdown },
+        constraints: contentConstraints ?? null,
+        strategyPrimary: primaryKeyword,
+    };
+
+    const runMetricsRefresh = async (markdown: string, scores: SeoScores) => {
+        setIsRefreshingMetrics(true);
+        setMetricsRefreshError(null);
+        try {
+            const refreshed = await refreshOptimizerMetrics(markdown, scores, {
+                ...metricsRefreshOptions,
+                post: { ...metricsRefreshOptions.post, contentMarkdown: markdown },
+            });
+            setLiveScores(refreshed);
+            setHighlightScores(true);
+            return refreshed;
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Could not refresh metrics";
+            setMetricsRefreshError(message);
+            return scores;
+        } finally {
+            setIsRefreshingMetrics(false);
+        }
+    };
 
     useEffect(() => {
         if (!loading) {
@@ -372,7 +571,7 @@ export function OptimizationAgentUI({
                     post,
                     businessContext,
                     interlinkingRules,
-                    { signal: controller.signal },
+                    { signal: controller.signal, contentConstraints },
                 );
 
                 if (latestRequestRef.current !== requestId) return;
@@ -388,7 +587,6 @@ export function OptimizationAgentUI({
                         data.optimized.plagiarismReport?.overallSimilarity ?? 0,
                     ),
                 );
-                setRefineFeedback(null);
                 setScoreDeltas(null);
                 setError(null);
             } catch (err) {
@@ -461,95 +659,6 @@ export function OptimizationAgentUI({
         }
     };
 
-    const handleRefine = async () => {
-        if (!optimizedData) return;
-        const prevScores = normalizeSeoScores(
-            optimizedData.seoScores,
-            optimizedData.plagiarismReport?.overallSimilarity ?? 0,
-        );
-
-        const controller = new AbortController();
-        optimizeAbortRef.current = controller;
-
-        setLoading(true);
-        setIsRefining(true);
-        setLoadingPhase("optimize");
-        setError(null);
-        setRefineFeedback(null);
-        setScoreDeltas(null);
-        setHighlightScores(false);
-
-        try {
-            const refinePayload: BlogPost = {
-                ...post,
-                title: optimizedData.title,
-                slug: optimizedData.slug,
-                metaDescription: optimizedData.metaDescription,
-                contentMarkdown: optimizedData.contentMarkdown,
-                faqs: optimizedData.faqs,
-            };
-
-            const data = await requestContentOptimization(
-                refinePayload,
-                businessContext,
-                interlinkingRules,
-                { isRefining: true, signal: controller.signal },
-            );
-            const attempted = data.optimized;
-            const attemptedScores = normalizeSeoScores(
-                attempted.seoScores,
-                attempted.plagiarismReport?.overallSimilarity ?? 0,
-            );
-
-            if (data.parseWarning) {
-                setRefineFeedback({
-                    type: "discarded",
-                    message:
-                        "Auto-fix could not apply changes (optimizer response invalid). Your draft and scores are unchanged.",
-                });
-                return;
-            }
-
-            const prevTotal = seoQualityTotal(prevScores);
-            const newTotal = seoQualityTotal(attemptedScores);
-
-            if (newTotal <= prevTotal) {
-                setRefineFeedback({
-                    type: "discarded",
-                    message:
-                        "Auto-fix did not improve readability, grammar, or originality. Changes were discarded — try Edit Content or adjust the draft manually.",
-                });
-                return;
-            }
-
-            const deltas: SeoScoreDeltas = {
-                readability: attemptedScores.readability - prevScores.readability,
-                grammar: attemptedScores.grammar - prevScores.grammar,
-                originality: attemptedScores.originality - prevScores.originality,
-            };
-
-            setOptimizedData({ ...attempted, seoScores: attemptedScores });
-            setFactSources(
-                attempted.factSources?.length
-                    ? attempted.factSources
-                    : post.factSources ?? [],
-            );
-            setLiveScores(attemptedScores);
-            setScoreDeltas(deltas);
-            setHighlightScores(true);
-            setRefineFeedback({
-                type: "improved",
-                message: `Quality scores improved (readability +${Math.max(0, deltas.readability)}, grammar +${Math.max(0, deltas.grammar)}).`,
-            });
-        } catch (err) {
-            setError(optimizationErrorMessage(err));
-        } finally {
-            setLoading(false);
-            setIsRefining(false);
-            optimizeAbortRef.current = null;
-        }
-    };
-
     if (loading) {
         return (
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-8 shadow-xl text-center">
@@ -560,22 +669,18 @@ export function OptimizationAgentUI({
                     </svg>
                 </div>
                 <h3 className="text-lg font-medium text-neutral-200">
-                    {isRefining ? REFINE_LOADING_TITLE : OPTIMIZATION_LOADING_TITLE}
+                    {OPTIMIZATION_LOADING_TITLE}
                 </h3>
-                {isRefining && (
-                    <p className="mt-2 text-sm text-neutral-300 max-w-md mx-auto font-medium">
-                        {REFINE_LOADING_DETAIL}
-                    </p>
-                )}
-                {!isRefining && loadingPhase === "links" && (
+                {loadingPhase === "links" && (
                     <p className="mt-2 text-sm text-neutral-300 max-w-md mx-auto font-medium">
                         {OPTIMIZATION_LINKS_PHASE}
                     </p>
                 )}
-                {!isRefining && loadingPhase === "optimize" && (
+                {loadingPhase === "optimize" && (
                     <ul className="mt-4 mx-auto max-w-sm text-left space-y-1.5">
-                        {OPTIMIZATION_LOADING_STEPS.map((step, i) => {
-                            const active = optimizationLoadingStepIndex(loadingSeconds) === i;
+                        {optimizationLoadingSteps.map((step, i) => {
+                            const active =
+                                optimizationLoadingStepIndex(loadingSeconds, optimizationLoadingSteps) === i;
                             return (
                                 <li
                                     key={step}
@@ -589,9 +694,9 @@ export function OptimizationAgentUI({
                     </ul>
                 )}
                 <p className="mt-4 text-[11px] text-neutral-600 max-w-md mx-auto">
-                    {!isRefining && loadingPhase === "optimize" ? OPTIMIZATION_TIMING_NOTE : null}
+                    {loadingPhase === "optimize" ? OPTIMIZATION_TIMING_NOTE : null}
                     {loadingSeconds > 0 && (
-                        <span className={!isRefining && loadingPhase === "optimize" ? " block mt-1 font-mono" : " font-mono"}>
+                        <span className={loadingPhase === "optimize" ? " block mt-1 font-mono" : " font-mono"}>
                             {loadingSeconds}s elapsed
                         </span>
                     )}
@@ -622,6 +727,7 @@ export function OptimizationAgentUI({
                             setLoadingPhase("optimize");
                             void requestContentOptimization(post, businessContext, interlinkingRules, {
                                 signal: controller.signal,
+                                contentConstraints,
                             })
                                 .then((data) => {
                                     if (latestRequestRef.current !== requestId) return;
@@ -653,7 +759,35 @@ export function OptimizationAgentUI({
 
     const analyzerMarkdown = isEditing ? editedContent : optimizedData.contentMarkdown;
     const linkSummary = linkCountSummary(analyzerMarkdown, interlinkingRules);
-    const headingRows = buildHeadingTagRows(analyzerMarkdown, post);
+    const keywordDensityVerification =
+        liveScores?.keywordDensity ?? optimizedData.seoScores?.keywordDensity ?? null;
+    const resolvedKeywordPlan =
+        keywordDensityVerification?.plan ??
+        post.keywordPlan ??
+        optimizedData.seoScores?.keywordPlan ??
+        resolveKeywordPlanForPost(post, contentConstraints, primaryKeyword);
+    const verifiedRows = keywordVerificationToDensityRows(keywordDensityVerification);
+    const keywordDensityRows: KeywordDensityRow[] =
+        verifiedRows.length > 0
+            ? verifiedRows
+            : resolvedKeywordPlan
+              ? keywordVerificationToDensityRows(
+                    buildLocalKeywordPlanVerification(analyzerMarkdown, resolvedKeywordPlan, {
+                        title: optimizedData.title,
+                        h1Title: post.h1Title || optimizedData.title,
+                        metaDescription: optimizedData.metaDescription,
+                    }),
+                )
+              : [];
+    const keywordDensityDisplayVerification =
+        keywordDensityVerification ??
+        (resolvedKeywordPlan && keywordDensityRows.length > 0
+            ? buildLocalKeywordPlanVerification(analyzerMarkdown, resolvedKeywordPlan, {
+                  title: optimizedData.title,
+                  h1Title: post.h1Title || optimizedData.title,
+                  metaDescription: optimizedData.metaDescription,
+              })
+            : null);
 
     // Render optimized markdown with internal links (markdown already contains links)
     return (
@@ -704,111 +838,92 @@ export function OptimizationAgentUI({
                                 highlightScores ? "ring-2 ring-emerald-300 ring-offset-1" : ""
                             }`}
                         >
-                            <SeoMetricBar
-                                label="Readability"
-                                value={liveScores.readability}
-                                barClass="bg-[#eab308]"
-                                help="How easy the post is to read. Higher scores mean clearer sentences and better flow."
-                                delta={scoreDeltas?.readability}
-                            />
-                            <SeoMetricBar
-                                label="Originality"
-                                value={liveScores.originality}
-                                barClass="bg-[#3b82f6]"
-                                help="How original the copy is versus known sources. Higher is better for avoiding duplicate-content penalties."
-                                delta={scoreDeltas?.originality}
-                            />
-                            <SeoMetricBar
-                                label="Grammar"
-                                value={liveScores.grammar}
-                                barClass="bg-[#22c55e]"
-                                help="Grammar and mechanics quality across headings and body copy."
-                                delta={scoreDeltas?.grammar}
-                            />
-                            <SeoMetricBar
-                                label="AI Content%"
-                                value={liveScores.aiContentPercent}
-                                barClass="bg-[#a855f7]"
-                                help="Estimated share of text that reads AI-generated. Lower is better."
-                                suffix={`${liveScores.aiContentPercent}%`}
-                            />
-                            <div className="pt-2 border-t border-neutral-100">
-                                <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="text-sm font-semibold text-[#4A5568]">Internal links</span>
-                                        <HelpTip text="Number of on-site links in the article body (your domain and published blog posts only)." />
-                                    </div>
-                                    <span className="text-sm font-bold text-[#2D3748]">{linkSummary.count}</span>
-                                </div>
+                            <div className="space-y-2">
+                                <SeoMetricBar
+                                    label="Readability"
+                                    value={liveScores.readability}
+                                    barClass={readabilityBarClass(liveScores)}
+                                    help="Flesch Reading Ease (0–100) from SEO Review Tools. Higher means easier to read. Green = on target (grade 8 or below, or ease ≥ 60)."
+                                    delta={scoreDeltas?.readability}
+                                    brand={<SeoReviewToolsBadge variant="light" size="md" logoOnly />}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                {(() => {
+                                    const ai = getEffectiveAiContentPercent(liveScores);
+                                    return (
+                                <SeoMetricBar
+                                    label="AI Content%"
+                                    value={ai.percent}
+                                    barClass={aiContentBarClass(liveScores)}
+                                    help={
+                                        ai.verified
+                                            ? "Verified with ZeroGPT API on this draft. Lower is better. Green = below 20%."
+                                            : "Optimizer estimate only — not verified with ZeroGPT. Use Refresh or re-run optimize with ZEROGPT_API_KEY set."
+                                    }
+                                    suffix={`${ai.percent}%`}
+                                    delta={scoreDeltas?.aiContentPercent}
+                                    brand={<ZeroGptBadge variant="light" size="md" logoOnly />}
+                                />
+                                    );
+                                })()}
+                                {liveScores.aiDetection ? (
+                                    <AiDetectionBadge
+                                        variant="light"
+                                        aiPercent={liveScores.aiDetection.aiPercent}
+                                        targetMet={liveScores.aiDetection.targetMet}
+                                        attempts={liveScores.aiDetection.attempts}
+                                    />
+                                ) : null}
                             </div>
                         </div>
 
-                        <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
-                            <h3 className="mb-3 text-sm font-bold uppercase tracking-wider text-[#718096]">
-                                Heading tags
-                            </h3>
-                            <HeadingTagsPanel rows={headingRows} />
-                        </div>
+                        {keywordDensityRows.length > 0 && (
+                            <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
+                                <div className="mb-3 flex items-center gap-2">
+                                    <SeoReviewToolsBadge variant="light" size="md" logoOnly />
+                                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#718096]">
+                                        Keyword density
+                                    </h3>
+                                </div>
+                                <p className="mb-2 text-[11px] text-[#A0AEC0] leading-relaxed">
+                                    Targets come from the writer&apos;s{" "}
+                                    <span className="font-medium text-[#718096]">keywordPlan</span>.
+                                </p>
+                                <KeywordDensitySourceBanner verification={keywordDensityDisplayVerification} />
+                                <KeywordDensityPanel rows={keywordDensityRows} />
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
             {/* Next step — on the dark shell, not inside the light SEO card */}
             {!isEditing && (
-                <div className="mb-6 border-t border-neutral-800 pt-6 space-y-4">
-                    {refineFeedback && (
-                        <div
-                            className={`rounded-lg border px-4 py-3 text-sm ${
-                                refineFeedback.type === "improved"
-                                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-                                    : "border-neutral-700 bg-neutral-900/80 text-neutral-300"
-                            }`}
-                        >
-                            {refineFeedback.message}
-                        </div>
-                    )}
-                    <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const md = resolveEditorMarkdown(
-                                    optimizedData.contentMarkdown,
-                                    post,
-                                    businessContext.domain,
-                                );
-                                setEditedContent(md);
-                                setFactSources(optimizedData.factSources?.length ? optimizedData.factSources : post.factSources ?? []);
-                                setContentPatches([]);
-                                setAiPrompt("");
-                                setAiEditMode(null);
-                                setAiEditError(null);
-                                setEditorMountKey((k) => k + 1);
-                                setIsEditing(true);
-                            }}
-                            className="inline-flex w-full sm:flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-8 py-4 text-sm font-black uppercase tracking-widest text-white transition-all hover:bg-emerald-500 shadow-lg shadow-emerald-900/25 active:scale-[0.99]"
-                        >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                            Edit content
-                        </button>
-                        {liveScores?.actionableInsights?.length ? (
-                            <button
-                                type="button"
-                                onClick={handleRefine}
-                                disabled={loading}
-                                className="inline-flex w-full sm:w-auto items-center justify-center gap-2.5 rounded-xl border border-neutral-700 bg-neutral-900 px-6 py-4 text-sm font-bold text-neutral-200 transition-colors hover:border-neutral-600 hover:bg-neutral-800 hover:text-white disabled:opacity-50"
-                            >
-                                {loading ? (
-                                    <ButtonSpinner size={16} />
-                                ) : (
-                                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                                    </svg>
-                                )}
-                                {loading ? "Refining…" : "Auto-fix issues"}
-                            </button>
-                        ) : null}
-                    </div>
+                <div className="mb-6 border-t border-neutral-800 pt-6">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const md = resolveEditorMarkdown(
+                                optimizedData.contentMarkdown,
+                                post,
+                                businessContext.domain,
+                            );
+                            setEditedContent(md);
+                            setFactSources(optimizedData.factSources?.length ? optimizedData.factSources : post.factSources ?? []);
+                            setContentPatches([]);
+                            setAiPrompt("");
+                            setAiEditMode(null);
+                            setAiEditError(null);
+                            setEditorMountKey((k) => k + 1);
+                            setIsEditing(true);
+                        }}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-8 py-4 text-sm font-black uppercase tracking-widest text-white transition-all hover:bg-emerald-500 shadow-lg shadow-emerald-900/25 active:scale-[0.99]"
+                    >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                        Edit content
+                    </button>
                 </div>
             )}
 
@@ -860,22 +975,28 @@ export function OptimizationAgentUI({
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => {
+                                        disabled={isRefreshingMetrics}
+                                        onClick={async () => {
+                                            if (!optimizedData || !liveScores) return;
+                                            const refreshed = await runMetricsRefresh(
+                                                editedContent,
+                                                liveScores,
+                                            );
                                             setOptimizedData((prev) =>
                                                 prev
                                                     ? {
                                                           ...prev,
                                                           contentMarkdown: editedContent,
-                                                          seoScores: liveScores ?? prev.seoScores,
+                                                          seoScores: refreshed,
                                                           factSources,
                                                       }
                                                     : prev,
                                             );
                                             setIsEditing(false);
                                         }}
-                                        className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-900/20 transition-all hover:bg-emerald-500 active:scale-95"
+                                        className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-emerald-900/20 transition-all hover:bg-emerald-500 active:scale-95 disabled:opacity-50"
                                     >
-                                        Save
+                                        {isRefreshingMetrics ? "Saving…" : "Save"}
                                     </button>
                                 </div>
                             </div>
@@ -885,33 +1006,25 @@ export function OptimizationAgentUI({
                                     title="Live quality metrics for the current draft"
                                 >
                                     <div className="flex flex-1 items-center gap-3 overflow-x-auto px-3 py-2 sm:gap-4 sm:px-4 custom-scrollbar">
-                                        <EditContentMetric label="Readability" value={liveScores!.readability} suffix="%" />
-                                        <EditContentMetric label="Originality" value={liveScores!.originality} suffix="%" />
-                                        <EditContentMetric label="Grammar" value={liveScores!.grammar} suffix="%" />
-                                        <EditContentMetric
-                                            label="AI Content%"
-                                            value={liveScores!.aiContentPercent}
-                                            suffix="%"
-                                        />
-                                        <EditContentMetric label="Internal links" value={linkSummary.count} suffix="" />
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <SeoReviewToolsBadge size="sm" logoOnly />
+                                            <EditContentMetric label="Readability" value={liveScores!.readability} suffix="%" />
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <ZeroGptBadge size="sm" logoOnly />
+                                            <EditContentMetric
+                                                label="AI Content%"
+                                                value={getEffectiveAiContentPercent(liveScores!).percent}
+                                                suffix="%"
+                                            />
+                                        </div>
                                     </div>
                                     <button
                                         type="button"
                                         disabled={isRefreshingMetrics}
                                         onClick={() => {
-                                            if (!optimizedData || !liveScores) return;
-                                            setIsRefreshingMetrics(true);
-                                            try {
-                                                const refreshed = computeSeoScoresFromMarkdown(
-                                                    editedContent,
-                                                    liveScores,
-                                                    optimizedData.plagiarismReport?.overallSimilarity ?? 0,
-                                                );
-                                                setLiveScores(refreshed);
-                                                setHighlightScores(true);
-                                            } finally {
-                                                setIsRefreshingMetrics(false);
-                                            }
+                                            if (!liveScores) return;
+                                            void runMetricsRefresh(editedContent, liveScores);
                                         }}
                                         className="flex flex-col items-center justify-center gap-1 border-l border-neutral-800 bg-neutral-950/50 px-3 py-2 min-w-[4.5rem] text-neutral-400 transition-colors hover:bg-neutral-800/80 hover:text-emerald-400 disabled:opacity-50 sm:px-4"
                                         title="Recalculate all metrics from current article text"
@@ -933,6 +1046,14 @@ export function OptimizationAgentUI({
                                         </span>
                                     </button>
                                 </div>
+                                {metricsRefreshError ? (
+                                    <p className="mt-2 text-xs text-amber-400/90 px-1">{metricsRefreshError}</p>
+                                ) : (
+                                    <p className="mt-2 text-[11px] text-neutral-500 px-1">
+                                        Refresh re-runs SEO Review Tools (readability + keyword density) and ZeroGPT
+                                        on your current draft.
+                                    </p>
+                                )}
                             </div>
                         </div>
                         <div className="shrink-0 border-b border-neutral-800 bg-neutral-950/80 px-4 py-4 md:px-6">

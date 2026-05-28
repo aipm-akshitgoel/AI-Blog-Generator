@@ -139,7 +139,7 @@ export function PublishingAgentUI({
                                 <span className="text-emerald-400 font-bold">✓ Ready</span>
                             </li>
                             <li className="flex items-center justify-between text-sm">
-                                <span className="text-neutral-400">JSON-LD Schema (Local SEO + FAQ)</span>
+                                <span className="text-neutral-400">JSON-LD Schema (page-level + FAQ)</span>
                                 <span className="text-emerald-400 font-bold">✓ Ready</span>
                             </li>
                             <li className="flex items-center justify-between text-sm">

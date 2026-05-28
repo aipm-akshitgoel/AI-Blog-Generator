@@ -24,6 +24,7 @@ export function ProfileEditForm({ context, strategy, onSave, onCancel }: Profile
     country: context.location?.country ?? "",
     services: context.services?.join(", ") ?? "",
     targetAudience: context.targetAudience ?? "",
+    brandTone: context.brandTone ?? "",
     positioning: context.positioning ?? "",
     // Strategy fields
     primaryKeyword: strategy?.keywordStrategy?.primaryKeyword ?? "",
@@ -43,6 +44,7 @@ export function ProfileEditForm({ context, strategy, onSave, onCancel }: Profile
         location: { city: form.city.trim() || undefined, region: form.region.trim() || undefined, country: form.country.trim() || undefined },
         services: form.services.split(",").map((s) => s.trim()).filter(Boolean),
         targetAudience: form.targetAudience.trim(),
+        brandTone: form.brandTone.trim() || undefined,
         positioning: form.positioning.trim(),
       };
 
@@ -158,6 +160,16 @@ export function ProfileEditForm({ context, strategy, onSave, onCancel }: Profile
             rows={2}
             className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 outline-none transition-all placeholder:text-neutral-700"
             required
+          />
+        </div>
+        <div>
+          <label className="block text-sm text-neutral-400 mb-1">Brand tone</label>
+          <textarea
+            value={form.brandTone}
+            onChange={(e) => setForm((f) => ({ ...f, brandTone: e.target.value }))}
+            rows={2}
+            placeholder="e.g. Authoritative, data-driven, not salesy"
+            className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm text-neutral-100 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 outline-none transition-all placeholder:text-neutral-700"
           />
         </div>
         <div>

@@ -94,7 +94,7 @@ export default function BlogHubClient({ blogs, categories, activeCategory }: Pro
                                     <div className="aspect-[16/10] rounded-2xl overflow-hidden bg-neutral-100 shadow-sm transition-all duration-500 group-hover:shadow-xl group-hover:-translate-y-1">
                                         <img
                                             src={blog.payload.images?.bannerImageUrl}
-                                            alt={blog.title}
+                                            alt={blog.payload.images?.altText?.trim() || blog.title}
                                             className="w-full h-full object-cover grayscale-[0.5] group-hover:grayscale-0 transition-all duration-700"
                                         />
                                         <div className="absolute top-4 left-4">
@@ -150,7 +150,7 @@ export default function BlogHubClient({ blogs, categories, activeCategory }: Pro
                                     <div className="sm:col-span-2 aspect-[4/3] sm:aspect-square rounded-2xl overflow-hidden bg-neutral-100 relative">
                                         <img
                                             src={blog.payload.images?.bannerImageUrl}
-                                            alt={blog.title}
+                                            alt={blog.payload.images?.altText?.trim() || blog.title}
                                             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                                         />
                                     </div>

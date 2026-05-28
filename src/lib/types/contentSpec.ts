@@ -1,3 +1,25 @@
+/** Default target densities when SEO structure is used (override in brief UI). */
+export const DEFAULT_H1_KEYWORD_DENSITY_PERCENT = 1.5;
+export const DEFAULT_H2_KEYWORD_DENSITY_PERCENT = 1.0;
+/** Minimum H3 subheadings under each H2 (### in markdown). */
+export const DEFAULT_H3_PER_H2 = 2;
+
+/**
+ * How keyword density is calculated (analyzer + writer targets use the same rules).
+ * See `keywordDensityPercent` in `@/lib/seoAnalyzer`.
+ */
+export const KEYWORD_DENSITY_COUNTING_RULES = [
+    "Plain text only: markdown heading lines (# …) are excluded; link anchor text is kept; punctuation is stripped for matching.",
+    "Phrase match: case-insensitive; spaces in the keyword match flexible whitespace in the copy.",
+    "Each occurrence adds the keyword’s word count to the numerator (e.g. “online mba” twice → 4 keyword-words).",
+    "Denominator: total words in the scoped span (split on whitespace).",
+    "Result: round to one decimal — (keyword-words ÷ span-words) × 100.",
+    "H1 density: intro only (from first body paragraph through text before the first ## H2).",
+    "H2 density: measured separately in each ## section (that H2’s body, excluding ### lines).",
+    "H3 density (optional): measured in each ### block under its parent H2.",
+    "Domain density (optional): full article body excluding the FAQ block, all sections combined.",
+] as const;
+
 /** SEO structure targets set before draft generation. */
 export interface ContentConstraints {
     wordCount?: number;
@@ -5,9 +27,26 @@ export interface ContentConstraints {
     h2Count?: number;
     /** Exact H2 headings in order (overrides h2Count when provided). */
     h2Titles?: string[];
+    /** H3 subheadings required under each H2 (### in markdown). */
+    h3PerH2?: number;
+    /** North-star keyword from saved keyword strategy (domain level). */
+    domainPrimaryKeyword?: string;
+    /** Optional — target % for domainPrimaryKeyword in full article body (excl. FAQs). */
+    domainKeywordDensityPercent?: number;
+    /** Post-level primary keyword (H1 / this article) — mandatory per blog. */
     h1PrimaryKeyword?: string;
-    /** Target % of body words that are the primary keyword (e.g. 1.5). */
+    /** Optional — secondary keywords (typically one per H2 when H2s are listed). */
+    secondaryKeywords?: string[];
+    /** Optional — tertiary keywords (typically one per H3 when H3s are listed). */
+    tertiaryKeywords?: string[];
+    /** Optional — exact H3 headings in order (overrides h3PerH2 when provided). */
+    h3Titles?: string[];
+    /** Required when structure is set — target % for h1PrimaryKeyword in the H1 intro span. */
     h1KeywordDensityPercent?: number;
+    /** Required when structure is set — target % for h1PrimaryKeyword in each H2 section. */
+    h2KeywordDensityPercent?: number;
+    /** Optional — target % for h1PrimaryKeyword in each H3 block. */
+    h3KeywordDensityPercent?: number;
 }
 
 /** Editor rules applied at the internal-linking / optimization step. */
@@ -21,6 +60,54 @@ export const EMPTY_INTERLINKING_RULES: InterlinkingRules = {
     instructions: "",
 };
 
+/** Per-blog mandatory fields: primary keyword + H1 title. */
+export function hasMandatoryBlogStructure(c?: ContentConstraints | null): boolean {
+    if (!c) return false;
+    return !!(c.h1Title?.trim() && c.h1PrimaryKeyword?.trim());
+}
+
+export function hasH2Structure(c?: ContentConstraints | null): boolean {
+    if (!c) return false;
+    return !!((c.h2Titles && c.h2Titles.length > 0) || (c.h2Count != null && c.h2Count > 0));
+}
+
+/** True when H2 outline was set in the content directory / topic brief (optimizer must not reshape headings). */
+export function isTocFinalized(c?: ContentConstraints | null): boolean {
+    return !!(c?.h2Titles && c.h2Titles.length > 0);
+}
+
+export function buildTocLockedOptimizePrompt(c: ContentConstraints): string {
+    const lines = [
+        "### Table of contents — LOCKED",
+        "The outline was finalized before optimization. You MUST NOT add, remove, rename, or reorder ## / ### headings.",
+        "Only improve body paragraphs inside each existing section.",
+    ];
+    if (c.h2Titles?.length) {
+        lines.push(
+            `- Keep these H2 headings exactly (minor punctuation OK): ${c.h2Titles.map((t) => `"${t}"`).join(", ")}`,
+        );
+    }
+    if (c.h3Titles?.length) {
+        lines.push(
+            `- Keep these H3 headings exactly: ${c.h3Titles.map((t) => `"${t}"`).join(", ")}`,
+        );
+    }
+    return lines.join("\n");
+}
+
+export function hasH3Structure(c?: ContentConstraints | null): boolean {
+    if (!c) return false;
+    return !!((c.h3Titles && c.h3Titles.length > 0) || (c.h3PerH2 != null && c.h3PerH2 > 0));
+}
+
+export function parseKeywordList(text: string, max = 20): string[] {
+    return text
+        .split(/[\n,;|]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, max);
+}
+
 export function hasContentConstraints(c?: ContentConstraints | null): boolean {
     if (!c) return false;
     return !!(
@@ -28,9 +115,35 @@ export function hasContentConstraints(c?: ContentConstraints | null): boolean {
         c.h1Title?.trim() ||
         (c.h2Count != null && c.h2Count > 0) ||
         (c.h2Titles && c.h2Titles.length > 0) ||
+        (c.h3Titles && c.h3Titles.length > 0) ||
+        (c.secondaryKeywords && c.secondaryKeywords.length > 0) ||
+        (c.tertiaryKeywords && c.tertiaryKeywords.length > 0) ||
+        c.domainPrimaryKeyword?.trim() ||
         c.h1PrimaryKeyword?.trim() ||
-        (c.h1KeywordDensityPercent != null && c.h1KeywordDensityPercent > 0)
+        (c.domainKeywordDensityPercent != null && c.domainKeywordDensityPercent > 0) ||
+        (c.h1KeywordDensityPercent != null && c.h1KeywordDensityPercent > 0) ||
+        (c.h2KeywordDensityPercent != null && c.h2KeywordDensityPercent > 0) ||
+        (c.h3KeywordDensityPercent != null && c.h3KeywordDensityPercent > 0) ||
+        (c.h3PerH2 != null && c.h3PerH2 > 0)
     );
+}
+
+export function usesSeoStructure(c?: ContentConstraints | null): boolean {
+    if (!c) return false;
+    return hasMandatoryBlogStructure(c) || hasH2Structure(c) || hasH3Structure(c);
+}
+
+/** Apply H3-per-H2 default when H2 structure is used (densities come from writer keywordPlan). */
+export function applyContentConstraintDefaults(c: ContentConstraints): ContentConstraints {
+    const out = { ...c };
+    if (hasH2Structure(out) && !out.h3Titles?.length && (out.h3PerH2 == null || out.h3PerH2 <= 0)) {
+        out.h3PerH2 = DEFAULT_H3_PER_H2;
+    }
+    return out;
+}
+
+function densityPromptLines(keyword: string, percent: number, scope: string): string {
+    return `- Target ~${percent}% density for "${keyword}" in ${scope} (keyword-words ÷ span-words × 100, phrase match case-insensitive).`;
 }
 
 export function hasInterlinkingRules(r?: InterlinkingRules | null): boolean {
@@ -44,44 +157,81 @@ export function hasInterlinkingRules(r?: InterlinkingRules | null): boolean {
 
 export function buildContentConstraintsPrompt(c: ContentConstraints): string {
     const lines: string[] = [
-        "### Content structure requirements (MUST follow — non-negotiable)",
+        "### Content structure requirements",
+        "",
+        "#### Mandatory (every blog)",
     ];
 
-    if (c.wordCount != null && c.wordCount > 0) {
-        const minWords = Math.round(c.wordCount * 0.95);
+    if (c.h1PrimaryKeyword?.trim()) {
+        const h1Kw = c.h1PrimaryKeyword.trim();
         lines.push(
-            `- contentMarkdown body (exclude FAQs) MUST be at least ${minWords} words and target ${c.wordCount} words (acceptable range ${minWords}–${Math.round(c.wordCount * 1.05)}). Shorter drafts are not acceptable.`,
-        );
-        lines.push(
-            `- Add depth under each H2 (examples, criteria, numbers, comparisons) until the word-count target is met.`,
+            `- Primary keyword hint: "${h1Kw}" — MUST appear in the H1; you will finalize exact density targets in keywordPlan.`,
         );
     }
     if (c.h1Title?.trim()) {
-        lines.push(`- h1Title MUST be: "${c.h1Title.trim()}"`);
+        lines.push(`- H1 title (h1Title) MUST be: "${c.h1Title.trim()}"`);
+    }
+
+    const optionalLines: string[] = [];
+
+    if (c.wordCount != null && c.wordCount > 0) {
+        const minWords = Math.round(c.wordCount * 0.95);
+        optionalLines.push(
+            `- contentMarkdown body (exclude FAQs) MUST be at least ${minWords} words and target ${c.wordCount} words (acceptable range ${minWords}–${Math.round(c.wordCount * 1.05)}).`,
+        );
     }
     if (c.h2Titles && c.h2Titles.length > 0) {
-        lines.push(
+        optionalLines.push(
             `- Use exactly these H2 headings in contentMarkdown in this order (minor grammar tweaks OK): ${c.h2Titles.map((t) => `"${t}"`).join(", ")}`,
         );
-        lines.push(`- h2Suggestions array MUST list the same ${c.h2Titles.length} headings.`);
+        optionalLines.push(`- h2Suggestions array MUST list the same ${c.h2Titles.length} headings.`);
     } else if (c.h2Count != null && c.h2Count > 0) {
-        lines.push(
+        optionalLines.push(
             `- Use exactly ${c.h2Count} H2 sections in contentMarkdown; h2Suggestions must have ${c.h2Count} entries.`,
         );
     }
-    if (c.h1PrimaryKeyword?.trim()) {
-        const kw = c.h1PrimaryKeyword.trim();
-        lines.push(`- Primary SEO keyword: "${kw}" — include it in h1Title and weave naturally through the body.`);
-        if (c.h1KeywordDensityPercent != null && c.h1KeywordDensityPercent > 0) {
-            lines.push(
-                `- Target keyword density for "${kw}" in contentMarkdown body: ~${c.h1KeywordDensityPercent}% of total body words (count occurrences ÷ word count × 100).`,
-            );
-        }
-    } else if (c.h1KeywordDensityPercent != null && c.h1KeywordDensityPercent > 0) {
-        lines.push(
-            `- Target primary-keyword density in body: ~${c.h1KeywordDensityPercent}% of total body words.`,
+
+    if (c.h3Titles && c.h3Titles.length > 0) {
+        optionalLines.push(
+            `- Use these H3 headings (### in markdown) where they fit under the related H2 sections: ${c.h3Titles.map((t) => `"${t}"`).join(", ")}`,
+        );
+    } else if (hasH2Structure(c) && c.h3PerH2 != null && c.h3PerH2 > 0) {
+        optionalLines.push(
+            `- Under each ## H2 section include at least ${Math.round(c.h3PerH2)} H3 subheadings (### in markdown) before the next H2.`,
         );
     }
+
+    if (c.secondaryKeywords && c.secondaryKeywords.length > 0) {
+        optionalLines.push(
+            `- Secondary keywords (use in matching H2 sections when H2s are listed, otherwise distribute naturally): ${c.secondaryKeywords.map((k) => `"${k}"`).join(", ")}`,
+        );
+    }
+    if (c.tertiaryKeywords && c.tertiaryKeywords.length > 0) {
+        optionalLines.push(
+            `- Tertiary keywords (use in H3 subsections when H3s are listed, otherwise distribute naturally): ${c.tertiaryKeywords.map((k) => `"${k}"`).join(", ")}`,
+        );
+    }
+
+    if (c.domainPrimaryKeyword?.trim()) {
+        const domainKw = c.domainPrimaryKeyword.trim();
+        lines.push(
+            `- Domain-level primary keyword (from strategy): "${domainKw}" — weave naturally where relevant.`,
+        );
+        if (c.domainKeywordDensityPercent != null && c.domainKeywordDensityPercent > 0) {
+            lines.push(
+                densityPromptLines(
+                    domainKw,
+                    c.domainKeywordDensityPercent,
+                    "the full article body (excluding the FAQ section)",
+                ),
+            );
+        }
+    }
+    if (optionalLines.length > 0) {
+        lines.push("", "#### Optional (when provided)", ...optionalLines);
+    }
+
+    lines.push("", "### Keyword density counting (analyzer uses the same rules)", ...KEYWORD_DENSITY_COUNTING_RULES.map((r) => `- ${r}`));
 
     return lines.join("\n");
 }
@@ -115,18 +265,48 @@ export function buildInterlinkingRulesPrompt(r: InterlinkingRules): string {
     return parts.join("\n");
 }
 
-/** Strip empty fields before sending to API. */
+function clampDensityPercent(n: number): number {
+    return Math.min(10, Math.max(0.1, n));
+}
+
+/** Strip empty fields before sending to API. Applies mandatory H1/H2 density defaults when structure is set. */
 export function normalizeContentConstraints(c: ContentConstraints): ContentConstraints | undefined {
+    let working = applyContentConstraintDefaults({ ...c });
     const out: ContentConstraints = {};
-    if (c.wordCount != null && c.wordCount > 0) out.wordCount = Math.round(c.wordCount);
-    if (c.h1Title?.trim()) out.h1Title = c.h1Title.trim();
-    if (c.h2Count != null && c.h2Count > 0) out.h2Count = Math.min(12, Math.round(c.h2Count));
-    if (c.h2Titles?.length) {
-        out.h2Titles = c.h2Titles.map((t) => t.trim()).filter(Boolean).slice(0, 12);
+    if (working.wordCount != null && working.wordCount > 0) out.wordCount = Math.round(working.wordCount);
+    if (working.h1Title?.trim()) out.h1Title = working.h1Title.trim();
+    if (working.h2Count != null && working.h2Count > 0) out.h2Count = Math.min(12, Math.round(working.h2Count));
+    if (working.h2Titles?.length) {
+        out.h2Titles = working.h2Titles.map((t) => t.trim()).filter(Boolean).slice(0, 12);
     }
-    if (c.h1PrimaryKeyword?.trim()) out.h1PrimaryKeyword = c.h1PrimaryKeyword.trim();
-    if (c.h1KeywordDensityPercent != null && c.h1KeywordDensityPercent > 0) {
-        out.h1KeywordDensityPercent = Math.min(10, Math.max(0.1, c.h1KeywordDensityPercent));
+    if (working.h3Titles?.length) {
+        out.h3Titles = working.h3Titles.map((t) => t.trim()).filter(Boolean).slice(0, 24);
+    }
+    if (working.h3PerH2 != null && working.h3PerH2 > 0) {
+        out.h3PerH2 = Math.min(8, Math.round(working.h3PerH2));
+    }
+    if (working.secondaryKeywords?.length) {
+        out.secondaryKeywords = working.secondaryKeywords.map((k) => k.trim()).filter(Boolean).slice(0, 20);
+    }
+    if (working.tertiaryKeywords?.length) {
+        out.tertiaryKeywords = working.tertiaryKeywords.map((k) => k.trim()).filter(Boolean).slice(0, 24);
+    }
+    if (working.domainPrimaryKeyword?.trim()) out.domainPrimaryKeyword = working.domainPrimaryKeyword.trim();
+    if (working.domainKeywordDensityPercent != null && working.domainKeywordDensityPercent > 0) {
+        out.domainKeywordDensityPercent = clampDensityPercent(working.domainKeywordDensityPercent);
+    }
+    if (working.h1PrimaryKeyword?.trim()) out.h1PrimaryKeyword = working.h1PrimaryKeyword.trim();
+    if (hasH2Structure(working) && !out.h3Titles?.length && (out.h3PerH2 == null || out.h3PerH2 <= 0)) {
+        out.h3PerH2 = DEFAULT_H3_PER_H2;
+    }
+    if (working.h1KeywordDensityPercent != null && working.h1KeywordDensityPercent > 0) {
+        out.h1KeywordDensityPercent = clampDensityPercent(working.h1KeywordDensityPercent);
+    }
+    if (working.h2KeywordDensityPercent != null && working.h2KeywordDensityPercent > 0) {
+        out.h2KeywordDensityPercent = clampDensityPercent(working.h2KeywordDensityPercent);
+    }
+    if (working.h3KeywordDensityPercent != null && working.h3KeywordDensityPercent > 0) {
+        out.h3KeywordDensityPercent = clampDensityPercent(working.h3KeywordDensityPercent);
     }
     return hasContentConstraints(out) ? out : undefined;
 }

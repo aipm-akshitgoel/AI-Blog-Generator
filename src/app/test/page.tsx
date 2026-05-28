@@ -564,6 +564,11 @@ function SetupPageInner() {
                     post={generatedPost}
                     businessContext={effectiveContext}
                     interlinkingRules={topicBrief?.interlinkingRules}
+                    contentConstraints={topicBrief?.contentConstraints}
+                    primaryKeyword={
+                      topicBrief?.contentConstraints?.h1PrimaryKeyword?.trim() ||
+                      strategySession?.keywordStrategy?.primaryKeyword
+                    }
                     onComplete={setOptimizedPost}
                   />
                 </div>

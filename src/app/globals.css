@@ -19,8 +19,23 @@
 
 body {
   color: var(--foreground);
-  background: var(--background);
   font-family: var(--font-main);
+}
+
+/* Bloggie shell: layout uses bg-neutral-950 — do not force light --background from :root */
+body.antialiased.min-h-screen.bg-neutral-950 {
+  background-color: #0a0a0a !important;
+  color: #fafafa;
+}
+
+/* Clerk user menu — prevent giant unstyled avatar when CSS chunks fail to load */
+.cl-userButtonTrigger,
+.cl-userButtonAvatarBox,
+.cl-userButtonAvatarBox img {
+  max-width: 2.5rem !important;
+  max-height: 2.5rem !important;
+  width: 2.5rem !important;
+  height: 2.5rem !important;
 }
 
 .parul-container {
@@ -239,6 +254,34 @@ body {
 
 .infi-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #64748b;
+}
+
+/* TOC editor — always show scrollbar track (middle panel) */
+.toc-editor-scrollbar {
+  scrollbar-gutter: stable;
+  overflow-y: scroll;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 158, 11, 0.55) rgba(23, 23, 23, 0.9);
+}
+
+.toc-editor-scrollbar::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+}
+
+.toc-editor-scrollbar::-webkit-scrollbar-track {
+  background: rgba(23, 23, 23, 0.9);
+  border-radius: 8px;
+}
+
+.toc-editor-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(245, 158, 11, 0.45);
+  border-radius: 8px;
+  border: 2px solid rgba(23, 23, 23, 0.9);
+}
+
+.toc-editor-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.65);
 }
 
 /* Hide native number spinners — use custom green chevrons in NumberInput */

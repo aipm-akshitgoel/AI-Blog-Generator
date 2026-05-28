@@ -4,6 +4,7 @@ import { ButtonSpinner } from "@/components/ui/ButtonSpinner";
 
 import { useState } from "react";
 import { SavedBlog } from "@/lib/blogDb";
+import { extractPageLevelSchemaJsonLd } from "@/lib/pageSchema";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -21,30 +22,16 @@ export function EditBlogClient({ blog }: { blog: SavedBlog }) {
     const [imageAltText, setImageAltText] = useState(blog.payload.images?.altText || "");
     const [category, setCategory] = useState<string>((blog as any).category || "");
     // Schema editors
-    const [articleSchemaJson, setArticleSchemaJson] = useState(() => {
+    const [pageSchemaJson, setPageSchemaJson] = useState(() => {
         try {
-            const parsed = JSON.parse(blog.payload.schema?.jsonLd || "{}");
-            const articleTypes = new Set(['Article', 'BlogPosting', 'NewsArticle']);
-            if (Array.isArray(parsed['@graph'])) {
-                const node = parsed['@graph'].find((n: any) => articleTypes.has(n['@type']));
-                return node ? JSON.stringify(node, null, 2) : "";
-            }
-            return JSON.stringify(parsed, null, 2);
-        } catch { return ""; }
-    });
-    const [orgSchemaJson, setOrgSchemaJson] = useState(() => {
-        try {
-            const parsed = JSON.parse(blog.payload.schema?.jsonLd || "{}");
-            const articleTypes = new Set(['Article', 'BlogPosting', 'NewsArticle']);
-            if (Array.isArray(parsed['@graph'])) {
-                const nodes = parsed['@graph'].filter((n: any) => !articleTypes.has(n['@type']));
-                return nodes.length > 0 ? JSON.stringify(nodes, null, 2) : "";
-            }
+            const pageOnly = extractPageLevelSchemaJsonLd(blog.payload.schema?.jsonLd || "{}");
+            const parsed = JSON.parse(pageOnly);
+            return Object.keys(parsed).length > 0 ? JSON.stringify(parsed, null, 2) : "";
+        } catch {
             return "";
-        } catch { return ""; }
+        }
     });
-    const [schemaArticleOpen, setSchemaArticleOpen] = useState(false);
-    const [schemaOrgOpen, setSchemaOrgOpen] = useState(false);
+    const [schemaOpen, setSchemaOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const router = useRouter();
@@ -89,8 +76,7 @@ export function EditBlogClient({ blog }: { blog: SavedBlog }) {
                     bannerImageUrl,
                     imageAltText,
                     category,
-                    articleSchemaJson,
-                    orgSchemaJson,
+                    pageSchemaJson,
                 })
             });
             if (!res.ok) throw new Error("Failed to save changes.");
@@ -163,7 +149,7 @@ export function EditBlogClient({ blog }: { blog: SavedBlog }) {
                     <div className="flex flex-col md:flex-row items-center gap-6 border border-neutral-800 rounded-lg p-6 bg-neutral-900/30">
                         {bannerImageUrl ? (
                             <div className="w-full md:w-[300px] aspect-video relative rounded-lg overflow-hidden border border-neutral-800 shrink-0">
-                                <img src={bannerImageUrl} alt="Banner Preview" className="w-full h-full object-cover" />
+                                <img src={bannerImageUrl} alt={imageAltText || title || "Banner preview"} className="w-full h-full object-cover" />
                                 {isUploading && (
                                     <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm">
                                         <svg className="w-6 h-6 text-emerald-500 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -283,64 +269,32 @@ export function EditBlogClient({ blog }: { blog: SavedBlog }) {
                     </div>
                 </div>
 
-                {/* Schema Editors */}
+                {/* Page-level schema only */}
                 <div className="space-y-4 pt-6 border-t border-neutral-800">
-                    <label className="text-sm font-bold text-emerald-500 uppercase tracking-wider block">Schema / Structured Data</label>
-                    <p className="text-xs text-neutral-500">Edit the JSON-LD that search engines use to understand your content. Invalid JSON will be flagged on save.</p>
+                    <label className="text-sm font-bold text-emerald-500 uppercase tracking-wider block">Page Schema (JSON-LD)</label>
+                    <p className="text-xs text-neutral-500">
+                        BlogPosting, FAQPage, and other page-level types for this post only. Domain schemas (Organization, LocalBusiness, WebSite) are managed on your site — not in Bloggie AI.
+                    </p>
 
-                    {/* Article Schema */}
                     <div className="rounded-xl border border-neutral-800 bg-neutral-950 overflow-hidden">
                         <button
                             type="button"
-                            onClick={() => setSchemaArticleOpen(o => !o)}
+                            onClick={() => setSchemaOpen((o) => !o)}
                             className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-neutral-900 transition-colors"
                         >
-                            <div>
-                                <span className="text-sm font-semibold text-neutral-200">Article Schema (Page-Level)</span>
-                                <p className="text-[11px] text-neutral-500 mt-0.5">Specific to this blog post — title, description, publish date.</p>
-                            </div>
-                            <svg className={`w-4 h-4 text-neutral-500 transition-transform ${schemaArticleOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                            <span className="text-sm font-semibold text-neutral-200">Edit page schema</span>
+                            <svg className={`w-4 h-4 text-neutral-500 transition-transform ${schemaOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
                         </button>
-                        {schemaArticleOpen && (
+                        {schemaOpen && (
                             <div className="px-5 pb-5 border-t border-neutral-800">
                                 <textarea
-                                    value={articleSchemaJson}
-                                    onChange={e => setArticleSchemaJson(e.target.value)}
-                                    rows={12}
+                                    value={pageSchemaJson}
+                                    onChange={(e) => setPageSchemaJson(e.target.value)}
+                                    rows={14}
                                     spellCheck={false}
                                     className="w-full mt-4 bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2.5 text-xs text-emerald-300 font-mono focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-y"
                                 />
-                                <p className="text-[11px] text-neutral-600 mt-2">Tip: Must be valid JSON. Only include the Article node — org-level data lives separately.</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Org / Domain Schema */}
-                    <div className="rounded-xl border border-neutral-800 bg-neutral-950 overflow-hidden">
-                        <button
-                            type="button"
-                            onClick={() => setSchemaOrgOpen(o => !o)}
-                            className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-neutral-900 transition-colors"
-                        >
-                            <div>
-                                <span className="text-sm font-semibold text-neutral-200">Organisation Schema (Domain-Level)</span>
-                                <p className="text-[11px] text-neutral-500 mt-0.5">Brand + business type — auto-updates when you refresh your Strategy. Override here if needed.</p>
-                            </div>
-                            <svg className={`w-4 h-4 text-neutral-500 transition-transform ${schemaOrgOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                        </button>
-                        {schemaOrgOpen && (
-                            <div className="px-5 pb-5 border-t border-neutral-800">
-                                <div className="mt-4 flex items-start gap-2 rounded-lg bg-amber-900/20 border border-amber-800/40 px-3 py-2.5 mb-3">
-                                    <svg className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" /></svg>
-                                    <p className="text-xs text-amber-300">This schema auto-regenerates when you refresh your SEO strategy. Manual edits here take effect immediately but may be overwritten on the next schema generation run.</p>
-                                </div>
-                                <textarea
-                                    value={orgSchemaJson}
-                                    onChange={e => setOrgSchemaJson(e.target.value)}
-                                    rows={12}
-                                    spellCheck={false}
-                                    className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2.5 text-xs text-blue-300 font-mono focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-y"
-                                />
+                                <p className="text-[11px] text-neutral-600 mt-2">Must be valid JSON. Domain-level nodes are stripped on save.</p>
                             </div>
                         )}
                     </div>

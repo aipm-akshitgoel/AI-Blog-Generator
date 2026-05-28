@@ -98,6 +98,19 @@ export async function getBlogBySlug(slug: string): Promise<SavedBlog | null> {
     return rowToBlog(data[0]);
 }
 
+export async function getLastPublishedBlogByUserId(userId: string): Promise<SavedBlog | null> {
+    const { data, error } = await supabase
+        .from("blogs")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("status", "published")
+        .order("created_at", { ascending: false })
+        .limit(1);
+    if (error) throw error;
+    if (!data?.length) return null;
+    return rowToBlog(data[0]);
+}
+
 export async function saveBlog(blog: SavedBlog): Promise<void> {
     const row = {
         id: blog.id,

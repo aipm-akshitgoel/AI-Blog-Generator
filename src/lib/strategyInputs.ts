@@ -103,6 +103,7 @@ export function buildMinimalBusinessContext(opts: {
         location: {},
         services: [],
         targetAudience: "Readers searching for information online",
+        brandTone: "Professional and helpful",
         positioning: "Informative and trustworthy",
         platform: opts.platform ?? "blog",
     };
@@ -143,6 +144,7 @@ export function businessContextPayloadFromStrategy(
             location: existing!.location ?? {},
             services: existing!.services ?? [],
             targetAudience: existing!.targetAudience,
+            brandTone: existing!.brandTone,
             positioning: existing!.positioning,
         };
         if (existing!.domain) payload.domain = existing!.domain;
@@ -159,6 +161,7 @@ export function businessContextPayloadFromStrategy(
             location: existing?.location ?? {},
             services: existing?.services ?? [],
             targetAudience: existing?.targetAudience?.trim() || "Readers searching for information online",
+            brandTone: existing?.brandTone?.trim() || "Professional and helpful",
             positioning: existing?.positioning?.trim() || "Informative and trustworthy",
         };
     }
@@ -171,6 +174,7 @@ export function businessContextPayloadFromStrategy(
         location: {},
         services: [],
         targetAudience: "Readers searching for information online",
+        brandTone: "Professional and helpful",
         positioning: "Informative and trustworthy",
     };
 }

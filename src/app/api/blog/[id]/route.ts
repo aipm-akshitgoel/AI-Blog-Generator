@@ -1,5 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { getBlogById, saveBlog, deleteBlog } from "@/lib/blogDb";
+import { persistBlogImageUrl } from "@/lib/blogImageStorage";
+import { injectSchemaArticleImage } from "@/lib/schemaArticleImage";
+import { extractPageLevelSchemaJsonLd } from "@/lib/pageSchema";
 import { NextResponse } from "next/server";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -49,13 +52,30 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             if (!existingBlog.payload.images) {
                 existingBlog.payload.images = {} as any;
             }
-            existingBlog.payload.images!.bannerImageUrl = body.bannerImageUrl;
+            existingBlog.payload.images!.bannerImageUrl = await persistBlogImageUrl(body.bannerImageUrl, {
+                slug: existingBlog.slug,
+                variant: "banner",
+            });
+            if (existingBlog.payload.schema) {
+                existingBlog.payload.schema = injectSchemaArticleImage(
+                    existingBlog.payload.schema,
+                    existingBlog.payload.images!.bannerImageUrl,
+                    existingBlog.payload.images!.altText,
+                );
+            }
         }
         if (body.imageAltText !== undefined) {
             if (!existingBlog.payload.images) {
                 existingBlog.payload.images = {} as any;
             }
             existingBlog.payload.images!.altText = body.imageAltText;
+            if (existingBlog.payload.schema && existingBlog.payload.images?.bannerImageUrl) {
+                existingBlog.payload.schema = injectSchemaArticleImage(
+                    existingBlog.payload.schema,
+                    existingBlog.payload.images.bannerImageUrl,
+                    existingBlog.payload.images.altText,
+                );
+            }
         }
 
         // Apply edits (category)
@@ -63,37 +83,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
             (existingBlog as any).category = body.category;
         }
 
-        // Apply edits (schema JSON-LD overrides)
-        if (body.articleSchemaJson !== undefined || body.orgSchemaJson !== undefined) {
+        // Apply edits (page-level schema JSON-LD only — no domain/org schema)
+        if (body.pageSchemaJson !== undefined || body.articleSchemaJson !== undefined) {
+            const raw = (body.pageSchemaJson ?? body.articleSchemaJson ?? "").trim();
             if (!existingBlog.payload.schema) {
-                existingBlog.payload.schema = { type: 'Article', jsonLd: '{}', validationStatus: 'valid' };
+                existingBlog.payload.schema = { type: "BlogPosting", jsonLd: "{}", validationStatus: "valid" };
             }
             try {
-                // Parse existing @graph or start fresh
-                const existing = JSON.parse(existingBlog.payload.schema.jsonLd || '{}');
-                const articleTypes = new Set(['Article', 'BlogPosting', 'NewsArticle']);
-                let graph: any[] = Array.isArray(existing['@graph']) ? existing['@graph'] : [];
-
-                if (body.articleSchemaJson !== undefined) {
-                    const articleNodeStr = body.articleSchemaJson.trim() || '{}';
-                    const articleNode = JSON.parse(articleNodeStr);
-                    if (Object.keys(articleNode).length > 0) {
-                        graph = [...graph.filter((n: any) => !articleTypes.has(n['@type'])), articleNode];
-                    } else {
-                        graph = graph.filter((n: any) => !articleTypes.has(n['@type']));
-                    }
-                }
-                if (body.orgSchemaJson !== undefined) {
-                    const orgNodeStr = body.orgSchemaJson.trim() || '[]';
-                    const orgNodes = JSON.parse(orgNodeStr); // may be array or object
-                    const orgArr = Array.isArray(orgNodes) ? orgNodes : Object.keys(orgNodes).length > 0 ? [orgNodes] : [];
-                    graph = [...graph.filter((n: any) => articleTypes.has(n['@type'])), ...orgArr];
-                }
-
-                existingBlog.payload.schema.jsonLd = JSON.stringify({ ...existing, '@graph': graph });
-                existingBlog.payload.schema.validationStatus = 'valid';
+                const pageOnly = extractPageLevelSchemaJsonLd(raw || "{}");
+                existingBlog.payload.schema.jsonLd = pageOnly;
+                existingBlog.payload.schema.validationStatus = "valid";
             } catch {
-                return NextResponse.json({ error: 'Invalid JSON in schema editor. Please check your JSON and try again.' }, { status: 400 });
+                return NextResponse.json({ error: "Invalid JSON in schema editor. Please check your JSON and try again." }, { status: 400 });
             }
         }
 

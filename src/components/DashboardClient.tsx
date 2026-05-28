@@ -7,6 +7,8 @@ import type { SavedBlog } from "@/lib/blogDb";
 import { formatDistanceToNow, isValid } from "date-fns";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AiDetectionBadge } from "@/components/ZeroGptBadge";
+import { ReadabilityGradeBadge } from "@/components/SeoReviewToolsBadge";
 
 function formatCreatedRelative(createdAt: string | undefined): string {
     if (!createdAt) return "Unknown date";
@@ -237,12 +239,44 @@ export function DashboardClient({
                                     {blog.title}
                                 </h3>
 
-                                <p className="text-xs text-neutral-500 flex items-center gap-2 mb-4">
+                                <p className="text-xs text-neutral-500 flex items-center gap-2 mb-3">
                                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
                                     {formatCreatedRelative(blog.createdAt)}
                                 </p>
+
+                                {(blog.payload?.content?.seoScores?.readabilityGrade ||
+                                    blog.payload?.content?.seoScores?.aiDetection) && (
+                                    <div
+                                        className="mb-4 flex flex-col gap-2"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        {blog.payload.content.seoScores.readabilityGrade ? (
+                                            <ReadabilityGradeBadge
+                                                gradeLabel={
+                                                    blog.payload.content.seoScores.readabilityGrade.gradeLabel
+                                                }
+                                                gradeLevel={
+                                                    blog.payload.content.seoScores.readabilityGrade.gradeLevel
+                                                }
+                                                targetMet={
+                                                    blog.payload.content.seoScores.readabilityGrade.targetMet
+                                                }
+                                                fleschScore={
+                                                    blog.payload.content.seoScores.readabilityGrade.fleschScore
+                                                }
+                                            />
+                                        ) : null}
+                                        {blog.payload.content.seoScores.aiDetection ? (
+                                            <AiDetectionBadge
+                                                aiPercent={blog.payload.content.seoScores.aiDetection.aiPercent}
+                                                targetMet={blog.payload.content.seoScores.aiDetection.targetMet}
+                                                attempts={blog.payload.content.seoScores.aiDetection.attempts}
+                                            />
+                                        ) : null}
+                                    </div>
+                                )}
 
                                 <div className="flex items-center gap-2 mt-4 pt-4 border-t border-neutral-800/60">
                                     {blog.status === "draft" ? (

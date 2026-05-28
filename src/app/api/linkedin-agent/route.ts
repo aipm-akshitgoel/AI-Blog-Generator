@@ -37,7 +37,7 @@ Your goal is to transform a specific topic and business context into a viral-rea
 LinkedIn Copywriting Rules:
 1. **The Hook**: Start with a heavy-hitting first line that forces the scroller to stop. (No "I'm excited to share", no "Have you ever wondered").
 2. **Whitespace**: Use generous line breaks. No big blocks of text. One or two sentences per paragraph maximum.
-3. **Tone**: Direct, authentic, and authoritative. Use the user's "Positioning" tone from the business context.
+3. **Tone**: Direct, authentic, and authoritative. Use brandTone from the business context for voice; positioning describes market role only.
 4. **Value-First**: Every line should move the reader toward a transformation or realization.
 5. **No Fluff**: Get rid of "In today's fast-paced world" or "Look no further".
 6. **Bold & Lists**: Use bolding sparingly for emphasis. Use bullet points (plain dots or emojis) for lists.

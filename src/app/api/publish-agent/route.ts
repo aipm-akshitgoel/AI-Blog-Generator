@@ -9,6 +9,9 @@ import type { SchemaData } from "@/lib/types/schema";
 import { auth } from "@clerk/nextjs/server";
 import { saveBlog, type SavedBlog } from "@/lib/blogDb";
 import { stripFaqFromMarkdownWhenStructured } from "@/lib/contentWordCount";
+import { persistBlogImages } from "@/lib/blogImageStorage";
+import { injectSchemaArticleImage } from "@/lib/schemaArticleImage";
+import { extractPageLevelSchemaJsonLd } from "@/lib/pageSchema";
 
 export async function POST(req: Request) {
     try {
@@ -68,6 +71,17 @@ export async function POST(req: Request) {
             ),
         };
 
+        const persistedImages = await persistBlogImages(images, simulatedSlug);
+        let schemaWithImage = injectSchemaArticleImage(
+            schema,
+            persistedImages.bannerImageUrl,
+            persistedImages.altText,
+        );
+        schemaWithImage = {
+            ...schemaWithImage,
+            jsonLd: extractPageLevelSchemaJsonLd(schemaWithImage.jsonLd),
+        };
+
         const blogRecord: SavedBlog = {
             id: `blog_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             userId,
@@ -81,9 +95,9 @@ export async function POST(req: Request) {
             payload: {
                 content: contentForPublish,
                 cta,
-                images,
+                images: persistedImages,
                 meta,
-                schema
+                schema: schemaWithImage,
             }
         };
 

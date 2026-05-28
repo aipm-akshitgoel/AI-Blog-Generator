@@ -1,11 +1,24 @@
+import { stripFaqBlockFromMarkdown } from "@/lib/contentWordCount";
 import type { BlogPost } from "@/lib/types/content";
+import type { ContentConstraints } from "@/lib/types/contentSpec";
 import type { SeoScores } from "@/lib/types/optimization";
 
 export type HeadingTagRow = {
-    level: "h1" | "h2";
+    level: "h1" | "h2" | "h3";
     title: string;
     densityPercent: number;
     missing?: boolean;
+};
+
+export type KeywordDensityRow = {
+    level: "primary" | "secondary" | "tertiary" | "domain";
+    label: string;
+    keyword: string;
+    densityPercent: number;
+    targetPercent?: number;
+    missing?: boolean;
+    /** Present when row comes from keyword plan verification. */
+    provider?: "seo-review-tools" | "local";
 };
 
 function countWords(text: string): number {
@@ -63,7 +76,7 @@ const DENSITY_STOP_WORDS = new Set([
     "from",
 ]);
 
-function plainTextFromMarkdown(md: string): string {
+export function plainTextFromMarkdown(md: string): string {
     return String(md || "")
         .replace(/^#{1,6}\s+/gm, "")
         .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
@@ -150,7 +163,7 @@ function extractH2TitlesFromMarkdown(markdown: string): string[] {
     return titles;
 }
 
-function parseH2Sections(markdown: string): H2Section[] {
+export function parseH2Sections(markdown: string): H2Section[] {
     const sections: H2Section[] = [];
     const lines = String(markdown || "").split("\n");
     let current: H2Section | null = null;
@@ -185,13 +198,55 @@ function findSection(sections: H2Section[], title: string): H2Section | undefine
     return sections.find((s) => headingTitlesMatch(s.title, title));
 }
 
-function introBeforeFirstH2(markdown: string): string {
+export function introBeforeFirstH2(markdown: string): string {
     const idx = String(markdown || "").search(/^##\s+/m);
     if (idx < 0) return String(markdown || "").trim();
     return String(markdown || "")
         .slice(0, idx)
         .replace(/^#\s+[^\n]*\n?/m, "")
         .trim();
+}
+
+type H3Section = { title: string; body: string };
+
+/** H2 section copy for keyword density — excludes ### heading lines only. */
+function h2BodyForKeywordDensity(h2Body: string): string {
+    return String(h2Body || "")
+        .split("\n")
+        .filter((line) => !/^###\s+/.test(line.trim()))
+        .join("\n");
+}
+
+export function parseH3Sections(h2Body: string): H3Section[] {
+    const sections: H3Section[] = [];
+    const lines = String(h2Body || "").split("\n");
+    let current: H3Section | null = null;
+    let buffer: string[] = [];
+
+    const flush = () => {
+        if (current) {
+            current.body = buffer.join("\n").trim();
+            sections.push(current);
+        }
+    };
+
+    for (const line of lines) {
+        const h3 = line.match(/^###\s+(.+?)\s*$/);
+        if (h3) {
+            flush();
+            current = { title: h3[1].trim(), body: "" };
+            buffer = [];
+            continue;
+        }
+        if (current) buffer.push(line);
+    }
+    flush();
+    return sections;
+}
+
+/** Full article body plain text (no FAQs, no heading lines) for domain keyword density. */
+export function articleBodyPlainText(markdown: string): string {
+    return plainTextFromMarkdown(stripFaqBlockFromMarkdown(markdown));
 }
 
 /**
@@ -261,6 +316,16 @@ export function buildHeadingTagRows(
             title: section.title,
             densityPercent: headingDensityPercent(span, section.title),
         });
+
+        for (const h3 of parseH3Sections(section.body)) {
+            const h3Span = h3.body.trim() ? `### ${h3.title}\n\n${h3.body}` : `### ${h3.title}`;
+            rows.push({
+                level: "h3",
+                title: h3.title,
+                densityPercent: headingDensityPercent(h3Span, h3.title),
+                missing: !h3.body.trim(),
+            });
+        }
     }
 
     return rows;
@@ -282,9 +347,13 @@ export function normalizeSeoScores(
             Math.max(0, Number(raw?.originality ?? 100 - plagiarismSimilarity)),
         ),
         actionableInsights: Array.isArray(raw?.actionableInsights) ? raw!.actionableInsights : [],
+        readabilityGrade: raw?.readabilityGrade,
+        aiDetection: raw?.aiDetection,
+        keywordDensity: raw?.keywordDensity,
+        keywordPlan: raw?.keywordPlan,
     };
 }
 
 export function seoQualityTotal(scores: SeoScores): number {
-    return scores.readability + scores.grammar + scores.originality + (100 - scores.aiContentPercent);
+    return scores.readability + (100 - scores.aiContentPercent);
 }

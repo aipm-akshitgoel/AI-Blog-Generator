@@ -4,7 +4,12 @@ import { useState, useEffect, useMemo } from "react";
 import type { TopicOption, StrategySession } from "@/lib/types/strategy";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import { directoryToTopicOptions, getDirectoryFromSession, normalizeBlogStrategyResponse } from "@/lib/contentDirectory";
+import { sectionsFromTopic } from "@/lib/topicTocDraft";
+import { topicToTocDraft, tocDraftToTopic, type TopicTocDraft } from "@/lib/topicTocDraft";
+import { TopicTocEditor } from "@/components/TopicTocEditor";
+import { TocKeywordList } from "@/components/TocKeywordList";
 import { CtaButton } from "@/components/ui/CtaButton";
+import { formatApiError } from "@/lib/formatApiError";
 
 const PAGE_SIZE = 4;
 
@@ -34,10 +39,14 @@ export function TopicSelector({
         initialTopics.length > 0 ? initialTopics : strategy.topicOptions ?? [],
     );
     const [editingIdx, setEditingIdx] = useState<number | null>(null);
-    const [editDraft, setEditDraft] = useState<{ title: string; h2Text: string } | null>(null);
+    const [editDraft, setEditDraft] = useState<TopicTocDraft | null>(null);
+    const [revisePrompt, setRevisePrompt] = useState("");
+    const [reviseError, setReviseError] = useState<string | null>(null);
+    const [isRevising, setIsRevising] = useState(false);
     const [isRegenerating, setIsRegenerating] = useState(false);
     const [customPrompt, setCustomPrompt] = useState("");
     const [page, setPage] = useState(0);
+    const [tocOpenByKey, setTocOpenByKey] = useState<Record<string, boolean>>({});
 
     // Batch selection state
     const [batchCount, setBatchCount] = useState(mode === "manual" ? 1 : 1);
@@ -75,43 +84,56 @@ export function TopicSelector({
     };
 
     const handleStartEdit = (i: number, e: React.MouseEvent) => {
-        e.stopPropagation(); // Don't select the card
+        e.stopPropagation();
         setEditingIdx(i);
-        setEditDraft({
-            title: topics[i].title,
-            h2Text: (topics[i].h2Titles ?? []).join("\n"),
-        });
-        setSelectedIndices(prev => prev.filter(idx => idx !== i));
+        setEditDraft(topicToTocDraft(topics[i]));
+        setRevisePrompt("");
+        setReviseError(null);
+        setSelectedIndices((prev) => prev.filter((idx) => idx !== i));
     };
 
     const handleSaveEdit = (i: number) => {
         if (!editDraft) return;
-        const h2Titles = editDraft.h2Text
-            .split("\n")
-            .map((line) => line.trim())
-            .filter(Boolean);
         setTopics((prev) =>
-            prev.map((t, idx) =>
-                idx === i
-                    ? {
-                          ...t,
-                          title: editDraft.title.trim(),
-                          h2Titles: h2Titles.length > 0 ? h2Titles : undefined,
-                          description:
-                              h2Titles.length > 0
-                                  ? `H2 outline: ${h2Titles.join(" · ")}`
-                                  : "No H2s listed — add sections during drafting.",
-                      }
-                    : t,
-            ),
+            prev.map((t, idx) => (idx === i ? tocDraftToTopic(t, editDraft) : t)),
         );
         setEditingIdx(null);
         setEditDraft(null);
+        setRevisePrompt("");
+        setReviseError(null);
     };
 
     const handleCancelEdit = () => {
         setEditingIdx(null);
         setEditDraft(null);
+        setRevisePrompt("");
+        setReviseError(null);
+    };
+
+    const handleAiRevise = async () => {
+        if (editingIdx === null || !editDraft || !revisePrompt.trim()) return;
+        setIsRevising(true);
+        setReviseError(null);
+        try {
+            const base = topics[editingIdx];
+            const res = await fetch("/api/revise-toc", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    topic: tocDraftToTopic(base, editDraft),
+                    instruction: revisePrompt.trim(),
+                    businessContext,
+                }),
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(formatApiError(json.error, "Could not revise TOC"));
+            const revised = json.topic as TopicOption;
+            setEditDraft(topicToTocDraft(revised));
+        } catch (e) {
+            setReviseError(e instanceof Error ? e.message : "Could not revise TOC");
+        } finally {
+            setIsRevising(false);
+        }
     };
 
     const handleRegenerate = async () => {
@@ -157,6 +179,13 @@ export function TopicSelector({
     }, [page, totalPages]);
 
     const visibleRows = topicRows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+    const topicKey = (topic: TopicOption, index: number) => topic.directoryId ?? `idx-${index}`;
+
+    const toggleToc = (key: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setTocOpenByKey((prev) => ({ ...prev, [key]: !prev[key] }));
+    };
 
     return (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900/50 p-6 shadow-xl animate-in slide-in-from-bottom-4 duration-500">
@@ -265,34 +294,30 @@ export function TopicSelector({
 
                     if (isEditing && editDraft) {
                         return (
-                            <div key={i} className="md:col-span-2 rounded-2xl border border-amber-700/60 bg-amber-950/10 p-5 animate-in zoom-in-95 duration-200">
-                                <div className="space-y-3">
-                                    <input
-                                        autoFocus
-                                        value={editDraft.title}
-                                        onChange={e => setEditDraft(d => d ? { ...d, title: e.target.value } : d)}
-                                        className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none focus:border-amber-500 transition-colors"
-                                    />
-                                    <textarea
-                                        value={editDraft.h2Text}
-                                        onChange={e => setEditDraft(d => d ? { ...d, h2Text: e.target.value } : d)}
-                                        placeholder="H2 headings, one per line"
-                                        rows={3}
-                                        className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-neutral-300 focus:outline-none focus:border-amber-500 resize-none"
-                                    />
-                                </div>
-                                <div className="flex justify-end gap-4 mt-4">
-                                    <button onClick={handleCancelEdit} className="text-xs text-neutral-500 font-bold hover:text-white uppercase tracking-widest">Discard</button>
-                                    <button onClick={() => handleSaveEdit(i)} className="rounded-lg bg-amber-500 px-6 py-2 text-xs font-black text-neutral-900 uppercase tracking-widest hover:bg-amber-400">Save Topic</button>
-                                </div>
-                            </div>
+                            <TopicTocEditor
+                                key={`edit-${topic.directoryId ?? i}`}
+                                draft={editDraft}
+                                onChange={setEditDraft}
+                                onSave={() => handleSaveEdit(i)}
+                                onCancel={handleCancelEdit}
+                                revisePrompt={revisePrompt}
+                                onRevisePromptChange={setRevisePrompt}
+                                onAiRevise={() => void handleAiRevise()}
+                                isRevising={isRevising}
+                                reviseError={reviseError}
+                            />
                         );
                     }
 
                     const isDone = topic.completed;
+                    const key = topicKey(topic, i);
+                    const tocOpen = !!tocOpenByKey[key];
+                    const sections = sectionsFromTopic(topic);
+                    const hasOutline = sections.length > 0 || (topic.h2Titles?.length ?? 0) > 0;
+
                     return (
                         <div
-                            key={topic.directoryId ?? i}
+                            key={key}
                             onClick={() => handleTopicClick(i)}
                             className={`group relative rounded-2xl border p-5 transition-all duration-300 ${
                                 isDone
@@ -326,22 +351,97 @@ export function TopicSelector({
                                 </svg>
                             </button>
 
-                            <h3 className={`text-sm font-black uppercase tracking-tight pr-6 transition-colors ${isDone ? 'text-emerald-400/90' : isSelected ? 'text-amber-400' : 'text-neutral-200 group-hover:text-white'}`}>
-                                {topic.title}
-                                {isDone && <span className="ml-2 text-[9px] font-bold text-emerald-500/80 normal-case">Written</span>}
-                            </h3>
-                            {topic.h2Titles && topic.h2Titles.length > 0 ? (
-                                <ul className={`mt-2 space-y-0.5 text-xs leading-relaxed ${isSelected ? 'text-neutral-300' : 'text-neutral-500'}`}>
-                                    {topic.h2Titles.slice(0, 4).map((h2) => (
-                                        <li key={h2} className="pl-2 border-l border-neutral-800">{h2}</li>
-                                    ))}
-                                    {topic.h2Titles.length > 4 && (
-                                        <li className="text-neutral-600">+{topic.h2Titles.length - 4} more</li>
-                                    )}
-                                </ul>
-                            ) : (
-                                <p className="mt-2 text-xs text-neutral-600 italic">No H2s in plan</p>
+                            {topic.primaryKeyword?.trim() && (
+                                <p
+                                    className={`text-xs font-semibold mb-2 pr-8 ${isDone ? "text-emerald-500/80" : isSelected ? "text-emerald-400" : "text-emerald-500/90"}`}
+                                >
+                                    {topic.primaryKeyword.trim()}
+                                </p>
                             )}
+
+                            <p className="text-[10px] font-mono text-neutral-600 mb-1">H1</p>
+                            <h3
+                                className={`text-sm font-black uppercase tracking-tight pr-8 transition-colors ${isDone ? "text-emerald-400/90" : isSelected ? "text-amber-400" : "text-neutral-200 group-hover:text-white"}`}
+                            >
+                                {topic.title}
+                                {isDone && (
+                                    <span className="ml-2 text-[9px] font-bold text-emerald-500/80 normal-case">
+                                        Written
+                                    </span>
+                                )}
+                            </h3>
+
+                            <button
+                                    type="button"
+                                    onClick={(e) => toggleToc(key, e)}
+                                    className="mt-3 flex w-full items-center justify-between gap-2 rounded-lg border border-neutral-800 bg-neutral-900/50 px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-neutral-400 hover:border-neutral-700 hover:text-neutral-200 transition-colors"
+                                    aria-expanded={tocOpen}
+                                >
+                                    <span>{tocOpen ? "Hide TOC" : "View TOC"}</span>
+                                    <svg
+                                        className={`w-4 h-4 shrink-0 transition-transform ${tocOpen ? "rotate-180" : ""}`}
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth="2"
+                                            d="M19 9l-7 7-7-7"
+                                        />
+                                    </svg>
+                            </button>
+
+                            {tocOpen && (
+                                <div className="mt-3 space-y-3 border-t border-neutral-800/80 pt-3 animate-in fade-in duration-200">
+                                    <div className="space-y-3">
+                                        <TocKeywordList
+                                            keywords={topic.secondaryKeywords ?? []}
+                                            label="Secondary keywords"
+                                        />
+                                        <TocKeywordList
+                                            keywords={topic.tertiaryKeywords ?? []}
+                                            label="Tertiary keywords"
+                                        />
+                                    </div>
+                                    {hasOutline ? (
+                                        sections.length > 0 ? (
+                                            <ul
+                                                className={`space-y-2 text-xs leading-relaxed ${isSelected ? "text-neutral-300" : "text-neutral-500"}`}
+                                            >
+                                                {sections.map((section) => (
+                                                    <li key={section.h2}>
+                                                        <span className="font-semibold text-neutral-400">
+                                                            {section.h2}
+                                                        </span>
+                                                        {section.h3s.length > 0 && (
+                                                            <ul className="mt-0.5 pl-2 border-l border-neutral-800 space-y-0.5">
+                                                                {section.h3s.map((h3) => (
+                                                                    <li key={h3}>{h3}</li>
+                                                                ))}
+                                                            </ul>
+                                                        )}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        ) : (
+                                            <ul
+                                                className={`space-y-0.5 text-xs leading-relaxed ${isSelected ? "text-neutral-300" : "text-neutral-500"}`}
+                                            >
+                                                {topic.h2Titles!.map((h2) => (
+                                                    <li key={h2} className="pl-2 border-l border-neutral-800">
+                                                        {h2}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )
+                                    ) : (
+                                        <p className="text-xs text-neutral-600 italic">No H2 sections in plan</p>
+                                    )}
+                                </div>
+                            )}
+
                         </div>
                     );
                 })}
@@ -396,7 +496,7 @@ export function TopicSelector({
                                 const ordered = selectedIndices.map(idx => topics[idx]);
                                 onAutoPublish?.(ordered, batchCount);
                             }}
-                            disabled={!canAutoGenerate || editingIdx !== null}
+                            disabled={!canAutoGenerate || editingIdx !== null || isRevising}
                             className="w-full flex items-center justify-center gap-3 rounded-2xl bg-amber-500 px-8 py-5 text-sm font-black text-neutral-900 transition-all hover:bg-amber-400 disabled:opacity-20 disabled:grayscale uppercase tracking-widest active:scale-[0.98] shadow-2xl shadow-amber-900/40"
                         >
                             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
@@ -408,7 +508,7 @@ export function TopicSelector({
                 ) : (
                     <CtaButton
                         onClick={() => selectedIndices.length > 0 && onSelect(topics[selectedIndices[0]])}
-                        disabled={selectedIndices.length === 0 || editingIdx !== null}
+                        disabled={selectedIndices.length === 0 || editingIdx !== null || isRevising}
                         className="flex-1 rounded-2xl px-8 py-5 text-sm shadow-2xl shadow-emerald-900/40"
                         trailingIcon={
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

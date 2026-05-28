@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
 import { BusinessContextSetup } from "@/components/BusinessContextSetup";
+import { ContentGuidelinesPanel } from "@/components/ContentGuidelinesPanel";
 import { StrategyAgentUI } from "@/components/StrategyAgent";
 import { TopicSelector } from "@/components/TopicSelector";
 import { TopicBriefPanel } from "@/components/TopicBriefPanel";
@@ -62,9 +63,14 @@ import {
   syncSessionFromDirectory,
 } from "@/lib/contentDirectory";
 import { isPersistedUuid, stripNonPersistedId } from "@/lib/uuid";
-import { clearBusinessSetupStorage } from "@/lib/businessSetupStorage";
+import {
+  clearBusinessSetupStorage,
+  LOCAL_CONTENT_GUIDELINES_KEY,
+  readLocalContentGuidelines,
+} from "@/lib/businessSetupStorage";
 import type { TopicBrief } from "@/lib/types/topicBrief";
 import { EMPTY_TOPIC_BRIEF } from "@/lib/types/topicBrief";
+import { DEFAULT_H3_PER_H2 } from "@/lib/types/contentSpec";
 import type { BusinessContext } from "@/lib/types/businessContext";
 import type { TopicOption, StrategySession } from "@/lib/types/strategy";
 import type { BlogPost } from "@/lib/types/content";
@@ -122,18 +128,24 @@ function businessProfilePayload(ctx: BusinessContext) {
     services: ctx.services ?? [],
     targetAudience:
       ctx.targetAudience?.trim() || "Prospective customers searching online",
+    brandTone: ctx.brandTone?.trim() || "Professional and helpful",
     positioning: ctx.positioning?.trim() || "Helpful and trustworthy",
+    contentGuidelines: ctx.contentGuidelines,
   };
 }
 
 async function persistBusinessProfile(ctx: BusinessContext): Promise<BusinessContext | null> {
   if (!hasBusinessDomain(ctx)) return null;
   try {
-    const res = await fetch("/api/business-context", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(businessProfilePayload(ctx)),
-    });
+    const res = await fetchWithTimeout(
+      "/api/business-context",
+      12_000,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(businessProfilePayload(ctx)),
+      },
+    );
     const saved = await parseJsonSafely<BusinessContext & { error?: string }>(res);
     if (!res.ok || !saved || "error" in saved) return null;
     return { ...ctx, ...saved, domain: saved.domain || ctx.domain };
@@ -226,15 +238,29 @@ function SetupPageInner() {
 
   const handleTopicSelect = (topic: TopicOption) => {
     setSelectedTopic(topic);
-    const primaryKw = strategySession?.keywordStrategy?.primaryKeyword;
-    if (topic.h2Titles?.length) {
+    const strategyPrimary = strategySession?.keywordStrategy?.primaryKeyword?.trim();
+    const topicPrimary = topic.primaryKeyword?.trim() || strategyPrimary;
+    const fromDirectory = Boolean(
+      topic.directoryId ||
+        topic.h2Titles?.length ||
+        topic.primaryKeyword ||
+        topic.secondaryKeywords?.length ||
+        topic.h3Titles?.length ||
+        topic.tertiaryKeywords?.length,
+    );
+    if (fromDirectory) {
       setTopicBrief({
         ...EMPTY_TOPIC_BRIEF,
         interlinkingRules: EMPTY_TOPIC_BRIEF.interlinkingRules,
         contentConstraints: {
           h1Title: topic.title,
-          h2Titles: topic.h2Titles,
-          h1PrimaryKeyword: primaryKw,
+          h2Titles: topic.h2Titles?.length ? [...topic.h2Titles] : undefined,
+          h3Titles: topic.h3Titles?.length ? [...topic.h3Titles] : undefined,
+          secondaryKeywords: topic.secondaryKeywords?.length ? [...topic.secondaryKeywords] : undefined,
+          tertiaryKeywords: topic.tertiaryKeywords?.length ? [...topic.tertiaryKeywords] : undefined,
+          domainPrimaryKeyword: strategyPrimary,
+          h1PrimaryKeyword: topicPrimary,
+          h3PerH2: DEFAULT_H3_PER_H2,
         },
       });
     } else {
@@ -404,7 +430,16 @@ function SetupPageInner() {
       ...newContext,
       platform: "blog",
       internalLinks: mergedLinks.length > 0 ? mergedLinks : newContext.internalLinks,
+      contentGuidelines:
+        newContext.contentGuidelines ?? readLocalContentGuidelines(),
     };
+
+    if (typeof window !== "undefined" && enriched.contentGuidelines) {
+      window.sessionStorage.setItem(
+        LOCAL_CONTENT_GUIDELINES_KEY,
+        JSON.stringify(enriched.contentGuidelines),
+      );
+    }
 
     if (typeof window !== "undefined" && enriched.seoDefaults) {
       window.sessionStorage.setItem(LOCAL_SEO_DEFAULTS_KEY, JSON.stringify(enriched.seoDefaults));
@@ -496,6 +531,15 @@ function SetupPageInner() {
 
     async function loadSavedData() {
       const CONTEXT_FETCH_MS = 12_000;
+      const LOAD_BUDGET_MS = 25_000;
+      let settled = false;
+      const forceSettleTimer = setTimeout(() => {
+        if (settled) return;
+        console.warn("Profile load exceeded budget — continuing with cached data");
+        setIsInitialLoading(false);
+        setDataHydrated(true);
+        setStrategyFetchSettled(true);
+      }, LOAD_BUDGET_MS);
 
       try {
         let loadedStrategy: StrategySession | null = null;
@@ -523,6 +567,13 @@ function SetupPageInner() {
               try {
                 mergedContext = { ...mergedContext, seoDefaults: JSON.parse(localSeoDefaultsRaw) };
               } catch { }
+            }
+            const localGuidelines = readLocalContentGuidelines();
+            if (localGuidelines) {
+              mergedContext = {
+                ...mergedContext,
+                contentGuidelines: mergedContext.contentGuidelines ?? localGuidelines,
+              };
             }
             const localContextRaw = window.sessionStorage.getItem(LOCAL_CONTEXT_KEY);
             if (localContextRaw && !hasBusinessDomain(mergedContext)) {
@@ -632,12 +683,14 @@ function SetupPageInner() {
         console.error("Failed to load initial data", err);
         hydrateLocalFallback();
       } finally {
+        settled = true;
+        clearTimeout(forceSettleTimer);
         setIsInitialLoading(false);
         setDataHydrated(true);
         setStrategyFetchSettled(true);
       }
     }
-    loadSavedData();
+    void loadSavedData();
   }, []);
 
   const handleStrategyApprove = async (session: StrategySession) => {
@@ -824,6 +877,12 @@ function SetupPageInner() {
                   }}
                 />
               </div>
+            )}
+            {hasProfileDomain && !editingDomain && (
+              <ContentGuidelinesPanel
+                businessContext={context}
+                onUpdate={(updated) => setContext(updated)}
+              />
             )}
             {hasProfileDomain && !editingDomain && !hasSavedStrategy && (
               <div className="animate-in slide-in-from-top-4 duration-500 space-y-4">
@@ -1058,7 +1117,10 @@ function SetupPageInner() {
               <TopicBriefPanel
                 key={selectedTopic.title}
                 topic={selectedTopic}
-                primaryKeyword={strategySession?.keywordStrategy?.primaryKeyword}
+                primaryKeyword={
+                  selectedTopic.primaryKeyword?.trim() ||
+                  strategySession?.keywordStrategy?.primaryKeyword
+                }
                 onConfirm={(brief) => {
                   setTopicBrief(brief);
                   setBriefConfirmed(true);
@@ -1092,6 +1154,7 @@ function SetupPageInner() {
                     post={generatedPost}
                     businessContext={effectiveContext}
                     interlinkingRules={topicBrief?.interlinkingRules}
+                    contentConstraints={topicBrief?.contentConstraints}
                     primaryKeyword={
                       topicBrief?.contentConstraints?.h1PrimaryKeyword?.trim() ||
                       strategySession?.keywordStrategy?.primaryKeyword

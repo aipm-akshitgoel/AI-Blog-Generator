@@ -1,11 +1,15 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getBlogBySlug } from "@/lib/blogDb";
+import { buildBlogCanonicalUrl } from "@/lib/publicSiteUrl";
+import { resolveBannerAltText, resolveOgImageList, SITE_LOCALE, SITE_NAME } from "@/lib/siteSeo";
 import ReactMarkdown from "react-markdown";
 import Link from "next/link";
 import Script from "next/script";
 import { FAQAccordion } from "@/components/FAQAccordion";
 import { FeedbackPopup } from "@/components/FeedbackPopup";
 import { stripFaqFromMarkdownWhenStructured } from "@/lib/contentWordCount";
+import { extractPageLevelSchemaJsonLd } from "@/lib/pageSchema";
 
 // Parul Test Template Components
 import Navbar from "@/components/parul/Navbar";
@@ -19,6 +23,49 @@ import ParulFAQ from "@/components/parul/FAQ";
 import Footer from "@/components/parul/Footer";
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata({
+    params,
+}: {
+    params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+    const { slug } = await params;
+    const blog = await getBlogBySlug(slug);
+    if (!blog) {
+        return { title: "Post not found" };
+    }
+
+    const meta = blog.payload.meta;
+    const title = meta?.title?.trim() || blog.title;
+    const description = meta?.description?.trim() || blog.payload.content?.metaDescription?.trim();
+    const banner = blog.payload.images?.bannerImageUrl?.trim();
+    const bannerAlt = resolveBannerAltText(blog.payload.images?.altText, blog.title);
+    const canonical = buildBlogCanonicalUrl(slug);
+    const ogImages = resolveOgImageList(banner, bannerAlt);
+
+    return {
+        title,
+        description,
+        alternates: { canonical },
+        openGraph: {
+            title,
+            description,
+            url: canonical,
+            siteName: SITE_NAME,
+            locale: SITE_LOCALE,
+            type: "article",
+            publishedTime: blog.createdAt,
+            modifiedTime: blog.createdAt,
+            images: ogImages,
+        },
+        twitter: {
+            card: "summary_large_image",
+            title,
+            description,
+            images: ogImages.map((img) => img.url),
+        },
+    };
+}
 
 /**
  * Strips common LLM-hallucinated CTA blocks that the model may append to
@@ -46,25 +93,6 @@ function articleBodyMarkdown(
     );
 }
 
-/**
- * Extracts only the Article/BlogPosting node from a combined JSON-LD @graph.
- * Org-level schemas (HairSalon, WebSite, Organization) should live in the
- * global layout — not repeated on every blog post.
- */
-function extractArticleSchema(jsonLd: string): string {
-    try {
-        const parsed = JSON.parse(jsonLd);
-        if (Array.isArray(parsed['@graph'])) {
-            const articleTypes = new Set(['Article', 'BlogPosting', 'NewsArticle']);
-            const filtered = { ...parsed, '@graph': parsed['@graph'].filter((n: any) => articleTypes.has(n['@type'])) };
-            return JSON.stringify(filtered);
-        }
-        return jsonLd;
-    } catch {
-        return jsonLd;
-    }
-}
-
 export default async function PublicBlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
     const resolvedParams = await params;
     const blog = await getBlogBySlug(resolvedParams.slug);
@@ -79,7 +107,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
         <main className="min-h-screen bg-neutral-50 text-neutral-900 selection:bg-emerald-200">
             {/* Inject JSON-LD Schema for SEO */}
             {schema && schema.jsonLd && (
-                <Script id="blog-schema" type="application/ld+json" dangerouslySetInnerHTML={{ __html: extractArticleSchema(schema.jsonLd) }} />
+                <Script id="blog-schema" type="application/ld+json" dangerouslySetInnerHTML={{ __html: extractPageLevelSchemaJsonLd(schema.jsonLd) }} />
             )}
 
             <FeedbackPopup blogId={blog.id} blogTitle={blog.title} />
@@ -143,7 +171,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                                     <div className="lg:col-span-7 order-1 lg:order-2 w-full aspect-[4/3] relative overflow-hidden">
                                         <img
                                             src={images.bannerImageUrl}
-                                            alt={images.altText || blog.title}
+                                            alt={resolveBannerAltText(images?.altText, blog.title)}
                                             className="w-full h-full object-cover transition-transform duration-1000 hover:scale-105"
                                         />
                                     </div>
@@ -198,7 +226,7 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                                     {/* Using standard img tag, Next/Image requires domain config */}
                                     <img
                                         src={images.bannerImageUrl}
-                                        alt={blog.title}
+                                        alt={resolveBannerAltText(images?.altText, blog.title)}
                                         className="w-full h-full object-cover"
                                     />
                                 </div>

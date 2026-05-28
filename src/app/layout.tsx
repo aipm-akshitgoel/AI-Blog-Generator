@@ -12,26 +12,45 @@ import { StaleClerkSessionSync } from "@/components/StaleClerkSessionSync";
 import { ScrollToTopOnNavigate } from "@/components/ScrollToTopOnNavigate";
 import { clerkProviderAppearance } from "@/lib/clerkAppearance";
 import { Suspense } from "react";
+import {
+  DEFAULT_OG_IMAGE,
+  SITE_LOCALE,
+  SITE_NAME,
+} from "@/lib/siteSeo";
+import { getPublicSiteUrl } from "@/lib/publicSiteUrl";
 import "./globals.css";
 
+const siteUrl = getPublicSiteUrl();
+const siteDescription =
+  "Connect your site and keyword plan. Get SEO-ready drafts you can edit, optimize, and publish.";
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://bloggieai.com"),
-  title: "Bloggie AI — AI content for organic search",
-  description: "Connect your site and keyword plan. Get SEO-ready drafts you can edit, optimize, and publish.",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: `${SITE_NAME} — AI content for organic search`,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: siteDescription,
+  applicationName: SITE_NAME,
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true },
+  },
   openGraph: {
-    title: "Bloggie AI — AI content for organic search",
-    description: "Connect your site and keyword plan. Get SEO-ready drafts you can edit, optimize, and publish.",
-    url: "https://bloggieai.com",
-    siteName: "Bloggie AI",
-    locale: "en_US",
+    title: `${SITE_NAME} — AI content for organic search`,
+    description: siteDescription,
+    url: siteUrl,
+    siteName: SITE_NAME,
+    locale: SITE_LOCALE,
     type: "website",
-    images: ["/opengraph-image"],
+    images: [DEFAULT_OG_IMAGE],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Bloggie AI — AI content for organic search",
-    description: "Connect your site and keyword plan. Get SEO-ready drafts you can edit, optimize, and publish.",
-    images: ["/opengraph-image"],
+    title: `${SITE_NAME} — AI content for organic search`,
+    description: siteDescription,
+    images: [DEFAULT_OG_IMAGE.url],
   },
 };
 
