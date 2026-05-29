@@ -6,11 +6,7 @@ import type {
     KeywordPlan,
     KeywordTarget,
 } from "@/lib/types/keywordPlan";
-import {
-    keywordPlanDensityPercent,
-    parseH2Sections,
-    parseH3Sections,
-} from "@/lib/seoAnalyzer";
+import { keywordPlanDensityPercent, sectionTitleMatchesMarkdown } from "@/lib/seoAnalyzer";
 
 function clampDensity(n: number): number {
     return Math.min(10, Math.max(0.1, Math.round(n * 10) / 10));
@@ -112,17 +108,7 @@ function resolveKeywordPlan(
 function sectionExistsInMarkdown(markdown: string, target: KeywordTarget): boolean {
     const title = target.sectionTitle?.trim();
     if (!title) return true;
-
-    const want = title.toLowerCase();
-    if (target.tier === "secondary") {
-        return parseH2Sections(markdown).some((s) => s.title.toLowerCase() === want);
-    }
-    for (const h2 of parseH2Sections(markdown)) {
-        if (parseH3Sections(h2.body).some((h3) => h3.title.toLowerCase() === want)) {
-            return true;
-        }
-    }
-    return false;
+    return sectionTitleMatchesMarkdown(markdown, title);
 }
 
 function labelForTarget(target: KeywordTarget): string {

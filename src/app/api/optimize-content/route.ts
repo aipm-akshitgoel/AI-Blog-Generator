@@ -38,7 +38,8 @@ import {
     measureFinalReadability,
     runReadabilityImprovementLoop,
 } from "@/lib/readabilityImprovement";
-import { verifyKeywordPlanForPost } from "@/lib/keywordPlanVerification";
+import { resolveKeywordPlanForPost, verifyKeywordPlanForPost } from "@/lib/keywordPlanVerification";
+import { restoreSeoAfterHumanize } from "@/lib/restoreSeoAfterHumanize";
 import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
@@ -407,8 +408,18 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             optimized.contentMarkdown = readability.contentMarkdown;
 
             // AI humanize until ZeroGPT AI < 20% (max 3 humanize passes)
-            const humanized = await runAiHumanizationLoop(optimized.contentMarkdown);
-            optimized.contentMarkdown = humanized.contentMarkdown;
+            const markdownBeforeHumanize = optimized.contentMarkdown;
+            const humanized = await runAiHumanizationLoop(markdownBeforeHumanize);
+            const keywordPlanForRestore =
+                resolveKeywordPlanForPost(blogPost, contentConstraints ?? null, contentConstraints?.domainPrimaryKeyword?.trim()) ??
+                blogPost.keywordPlan ??
+                null;
+            optimized.contentMarkdown = restoreSeoAfterHumanize(humanized.contentMarkdown, {
+                canonicalMarkdown: markdownBeforeHumanize,
+                keywordPlan: keywordPlanForRestore,
+                contentConstraints: contentConstraints ?? null,
+                h2Suggestions: blogPost.h2Suggestions,
+            });
 
             // 5: Final readability after humanization (dashboard score)
             const finalReadability = await measureFinalReadability(optimized.contentMarkdown);

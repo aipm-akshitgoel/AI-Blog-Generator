@@ -153,7 +153,7 @@ function normalizeHeadingKey(title: string): string {
 }
 
 /** True when two headings are the same section (optimizer often rephrases slightly). */
-function headingTitlesMatch(a: string, b: string): boolean {
+export function headingTitlesMatch(a: string, b: string): boolean {
     const na = normalizeHeadingKey(a);
     const nb = normalizeHeadingKey(b);
     if (!na || !nb) return false;
@@ -218,6 +218,20 @@ function findSection(sections: H2Section[], title: string): H2Section | undefine
     const exact = sections.find((s) => s.key === key);
     if (exact) return exact;
     return sections.find((s) => headingTitlesMatch(s.title, title));
+}
+
+/** Whether an H2 or H3 heading in the article matches the planned section title (fuzzy). */
+export function sectionTitleMatchesMarkdown(markdown: string, sectionTitle: string): boolean {
+    const title = sectionTitle.trim();
+    if (!title) return true;
+    const h2s = parseH2Sections(markdown);
+    if (findSection(h2s, title)) return true;
+    for (const h2 of h2s) {
+        if (parseH3Sections(h2.body).some((h3) => headingTitlesMatch(h3.title, title))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 export function introBeforeFirstH2(markdown: string): string {

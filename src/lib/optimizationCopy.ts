@@ -11,6 +11,7 @@ export const OPTIMIZATION_LOADING_STEPS = [
     "Improving readability",
     "Verifying readability with SEO Review Tools",
     "Humanizing with AI Humanize",
+    "Restoring headings and keywords",
     "Checking AI detection with ZeroGPT",
     "Re-measuring final readability",
     "Polishing grammar and formatting",

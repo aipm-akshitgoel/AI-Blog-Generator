@@ -250,7 +250,7 @@ function KeywordDensityPanel({ rows }: { rows: KeywordDensityRow[] }) {
                                     ) : null}
                                     {row.missing && (
                                         <span className="mt-1 block text-[11px] font-semibold text-amber-600">
-                                            Section empty or missing
+                                            Planned section heading not found in article
                                         </span>
                                     )}
                                 </td>
