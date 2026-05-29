@@ -16,6 +16,9 @@ import {
 export const READABILITY_IMPROVE_USER_PROMPT =
     "Improve the readability. Bring the text to a 7th–8th grade reading level (Flesch-Kincaid). Use shorter sentences, simpler everyday words, and clear paragraphs. Keep all facts, headings, and markdown links unchanged.";
 
+const READABILITY_API_UNAVAILABLE =
+    "SEO Review Tools readability API failed — check SEO_REVIEW_TOOLS_API_KEY and credits on the server.";
+
 function buildReadabilitySystemPrompt(): string {
     return `You are an expert editor focused only on readability for web articles.
 
@@ -117,16 +120,17 @@ export async function runReadabilityImprovementLoop(
     const candidates: { markdown: string; measurement: ReadabilityGradeResult }[] = [];
     let markdown = initialMarkdown;
     let attemptsUsed = 0;
+    const title = blogPost.h1Title || blogPost.title;
 
-    const measure = async () => fetchReadabilityScore(markdown);
+    const measure = async () => fetchReadabilityScore(markdown, undefined, { title });
 
     let measurement = await measure();
     if (!measurement) {
         return {
             contentMarkdown: markdown,
             readabilityGrade: null,
-            readabilityPercent: 80,
-            skippedReason: "SEO_REVIEW_TOOLS_API_KEY not set or readability API unavailable",
+            readabilityPercent: 0,
+            skippedReason: READABILITY_API_UNAVAILABLE,
         };
     }
 
@@ -159,14 +163,15 @@ export async function runReadabilityImprovementLoop(
 /** Final measurement after humanization (no rewrites). */
 export async function measureFinalReadability(
     markdown: string,
+    title?: string,
 ): Promise<ReadabilityLoopResult> {
-    const measurement = await fetchReadabilityScore(markdown);
+    const measurement = await fetchReadabilityScore(markdown, undefined, { title });
     if (!measurement) {
         return {
             contentMarkdown: markdown,
             readabilityGrade: null,
-            readabilityPercent: 80,
-            skippedReason: "SEO_REVIEW_TOOLS_API_KEY not set or readability API unavailable",
+            readabilityPercent: 0,
+            skippedReason: READABILITY_API_UNAVAILABLE,
         };
     }
 

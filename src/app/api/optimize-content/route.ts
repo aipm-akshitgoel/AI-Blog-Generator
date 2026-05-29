@@ -422,7 +422,10 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             });
 
             // 5: Final readability after humanization (dashboard score)
-            const finalReadability = await measureFinalReadability(optimized.contentMarkdown);
+            const finalReadability = await measureFinalReadability(
+                optimized.contentMarkdown,
+                blogPost.h1Title || optimized.title || blogPost.title,
+            );
 
             const insights = [...optimized.seoScores.actionableInsights];
 
@@ -443,11 +446,18 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     readability: readability.readabilityPercent,
                     readabilityGrade: readability.readabilityGrade,
                 };
-            } else if (readability.skippedReason || finalReadability.skippedReason) {
-                console.warn(
-                    "[optimize-content]",
-                    finalReadability.skippedReason ?? readability.skippedReason,
-                );
+            } else {
+                optimized.seoScores = {
+                    ...optimized.seoScores,
+                    readability: 0,
+                    readabilityGrade: undefined,
+                };
+                const reason =
+                    finalReadability.skippedReason ??
+                    readability.skippedReason ??
+                    "Readability could not be measured";
+                console.warn("[optimize-content]", reason);
+                insights.push(reason);
             }
 
             // Always re-score final markdown with ZeroGPT (matches zerogpt.com on published body).

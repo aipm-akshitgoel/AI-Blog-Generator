@@ -103,6 +103,22 @@ function escapeHtml(text: string): string {
         .replace(/"/g, "&quot;");
 }
 
+/** Full HTML document for the readability content endpoint (same transport as content-analysis). */
+export function buildReadabilityHtmlFromMarkdown(
+    markdown: string,
+    title = "Article",
+): string {
+    const body = markdownToReadabilityHtml(markdown);
+    return `<html>
+<head>
+<title>${escapeHtml(title)}</title>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+
 function pickFleschBlock(data: Record<string, unknown>): Record<string, unknown> | null {
     const nested = data?.data as Record<string, unknown> | undefined;
     const inner = nested?.data as Record<string, unknown> | undefined;
@@ -125,13 +141,14 @@ export function parseReadabilityApiResponse(json: unknown): ReadabilityGradeResu
     const gradeLabel = String(fk["grade level"] ?? fk.gradeLevel ?? "").trim();
     const gradeLevel = parseGradeLevel(gradeLabel);
     const fleschScore = Number(fk.score ?? fk.Score ?? 0);
+    if (!Number.isFinite(fleschScore)) return null;
 
-    const stats = (data.data as Record<string, unknown>) ?? data;
+    const stats = (data.data as Record<string, unknown>) ?? nestedStats(data) ?? data;
 
     return {
         gradeLevel,
         gradeLabel: gradeLabel || `${gradeLevel}th grade`,
-        fleschScore: Number.isFinite(fleschScore) ? fleschScore : 0,
+        fleschScore,
         fleschLabel: String(fk.label ?? ""),
         fleschClass: String(fk.class ?? ""),
         words: Number(stats.Words ?? stats.words ?? 0),
@@ -142,27 +159,50 @@ export function parseReadabilityApiResponse(json: unknown): ReadabilityGradeResu
     };
 }
 
+function nestedStats(data: Record<string, unknown>): Record<string, unknown> | undefined {
+    const nested = data.data as Record<string, unknown> | undefined;
+    if (nested && (nested.Words != null || nested.words != null)) return nested;
+    return undefined;
+}
+
 export async function fetchReadabilityScore(
     markdown: string,
     apiKey?: string | null,
+    options?: { title?: string },
 ): Promise<ReadabilityGradeResult | null> {
     const key = apiKey ?? getSeoReviewToolsApiKey();
-    if (!key) return null;
+    if (!key) {
+        console.warn("[readability] SEO_REVIEW_TOOLS_API_KEY is not set");
+        return null;
+    }
 
-    const html = markdownToReadabilityHtml(markdown);
+    const html = buildReadabilityHtmlFromMarkdown(markdown, options?.title);
     const url = `${SEO_REVIEW_TOOLS_READABILITY_URL}&key=${encodeURIComponent(key)}`;
 
     const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(html),
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+        body: html,
     });
 
+    const responseText = await res.text().catch(() => "");
+
     if (!res.ok) {
-        console.warn("[readability] SEO Review Tools HTTP", res.status);
+        console.warn("[readability] SEO Review Tools HTTP", res.status, responseText.slice(0, 300));
         return null;
     }
 
-    const json = await res.json().catch(() => null);
-    return parseReadabilityApiResponse(json);
+    let json: unknown;
+    try {
+        json = JSON.parse(responseText);
+    } catch {
+        console.warn("[readability] SEO Review Tools returned non-JSON", responseText.slice(0, 300));
+        return null;
+    }
+
+    const parsed = parseReadabilityApiResponse(json);
+    if (!parsed) {
+        console.warn("[readability] Could not parse SEO Review Tools response", JSON.stringify(json).slice(0, 500));
+    }
+    return parsed;
 }

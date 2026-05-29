@@ -32,7 +32,7 @@ export async function POST(req: Request) {
         const result = await fetchReadabilityScore(markdown, apiKey);
         if (!result) {
             return NextResponse.json(
-                { error: "Could not parse readability response from SEO Review Tools." },
+                { error: "Could not measure readability (article too short or empty)." },
                 { status: 502 },
             );
         }

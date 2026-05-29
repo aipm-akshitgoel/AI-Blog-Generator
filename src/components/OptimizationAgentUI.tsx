@@ -47,9 +47,24 @@ const METRIC_BAR_AI_MID = "bg-[#a855f7]";
 function readabilityBarClass(scores: SeoScores): string {
     if (scores.readabilityGrade?.targetMet === true) return METRIC_BAR_GOOD;
     if (scores.readabilityGrade?.targetMet === false) return METRIC_BAR_WARN;
+    if (!scores.readabilityGrade) return METRIC_BAR_WARN;
     if (scores.readability >= 60) return METRIC_BAR_GOOD;
     if (scores.readability >= 45) return METRIC_BAR_READABILITY_MID;
     return METRIC_BAR_WARN;
+}
+
+function readabilityMetricDisplay(scores: SeoScores): { suffix: string; help: string } {
+    const grade = scores.readabilityGrade;
+    if (!grade) {
+        return {
+            suffix: "Not verified",
+            help: "SEO Review Tools did not return a readability score. Check SEO_REVIEW_TOOLS_API_KEY on the server, then re-run Optimize or Refresh.",
+        };
+    }
+    return {
+        suffix: `${scores.readability}/100 · ${grade.gradeLabel}`,
+        help: "Flesch Reading Ease (0–100) from SEO Review Tools. Higher means easier to read. Green = on target (grade 8 or below, or ease ≥ 60).",
+    };
 }
 
 const METRIC_BAR_PENDING = "bg-neutral-300 animate-pulse";
@@ -816,14 +831,20 @@ export function OptimizationAgentUI({
                             }`}
                         >
                             <div className="space-y-2">
-                                <SeoMetricBar
-                                    label="Readability"
-                                    value={liveScores.readability}
-                                    barClass={readabilityBarClass(liveScores)}
-                                    help="Flesch Reading Ease (0–100) from SEO Review Tools. Higher means easier to read. Green = on target (grade 8 or below, or ease ≥ 60)."
-                                    delta={scoreDeltas?.readability}
-                                    brand={<SeoReviewToolsBadge variant="light" size="md" logoOnly />}
-                                />
+                                {(() => {
+                                    const readability = readabilityMetricDisplay(liveScores);
+                                    return (
+                                        <SeoMetricBar
+                                            label="Readability"
+                                            value={liveScores.readabilityGrade ? liveScores.readability : 0}
+                                            barClass={readabilityBarClass(liveScores)}
+                                            help={readability.help}
+                                            suffix={readability.suffix}
+                                            delta={scoreDeltas?.readability}
+                                            brand={<SeoReviewToolsBadge variant="light" size="md" logoOnly />}
+                                        />
+                                    );
+                                })()}
                             </div>
                             <div className="space-y-2">
                                 {(() => {

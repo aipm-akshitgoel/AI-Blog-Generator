@@ -4,9 +4,21 @@ import {
     countPhraseOccurrences,
     headingTitlesMatch,
     introBeforeFirstH2,
+    keywordPlanDensityPercent,
     parseH2Sections,
     parseH3Sections,
 } from "@/lib/seoAnalyzer";
+
+const DENSITY_TARGET_TOLERANCE = 0.3;
+const MAX_EXTRA_OCCURRENCES_PER_KEYWORD = 15;
+
+const KEYWORD_WEAVE_TEMPLATES: Array<(phrase: string) => string> = [
+    (p) => `Readers often explore ${p}.`,
+    (p) => `Many students compare ${p} before they enroll.`,
+    (p) => `This section focuses on ${p}.`,
+    (p) => `You will also see ${p} discussed below.`,
+    (p) => `A common search is for ${p}.`,
+];
 
 type H3Block = { title: string; body: string };
 type H2Block = { title: string; leadBody: string; h3s: H3Block[] };
@@ -177,26 +189,32 @@ function distributeHumanizedAcrossCanonical(
     return { intro, h2s };
 }
 
-function weavePhraseIntoParagraph(paragraph: string, phrase: string): string {
+function weavePhraseIntoParagraph(paragraph: string, phrase: string, weaveIndex: number): string {
     const p = paragraph.trim();
     if (!p) return `This guide covers ${phrase}.`;
     if (countPhraseOccurrences(p, phrase) > 0) return p;
 
+    const template = KEYWORD_WEAVE_TEMPLATES[weaveIndex % KEYWORD_WEAVE_TEMPLATES.length]!;
+    const insert = ` ${template(phrase)}`;
     const sentenceEnd = p.search(/[.!?](?:\s|$)/);
     if (sentenceEnd >= 0) {
-        const insert = ` Readers often explore ${phrase}.`;
         return p.slice(0, sentenceEnd + 1) + insert + p.slice(sentenceEnd + 1);
     }
-    return `${p} ${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}.`;
+    return `${p}${insert}`;
 }
 
-function ensurePhraseInParagraphBlock(block: string, phrase: string): string {
-    if (!phrase.trim() || countPhraseOccurrences(block, phrase) > 0) return block;
+function densityMeetsTarget(markdown: string, phrase: string, targetPercent: number): boolean {
+    return keywordPlanDensityPercent(markdown, phrase) >= targetPercent - DENSITY_TARGET_TOLERANCE;
+}
+
+function ensurePhraseInParagraphBlock(block: string, phrase: string, weaveIndex: number): string {
+    if (!phrase.trim()) return block;
     const trimmed = block.trim();
-    if (!trimmed) return weavePhraseIntoParagraph("", phrase);
+    if (!trimmed) return weavePhraseIntoParagraph("", phrase, weaveIndex);
 
     const parts = trimmed.split(/\n\n+/);
-    parts[0] = weavePhraseIntoParagraph(parts[0] ?? "", phrase);
+    const paraIdx = weaveIndex % parts.length;
+    parts[paraIdx] = weavePhraseIntoParagraph(parts[paraIdx] ?? "", phrase, weaveIndex);
     return parts.join("\n\n");
 }
 
@@ -214,23 +232,28 @@ function findH3InH2(h2: H2Block, sectionTitle: string): number {
     return -1;
 }
 
-function reinforceKeywordInStructure(struct: ArticleStructure, target: KeywordTarget): ArticleStructure {
-    const phrase = target.phrase.trim();
-    if (!phrase) return struct;
-
-    const fullText = renderArticleStructure(struct);
-    if (countPhraseOccurrences(fullText, phrase) > 0) return struct;
-
-    const next = {
+function cloneStructure(struct: ArticleStructure): ArticleStructure {
+    return {
         intro: struct.intro,
         h2s: struct.h2s.map((h2) => ({
             ...h2,
             h3s: h2.h3s.map((h3) => ({ ...h3 })),
         })),
     };
+}
+
+function addOneKeywordOccurrence(
+    struct: ArticleStructure,
+    target: KeywordTarget,
+    weaveIndex: number,
+): ArticleStructure {
+    const phrase = target.phrase.trim();
+    if (!phrase) return struct;
+
+    const next = cloneStructure(struct);
 
     if (target.tier === "primary" || !target.sectionTitle?.trim()) {
-        next.intro = ensurePhraseInParagraphBlock(next.intro, phrase);
+        next.intro = ensurePhraseInParagraphBlock(next.intro, phrase, weaveIndex);
         return next;
     }
 
@@ -239,9 +262,13 @@ function reinforceKeywordInStructure(struct: ArticleStructure, target: KeywordTa
     if (h2Idx < 0) {
         if (next.h2s.length > 0) {
             const first = next.h2s[0]!;
-            first.leadBody = ensurePhraseInParagraphBlock(first.leadBody || first.h3s[0]?.body || "", phrase);
+            first.leadBody = ensurePhraseInParagraphBlock(
+                first.leadBody || first.h3s[0]?.body || "",
+                phrase,
+                weaveIndex,
+            );
         } else {
-            next.intro = ensurePhraseInParagraphBlock(next.intro, phrase);
+            next.intro = ensurePhraseInParagraphBlock(next.intro, phrase, weaveIndex);
         }
         return next;
     }
@@ -250,30 +277,46 @@ function reinforceKeywordInStructure(struct: ArticleStructure, target: KeywordTa
     const h3Idx = findH3InH2(h2, sectionTitle);
     if (h3Idx >= 0) {
         const h3 = h2.h3s[h3Idx]!;
-        h3.body = ensurePhraseInParagraphBlock(h3.body, phrase);
+        h3.body = ensurePhraseInParagraphBlock(h3.body, phrase, weaveIndex);
     } else if (target.tier === "tertiary") {
         if (h2.h3s.length > 0) {
-            const h3 = h2.h3s[0]!;
-            h3.body = ensurePhraseInParagraphBlock(h3.body, phrase);
+            const h3 = h2.h3s[weaveIndex % h2.h3s.length] ?? h2.h3s[0]!;
+            h3.body = ensurePhraseInParagraphBlock(h3.body, phrase, weaveIndex);
         } else {
-            h2.leadBody = ensurePhraseInParagraphBlock(h2.leadBody, phrase);
+            h2.leadBody = ensurePhraseInParagraphBlock(h2.leadBody, phrase, weaveIndex);
         }
     } else {
-        h2.leadBody = ensurePhraseInParagraphBlock(h2.leadBody || h2.h3s[0]?.body || "", phrase);
+        const blocks = [h2.leadBody, ...h2.h3s.map((h3) => h3.body)].filter((b) => b.trim());
+        const pick = blocks[weaveIndex % blocks.length] ?? h2.leadBody;
+        if (pick === h2.leadBody) {
+            h2.leadBody = ensurePhraseInParagraphBlock(h2.leadBody, phrase, weaveIndex);
+        } else {
+            const h3 = h2.h3s[weaveIndex % h2.h3s.length] ?? h2.h3s[0];
+            if (h3) h3.body = ensurePhraseInParagraphBlock(h3.body, phrase, weaveIndex);
+        }
     }
 
     return next;
 }
 
-function reinforceKeywordPlan(struct: ArticleStructure, plan: KeywordPlan): ArticleStructure {
+/** Add keyword occurrences until each plan target is within tolerance (capped per phrase). */
+export function meetKeywordPlanTargets(struct: ArticleStructure, plan: KeywordPlan): ArticleStructure {
+    const targets: KeywordTarget[] = [plan.primary, ...plan.secondary, ...plan.tertiary];
     let out = struct;
-    out = reinforceKeywordInStructure(out, plan.primary);
-    for (const target of plan.secondary) {
-        out = reinforceKeywordInStructure(out, target);
+
+    for (const target of targets) {
+        let added = 0;
+        let markdown = renderArticleStructure(out);
+        while (
+            !densityMeetsTarget(markdown, target.phrase, target.targetDensityPercent) &&
+            added < MAX_EXTRA_OCCURRENCES_PER_KEYWORD
+        ) {
+            out = addOneKeywordOccurrence(out, target, added);
+            added++;
+            markdown = renderArticleStructure(out);
+        }
     }
-    for (const target of plan.tertiary) {
-        out = reinforceKeywordInStructure(out, target);
-    }
+
     return out;
 }
 
@@ -307,7 +350,7 @@ export function restoreSeoAfterHumanize(
 
     let markdown = renderArticleStructure(merged);
     if (options.keywordPlan) {
-        const withKeywords = reinforceKeywordPlan(parseArticleStructure(markdown), options.keywordPlan);
+        const withKeywords = meetKeywordPlanTargets(parseArticleStructure(markdown), options.keywordPlan);
         markdown = renderArticleStructure(withKeywords);
     }
 

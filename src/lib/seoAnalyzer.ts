@@ -371,7 +371,7 @@ export function normalizeSeoScores(
     raw: Partial<SeoScores> | null | undefined,
     plagiarismSimilarity = 0,
 ): SeoScores {
-    const readability = Number(raw?.readability ?? 80);
+    const readability = Number(raw?.readability ?? 0);
     const grammar = Number(raw?.grammar ?? raw?.contentStructure ?? 85);
     const aiContentPercent = Number(raw?.aiContentPercent ?? 15);
     return {
