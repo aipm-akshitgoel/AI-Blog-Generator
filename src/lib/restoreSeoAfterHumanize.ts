@@ -1,24 +1,30 @@
 import type { ContentConstraints } from "@/lib/types/contentSpec";
 import type { KeywordPlan, KeywordTarget } from "@/lib/types/keywordPlan";
 import {
-    countPhraseOccurrences,
     headingTitlesMatch,
     introBeforeFirstH2,
     keywordPlanDensityPercent,
+    keywordPlanOccurrencesNeeded,
     parseH2Sections,
     parseH3Sections,
 } from "@/lib/seoAnalyzer";
 
 const DENSITY_TARGET_TOLERANCE = 0.3;
-const MAX_EXTRA_OCCURRENCES_PER_KEYWORD = 15;
+const MAX_EXTRA_OCCURRENCES_PER_KEYWORD = 30;
 
 const KEYWORD_WEAVE_TEMPLATES: Array<(phrase: string) => string> = [
-    (p) => `Readers often explore ${p}.`,
-    (p) => `Many students compare ${p} before they enroll.`,
-    (p) => `This section focuses on ${p}.`,
-    (p) => `You will also see ${p} discussed below.`,
-    (p) => `A common search is for ${p}.`,
+    (p) => `Many readers search for ${p}.`,
+    (p) => `Students often compare ${p} before they enroll.`,
+    (p) => `This section explains ${p} in practical terms.`,
+    (p) => `You will also find ${p} discussed below.`,
+    (p) => `A helpful starting point is ${p}.`,
+    (p) => `The guide below covers ${p} step by step.`,
 ];
+
+type InsertSite =
+    | { kind: "intro" }
+    | { kind: "h2-lead"; h2Idx: number }
+    | { kind: "h3-body"; h2Idx: number; h3Idx: number };
 
 type H3Block = { title: string; body: string };
 type H2Block = { title: string; leadBody: string; h3s: H3Block[] };
@@ -189,33 +195,72 @@ function distributeHumanizedAcrossCanonical(
     return { intro, h2s };
 }
 
-function weavePhraseIntoParagraph(paragraph: string, phrase: string, weaveIndex: number): string {
-    const p = paragraph.trim();
-    if (!p) return `This guide covers ${phrase}.`;
-    if (countPhraseOccurrences(p, phrase) > 0) return p;
+/** Always appends a new sentence containing the phrase (used to raise weighted density). */
+function appendPhraseToBlock(block: string, phrase: string, weaveIndex: number): string {
+    if (!phrase.trim()) return block;
+    const sentence = KEYWORD_WEAVE_TEMPLATES[weaveIndex % KEYWORD_WEAVE_TEMPLATES.length]!(phrase);
+    const trimmed = block.trim();
+    if (!trimmed) return sentence;
 
-    const template = KEYWORD_WEAVE_TEMPLATES[weaveIndex % KEYWORD_WEAVE_TEMPLATES.length]!;
-    const insert = ` ${template(phrase)}`;
-    const sentenceEnd = p.search(/[.!?](?:\s|$)/);
-    if (sentenceEnd >= 0) {
-        return p.slice(0, sentenceEnd + 1) + insert + p.slice(sentenceEnd + 1);
-    }
-    return `${p}${insert}`;
+    const parts = trimmed.split(/\n\n+/);
+    const paraIdx = weaveIndex % Math.max(1, parts.length);
+    const para = (parts[paraIdx] ?? "").trim();
+    parts[paraIdx] = `${para}${/[.!?]$/.test(para) ? "" : "."} ${sentence}`;
+    return parts.join("\n\n");
 }
 
 function densityMeetsTarget(markdown: string, phrase: string, targetPercent: number): boolean {
     return keywordPlanDensityPercent(markdown, phrase) >= targetPercent - DENSITY_TARGET_TOLERANCE;
 }
 
-function ensurePhraseInParagraphBlock(block: string, phrase: string, weaveIndex: number): string {
-    if (!phrase.trim()) return block;
-    const trimmed = block.trim();
-    if (!trimmed) return weavePhraseIntoParagraph("", phrase, weaveIndex);
+function listInsertSites(struct: ArticleStructure, target: KeywordTarget): InsertSite[] {
+    if (target.tier === "primary" || !target.sectionTitle?.trim()) {
+        const sites: InsertSite[] = [{ kind: "intro" }];
+        struct.h2s.forEach((h2, h2Idx) => {
+            sites.push({ kind: "h2-lead", h2Idx });
+            h2.h3s.forEach((_, h3Idx) => sites.push({ kind: "h3-body", h2Idx, h3Idx }));
+        });
+        return sites.length > 1 ? sites : [{ kind: "intro" }];
+    }
 
-    const parts = trimmed.split(/\n\n+/);
-    const paraIdx = weaveIndex % parts.length;
-    parts[paraIdx] = weavePhraseIntoParagraph(parts[paraIdx] ?? "", phrase, weaveIndex);
-    return parts.join("\n\n");
+    const sectionTitle = target.sectionTitle.trim();
+    const h2Idx = findH2Index(struct, sectionTitle);
+    if (h2Idx < 0) {
+        return struct.h2s.length > 0 ? [{ kind: "h2-lead", h2Idx: 0 }] : [{ kind: "intro" }];
+    }
+
+    const h2 = struct.h2s[h2Idx]!;
+    const h3Idx = findH3InH2(h2, sectionTitle);
+    if (h3Idx >= 0) {
+        return [{ kind: "h3-body", h2Idx, h3Idx }];
+    }
+    const sites: InsertSite[] = [{ kind: "h2-lead", h2Idx }];
+    h2.h3s.forEach((_, j) => sites.push({ kind: "h3-body", h2Idx, h3Idx: j }));
+    return sites;
+}
+
+function applyInsertSite(
+    struct: ArticleStructure,
+    site: InsertSite,
+    phrase: string,
+    weaveIndex: number,
+): ArticleStructure {
+    const next = cloneStructure(struct);
+    if (site.kind === "intro") {
+        next.intro = appendPhraseToBlock(next.intro, phrase, weaveIndex);
+        return next;
+    }
+    const h2 = next.h2s[site.h2Idx];
+    if (!h2) return next;
+    if (site.kind === "h2-lead") {
+        h2.leadBody = appendPhraseToBlock(h2.leadBody, phrase, weaveIndex);
+        return next;
+    }
+    const h3 = h2.h3s[site.h3Idx];
+    if (h3) {
+        h3.body = appendPhraseToBlock(h3.body, phrase, weaveIndex);
+    }
+    return next;
 }
 
 function findH2Index(struct: ArticleStructure, sectionTitle: string): number {
@@ -242,82 +287,46 @@ function cloneStructure(struct: ArticleStructure): ArticleStructure {
     };
 }
 
-function addOneKeywordOccurrence(
-    struct: ArticleStructure,
-    target: KeywordTarget,
-    weaveIndex: number,
-): ArticleStructure {
-    const phrase = target.phrase.trim();
-    if (!phrase) return struct;
-
-    const next = cloneStructure(struct);
-
-    if (target.tier === "primary" || !target.sectionTitle?.trim()) {
-        next.intro = ensurePhraseInParagraphBlock(next.intro, phrase, weaveIndex);
-        return next;
-    }
-
-    const sectionTitle = target.sectionTitle.trim();
-    const h2Idx = findH2Index(next, sectionTitle);
-    if (h2Idx < 0) {
-        if (next.h2s.length > 0) {
-            const first = next.h2s[0]!;
-            first.leadBody = ensurePhraseInParagraphBlock(
-                first.leadBody || first.h3s[0]?.body || "",
-                phrase,
-                weaveIndex,
-            );
-        } else {
-            next.intro = ensurePhraseInParagraphBlock(next.intro, phrase, weaveIndex);
-        }
-        return next;
-    }
-
-    const h2 = next.h2s[h2Idx]!;
-    const h3Idx = findH3InH2(h2, sectionTitle);
-    if (h3Idx >= 0) {
-        const h3 = h2.h3s[h3Idx]!;
-        h3.body = ensurePhraseInParagraphBlock(h3.body, phrase, weaveIndex);
-    } else if (target.tier === "tertiary") {
-        if (h2.h3s.length > 0) {
-            const h3 = h2.h3s[weaveIndex % h2.h3s.length] ?? h2.h3s[0]!;
-            h3.body = ensurePhraseInParagraphBlock(h3.body, phrase, weaveIndex);
-        } else {
-            h2.leadBody = ensurePhraseInParagraphBlock(h2.leadBody, phrase, weaveIndex);
-        }
-    } else {
-        const blocks = [h2.leadBody, ...h2.h3s.map((h3) => h3.body)].filter((b) => b.trim());
-        const pick = blocks[weaveIndex % blocks.length] ?? h2.leadBody;
-        if (pick === h2.leadBody) {
-            h2.leadBody = ensurePhraseInParagraphBlock(h2.leadBody, phrase, weaveIndex);
-        } else {
-            const h3 = h2.h3s[weaveIndex % h2.h3s.length] ?? h2.h3s[0];
-            if (h3) h3.body = ensurePhraseInParagraphBlock(h3.body, phrase, weaveIndex);
-        }
-    }
-
-    return next;
-}
-
 /** Add keyword occurrences until each plan target is within tolerance (capped per phrase). */
 export function meetKeywordPlanTargets(struct: ArticleStructure, plan: KeywordPlan): ArticleStructure {
     const targets: KeywordTarget[] = [plan.primary, ...plan.secondary, ...plan.tertiary];
     let out = struct;
 
     for (const target of targets) {
+        const sites = () => listInsertSites(out, target);
         let added = 0;
         let markdown = renderArticleStructure(out);
+        const needed = keywordPlanOccurrencesNeeded(
+            markdown,
+            target.phrase,
+            target.targetDensityPercent,
+        );
+        const maxAdds = Math.min(
+            MAX_EXTRA_OCCURRENCES_PER_KEYWORD,
+            Math.max(needed, 1) + 2,
+        );
+
         while (
             !densityMeetsTarget(markdown, target.phrase, target.targetDensityPercent) &&
-            added < MAX_EXTRA_OCCURRENCES_PER_KEYWORD
+            added < maxAdds
         ) {
-            out = addOneKeywordOccurrence(out, target, added);
+            const siteList = sites();
+            const site = siteList[added % siteList.length] ?? { kind: "intro" as const };
+            const prev = markdown;
+            out = applyInsertSite(out, site, target.phrase, added);
             added++;
             markdown = renderArticleStructure(out);
+            if (markdown === prev) break;
         }
     }
 
     return out;
+}
+
+/** Boost keywordPlan phrases in finished markdown (e.g. final optimize pass). */
+export function boostMarkdownForKeywordPlan(markdown: string, plan: KeywordPlan): string {
+    const struct = parseArticleStructure(markdown);
+    return renderArticleStructure(meetKeywordPlanTargets(struct, plan));
 }
 
 /**
@@ -355,4 +364,20 @@ export function restoreSeoAfterHumanize(
     }
 
     return markdown.trim() || humanized;
+}
+
+/** Run heading restore + keyword boost on markdown (no humanize snapshot). */
+export function applyKeywordPlanBoostToMarkdown(
+    markdown: string,
+    plan: KeywordPlan,
+    options?: Pick<RestoreSeoAfterHumanizeOptions, "canonicalMarkdown" | "contentConstraints" | "h2Suggestions">,
+): string {
+    const canonical = options?.canonicalMarkdown?.trim() || markdown;
+    const restored = restoreSeoAfterHumanize(markdown, {
+        canonicalMarkdown: canonical,
+        keywordPlan: null,
+        contentConstraints: options?.contentConstraints,
+        h2Suggestions: options?.h2Suggestions,
+    });
+    return boostMarkdownForKeywordPlan(restored, plan);
 }

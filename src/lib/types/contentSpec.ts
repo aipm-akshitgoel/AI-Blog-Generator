@@ -11,8 +11,7 @@ export const DEFAULT_H3_PER_H2 = 2;
 export const KEYWORD_DENSITY_COUNTING_RULES = [
     "Full article body: markdown H1 line excluded; link anchor text kept in plain text.",
     "Phrase match: case-insensitive; spaces in the keyword match flexible whitespace in the copy.",
-    "Formula: (occurrences ÷ total words in the article body) × 100, rounded to one decimal.",
-    "Each occurrence counts once in the numerator (not weighted by phrase word count).",
+    "Formula: (occurrences × phrase word count ÷ total words in the article body) × 100, one decimal.",
     "keywordPlan targets (primary / secondary / tertiary) are compared against this full-body density.",
 ] as const;
 

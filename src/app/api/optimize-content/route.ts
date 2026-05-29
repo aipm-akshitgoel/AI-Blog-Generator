@@ -39,7 +39,7 @@ import {
     runReadabilityImprovementLoop,
 } from "@/lib/readabilityImprovement";
 import { resolveKeywordPlanForPost, verifyKeywordPlanForPost } from "@/lib/keywordPlanVerification";
-import { restoreSeoAfterHumanize } from "@/lib/restoreSeoAfterHumanize";
+import { boostMarkdownForKeywordPlan, restoreSeoAfterHumanize } from "@/lib/restoreSeoAfterHumanize";
 import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
@@ -420,6 +420,13 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 contentConstraints: contentConstraints ?? null,
                 h2Suggestions: blogPost.h2Suggestions,
             });
+
+            if (keywordPlanForRestore) {
+                optimized.contentMarkdown = boostMarkdownForKeywordPlan(
+                    optimized.contentMarkdown,
+                    keywordPlanForRestore,
+                );
+            }
 
             // 5: Final readability after humanization (dashboard score)
             const finalReadability = await measureFinalReadability(

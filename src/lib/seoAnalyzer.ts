@@ -58,13 +58,35 @@ export function keywordDensityPercentSeoReviewTools(text: string, keyword: strin
     return Math.round((hits / words) * 1000) / 10;
 }
 
-/** Keyword plan density: full article body (excl. markdown H1 line), occurrence ÷ word count. */
-export function keywordPlanDensityPercent(markdown: string, phrase: string): number {
+/** Plain article body for keyword-plan measurement (excl. markdown H1 line). */
+export function keywordPlanPlainText(markdown: string): string {
     const body = String(markdown || "")
         .replace(/^#\s+[^\n]+\n?/m, "")
         .trim();
-    const plain = plainTextFromMarkdown(body);
-    return keywordDensityPercentSeoReviewTools(plain, phrase);
+    return plainTextFromMarkdown(body);
+}
+
+/**
+ * Keyword plan density: full article body, weighted by phrase word count per occurrence.
+ * Matches how writers set targetDensityPercent (typical primary ~1–2%).
+ */
+export function keywordPlanDensityPercent(markdown: string, phrase: string): number {
+    return keywordDensityPercent(keywordPlanPlainText(markdown), phrase);
+}
+
+/** Occurrences still needed to reach a weighted keyword-plan target. */
+export function keywordPlanOccurrencesNeeded(
+    markdown: string,
+    phrase: string,
+    targetPercent: number,
+): number {
+    const plain = keywordPlanPlainText(markdown);
+    const words = countWords(plain);
+    const kwWords = countWords(phrase);
+    if (words === 0 || !phrase.trim() || kwWords === 0) return 0;
+    const current = countPhraseOccurrences(plain, phrase);
+    const needed = Math.ceil(((targetPercent / 100) * words) / kwWords);
+    return Math.max(0, needed - current);
 }
 
 const DENSITY_STOP_WORDS = new Set([
