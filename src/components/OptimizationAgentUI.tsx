@@ -31,16 +31,12 @@ import { toAbsoluteSiteHref } from "@/lib/domainLinks";
 import { normalizeSeoScores, type KeywordDensityRow } from "@/lib/seoAnalyzer";
 import {
     buildLocalKeywordPlanVerification,
-    keywordDensitySourceLabel,
     keywordVerificationToDensityRows,
     resolveKeywordPlanForPost,
 } from "@/lib/keywordPlanVerification";
 import type { KeywordDensityVerification } from "@/lib/types/keywordPlan";
 import type { SeoScores } from "@/lib/types/optimization";
-import {
-    AI_DETECTION_TARGET_PERCENT_MAX,
-    getEffectiveAiContentPercent,
-} from "@/lib/zerogptAiDetection";
+import { AI_DETECTION_TARGET_PERCENT_MAX } from "@/lib/zerogptAiDetection";
 
 const METRIC_BAR_GOOD = "bg-emerald-500";
 const METRIC_BAR_WARN = "bg-amber-500";
@@ -56,16 +52,50 @@ function readabilityBarClass(scores: SeoScores): string {
     return METRIC_BAR_WARN;
 }
 
+const METRIC_BAR_PENDING = "bg-neutral-300 animate-pulse";
+
 /** Lower AI % is better: green when below 20% target. */
 function aiContentBarClass(scores: SeoScores): string {
-    const { percent, verified } = getEffectiveAiContentPercent(scores);
-    if (!verified) return METRIC_BAR_AI_MID;
-    if (scores.aiDetection?.targetMet === true) return METRIC_BAR_GOOD;
-    if (percent < AI_DETECTION_TARGET_PERCENT_MAX) return METRIC_BAR_GOOD;
-    if (percent < 50) return METRIC_BAR_WARN;
+    if (scores.aiDetection?.provider !== "zerogpt") return METRIC_BAR_AI_MID;
+    const pct = scores.aiDetection.aiPercent;
+    if (scores.aiDetection.targetMet === true) return METRIC_BAR_GOOD;
+    if (pct < AI_DETECTION_TARGET_PERCENT_MAX) return METRIC_BAR_GOOD;
+    if (pct < 50) return METRIC_BAR_WARN;
     return METRIC_BAR_WARN;
 }
-import { AiDetectionBadge, ZeroGptBadge } from "@/components/ZeroGptBadge";
+
+/** Only show AI % after ZeroGPT — never the optimizer's estimated aiContentPercent. */
+function formatAiContentDisplay(
+    scores: SeoScores | null | undefined,
+    detectionResolved: boolean,
+): { value: number; suffix: string; barClass: string; help: string } {
+    if (scores?.aiDetection?.provider === "zerogpt") {
+        const pct = scores.aiDetection.aiPercent;
+        const rounded = Math.round(pct * 10) / 10;
+        return {
+            value: rounded,
+            suffix: `${rounded}%`,
+            barClass: aiContentBarClass(scores),
+            help: "Verified with ZeroGPT on this draft. Lower is better. Green = below 20%.",
+        };
+    }
+    if (!detectionResolved) {
+        return {
+            value: 0,
+            suffix: "Checking…",
+            barClass: METRIC_BAR_PENDING,
+            help: "Running ZeroGPT on this draft. The score appears when verification finishes.",
+        };
+    }
+    return {
+        value: 0,
+        suffix: "Unavailable",
+        barClass: METRIC_BAR_AI_MID,
+        help: "ZeroGPT could not score this draft. Use Refresh in the editor or check ZEROGPT_API_KEY.",
+    };
+}
+
+import { ZeroGptBadge } from "@/components/ZeroGptBadge";
 import { SeoReviewToolsBadge } from "@/components/SeoReviewToolsBadge";
 import { refreshOptimizerMetrics } from "@/lib/refreshOptimizerMetricsClient";
 
@@ -139,19 +169,14 @@ const AI_EDIT_BTN_ACTIVE =
 function EditContentMetric({
     label,
     value,
-    suffix,
 }: {
     label: string;
-    value: number;
-    suffix?: string;
+    value: number | string;
 }) {
     return (
         <div className="flex items-baseline gap-1.5 min-w-[4.5rem] shrink-0 whitespace-nowrap">
             <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">{label}</span>
-            <span className="text-sm font-bold text-neutral-200 tabular-nums">
-                {value}
-                {suffix ?? ""}
-            </span>
+            <span className="text-sm font-bold text-neutral-200 tabular-nums">{value}</span>
         </div>
     );
 }
@@ -185,38 +210,6 @@ function keywordSectionHint(label: string): string | null {
     const head = parts[0]!.toLowerCase();
     if (!head.includes("keyword")) return null;
     return parts.slice(1).join(" · ");
-}
-
-function KeywordDensitySourceBanner({
-    verification,
-}: {
-    verification: KeywordDensityVerification | null | undefined;
-}) {
-    if (!verification) {
-        return (
-            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
-                <span className="font-semibold">No keyword plan.</span> The writer must set primary, secondary,
-                and tertiary keywords (keywordPlan) before density can be verified.
-            </p>
-        );
-    }
-
-    const isApi = verification.provider === "seo-review-tools";
-    const isMixed = verification.provider === "mixed";
-    const tone = isApi
-        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-        : isMixed
-          ? "border-amber-200 bg-amber-50 text-amber-900"
-          : "border-amber-200 bg-amber-50 text-amber-900";
-
-    return (
-        <p className={`mb-3 rounded-lg border px-3 py-2 text-[11px] leading-relaxed ${tone}`}>
-            <span className="font-semibold">
-                {isApi ? "Verified via API." : isMixed ? "Partially verified." : "Local counter."}
-            </span>{" "}
-            {keywordDensitySourceLabel(verification)}
-        </p>
-    );
 }
 
 function KeywordDensityPanel({ rows }: { rows: KeywordDensityRow[] }) {
@@ -268,17 +261,6 @@ function KeywordDensityPanel({ rows }: { rows: KeywordDensityRow[] }) {
                                     <span className="text-sm font-semibold tabular-nums text-[#2D3748]">
                                         {row.densityPercent}%
                                     </span>
-                                    {row.provider && (
-                                        <span
-                                            className={`mt-1 block text-[10px] font-bold uppercase tracking-wide ${
-                                                row.provider === "seo-review-tools"
-                                                    ? "text-emerald-700"
-                                                    : "text-neutral-500"
-                                            }`}
-                                        >
-                                            {row.provider === "seo-review-tools" ? "API" : "Local"}
-                                        </span>
-                                    )}
                                     {status && (
                                         <span
                                             className={`mt-0.5 block text-[11px] font-semibold ${
@@ -363,6 +345,7 @@ export function OptimizationAgentUI({
     const [loadingSeconds, setLoadingSeconds] = useState(0);
     const [isRefreshingMetrics, setIsRefreshingMetrics] = useState(false);
     const [metricsRefreshError, setMetricsRefreshError] = useState<string | null>(null);
+    const [aiDetectionResolved, setAiDetectionResolved] = useState(false);
     const optimizeAbortRef = useRef<AbortController | null>(null);
     const resultsTopRef = useRef<HTMLDivElement>(null);
     const postOptimizeKey = `${post.slug}|${post.contentMarkdown?.length ?? 0}`;
@@ -471,7 +454,10 @@ export function OptimizationAgentUI({
 
     useEffect(() => {
         if (!optimizedData || isEditing) return;
-        if (liveScores?.aiDetection?.provider === "zerogpt") return;
+        if (liveScores?.aiDetection?.provider === "zerogpt") {
+            setAiDetectionResolved(true);
+            return;
+        }
 
         let cancelled = false;
         void fetch("/api/ai-detection", {
@@ -514,12 +500,15 @@ export function OptimizationAgentUI({
                 });
             },
             )
-            .catch(() => undefined);
+            .catch(() => undefined)
+            .finally(() => {
+                if (!cancelled) setAiDetectionResolved(true);
+            });
 
         return () => {
             cancelled = true;
         };
-    }, [optimizedData, isEditing, liveScores?.aiDetection]);
+    }, [optimizedData, isEditing, liveScores?.aiDetection?.provider]);
 
     const metricsRefreshOptions = {
         post: { ...post, contentMarkdown: optimizedData?.contentMarkdown ?? post.contentMarkdown },
@@ -536,6 +525,7 @@ export function OptimizationAgentUI({
                 post: { ...metricsRefreshOptions.post, contentMarkdown: markdown },
             });
             setLiveScores(refreshed);
+            setAiDetectionResolved(refreshed.aiDetection?.provider === "zerogpt");
             setHighlightScores(true);
             return refreshed;
         } catch (err) {
@@ -565,6 +555,7 @@ export function OptimizationAgentUI({
             setLoading(true);
             setLoadingPhase("links");
             setError(null);
+            setAiDetectionResolved(false);
             try {
                 setLoadingPhase("optimize");
                 const data = await requestContentOptimization(
@@ -581,12 +572,12 @@ export function OptimizationAgentUI({
                         ? data.optimized.factSources
                         : post.factSources ?? [],
                 );
-                setLiveScores(
-                    normalizeSeoScores(
-                        data.optimized.seoScores,
-                        data.optimized.plagiarismReport?.overallSimilarity ?? 0,
-                    ),
+                const scores = normalizeSeoScores(
+                    data.optimized.seoScores,
+                    data.optimized.plagiarismReport?.overallSimilarity ?? 0,
                 );
+                setLiveScores(scores);
+                setAiDetectionResolved(scores.aiDetection?.provider === "zerogpt");
                 setScoreDeltas(null);
                 setError(null);
             } catch (err) {
@@ -772,23 +763,9 @@ export function OptimizationAgentUI({
             ? verifiedRows
             : resolvedKeywordPlan
               ? keywordVerificationToDensityRows(
-                    buildLocalKeywordPlanVerification(analyzerMarkdown, resolvedKeywordPlan, {
-                        title: optimizedData.title,
-                        h1Title: post.h1Title || optimizedData.title,
-                        metaDescription: optimizedData.metaDescription,
-                    }),
+                    buildLocalKeywordPlanVerification(analyzerMarkdown, resolvedKeywordPlan),
                 )
               : [];
-    const keywordDensityDisplayVerification =
-        keywordDensityVerification ??
-        (resolvedKeywordPlan && keywordDensityRows.length > 0
-            ? buildLocalKeywordPlanVerification(analyzerMarkdown, resolvedKeywordPlan, {
-                  title: optimizedData.title,
-                  h1Title: post.h1Title || optimizedData.title,
-                  metaDescription: optimizedData.metaDescription,
-              })
-            : null);
-
     // Render optimized markdown with internal links (markdown already contains links)
     return (
         <div
@@ -850,49 +827,43 @@ export function OptimizationAgentUI({
                             </div>
                             <div className="space-y-2">
                                 {(() => {
-                                    const ai = getEffectiveAiContentPercent(liveScores);
+                                    const ai = formatAiContentDisplay(liveScores, aiDetectionResolved);
                                     return (
-                                <SeoMetricBar
-                                    label="AI Content%"
-                                    value={ai.percent}
-                                    barClass={aiContentBarClass(liveScores)}
-                                    help={
-                                        ai.verified
-                                            ? "Verified with ZeroGPT API on this draft. Lower is better. Green = below 20%."
-                                            : "Optimizer estimate only — not verified with ZeroGPT. Use Refresh or re-run optimize with ZEROGPT_API_KEY set."
-                                    }
-                                    suffix={`${ai.percent}%`}
-                                    delta={scoreDeltas?.aiContentPercent}
-                                    brand={<ZeroGptBadge variant="light" size="md" logoOnly />}
-                                />
+                                        <SeoMetricBar
+                                            label="AI Content%"
+                                            value={ai.value}
+                                            barClass={ai.barClass}
+                                            help={ai.help}
+                                            suffix={ai.suffix}
+                                            delta={
+                                                liveScores?.aiDetection?.provider === "zerogpt"
+                                                    ? scoreDeltas?.aiContentPercent
+                                                    : undefined
+                                            }
+                                            brand={<ZeroGptBadge variant="light" size="md" logoOnly />}
+                                        />
                                     );
                                 })()}
-                                {liveScores.aiDetection ? (
-                                    <AiDetectionBadge
-                                        variant="light"
-                                        aiPercent={liveScores.aiDetection.aiPercent}
-                                        targetMet={liveScores.aiDetection.targetMet}
-                                        attempts={liveScores.aiDetection.attempts}
-                                    />
-                                ) : null}
                             </div>
                         </div>
 
-                        {keywordDensityRows.length > 0 && (
+                        {keywordDensityRows.length > 0 ? (
                             <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
-                                <div className="mb-3 flex items-center gap-2">
-                                    <SeoReviewToolsBadge variant="light" size="md" logoOnly />
-                                    <h3 className="text-sm font-bold uppercase tracking-wider text-[#718096]">
-                                        Keyword density
-                                    </h3>
-                                </div>
-                                <p className="mb-2 text-[11px] text-[#A0AEC0] leading-relaxed">
-                                    Targets come from the writer&apos;s{" "}
-                                    <span className="font-medium text-[#718096]">keywordPlan</span>.
+                                <h3 className="mb-2 text-sm font-bold uppercase tracking-wider text-[#718096]">
+                                    Keyword density
+                                </h3>
+                                <p className="mb-3 text-[11px] text-[#A0AEC0] leading-relaxed">
+                                    Targets from the writer&apos;s{" "}
+                                    <span className="font-medium text-[#718096]">keywordPlan</span>. Actual %
+                                    is measured across the full article body.
                                 </p>
-                                <KeywordDensitySourceBanner verification={keywordDensityDisplayVerification} />
                                 <KeywordDensityPanel rows={keywordDensityRows} />
                             </div>
+                        ) : resolvedKeywordPlan ? null : (
+                            <p className="rounded-xl border border-neutral-200 bg-white p-4 text-[11px] text-[#718096]">
+                                No keyword plan on this draft — the writer must set{" "}
+                                <span className="font-medium">keywordPlan</span> during drafting.
+                            </p>
                         )}
                     </div>
                 </div>
@@ -1008,14 +979,19 @@ export function OptimizationAgentUI({
                                     <div className="flex flex-1 items-center gap-3 overflow-x-auto px-3 py-2 sm:gap-4 sm:px-4 custom-scrollbar">
                                         <div className="flex items-center gap-1.5 shrink-0">
                                             <SeoReviewToolsBadge size="sm" logoOnly />
-                                            <EditContentMetric label="Readability" value={liveScores!.readability} suffix="%" />
+                                            <EditContentMetric
+                                                label="Readability"
+                                                value={`${liveScores!.readability}%`}
+                                            />
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
                                             <ZeroGptBadge size="sm" logoOnly />
                                             <EditContentMetric
                                                 label="AI Content%"
-                                                value={getEffectiveAiContentPercent(liveScores!).percent}
-                                                suffix="%"
+                                                value={
+                                                    formatAiContentDisplay(liveScores, aiDetectionResolved)
+                                                        .suffix
+                                                }
                                             />
                                         </div>
                                     </div>
@@ -1050,7 +1026,7 @@ export function OptimizationAgentUI({
                                     <p className="mt-2 text-xs text-amber-400/90 px-1">{metricsRefreshError}</p>
                                 ) : (
                                     <p className="mt-2 text-[11px] text-neutral-500 px-1">
-                                        Refresh re-runs SEO Review Tools (readability + keyword density) and ZeroGPT
+                                        Refresh re-runs readability (SEO Review Tools), keyword density, and ZeroGPT
                                         on your current draft.
                                     </p>
                                 )}

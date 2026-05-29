@@ -17,8 +17,6 @@ export type KeywordDensityRow = {
     densityPercent: number;
     targetPercent?: number;
     missing?: boolean;
-    /** Present when row comes from keyword plan verification. */
-    provider?: "seo-review-tools" | "local";
 };
 
 function countWords(text: string): number {
@@ -36,13 +34,37 @@ export function countPhraseOccurrences(text: string, phrase: string): number {
     return [...String(text || "").matchAll(re)].length;
 }
 
-/** Keyword density as % of total words in the text span. */
+/**
+ * Keyword density as % of total words in the text span.
+ * Uses keyword-word weighting (each occurrence adds the phrase’s word count).
+ * Prefer `keywordDensityPercentSeoReviewTools` when aligning with SEO Review Tools API.
+ */
 export function keywordDensityPercent(text: string, keyword: string): number {
     const words = countWords(text);
     if (words === 0 || !keyword.trim()) return 0;
     const hits = countPhraseOccurrences(text, keyword);
     const kwWords = countWords(keyword);
     return Math.round(((hits * kwWords) / words) * 1000) / 10;
+}
+
+/**
+ * SEO Review Tools content-analysis formula: (occurrences ÷ total words) × 100.
+ * @see https://api.seoreviewtools.com/documentation/seo-content-analysis-api/content/
+ */
+export function keywordDensityPercentSeoReviewTools(text: string, keyword: string): number {
+    const words = countWords(text);
+    if (words === 0 || !keyword.trim()) return 0;
+    const hits = countPhraseOccurrences(text, keyword);
+    return Math.round((hits / words) * 1000) / 10;
+}
+
+/** Keyword plan density: full article body (excl. markdown H1 line), occurrence ÷ word count. */
+export function keywordPlanDensityPercent(markdown: string, phrase: string): number {
+    const body = String(markdown || "")
+        .replace(/^#\s+[^\n]+\n?/m, "")
+        .trim();
+    const plain = plainTextFromMarkdown(body);
+    return keywordDensityPercentSeoReviewTools(plain, phrase);
 }
 
 const DENSITY_STOP_WORDS = new Set([

@@ -50,13 +50,11 @@ Published posts: `/blog/[slug]`, dashboard `/dashboard`.
 
 ### Keyword density counting
 
-Implemented in `src/lib/seoAnalyzer.ts` (`keywordDensityPercent`, `buildKeywordDensityRows`). Rules (also in `KEYWORD_DENSITY_COUNTING_RULES` in `contentSpec.ts`):
+Keyword plan verification is **local only** (`keywordPlanDensityPercent` in `seoAnalyzer.ts`, `verifyKeywordPlan` in `keywordPlanVerification.ts`). Rules (also in `KEYWORD_DENSITY_COUNTING_RULES` in `contentSpec.ts`):
 
-1. Plain text: strip `#` heading lines; keep link anchor text.
-2. Case-insensitive phrase match; flexible whitespace.
-3. Numerator: each match adds the keyword’s word count.
-4. Denominator: words in the scoped span.
-5. Formula: `(keyword-words ÷ span-words) × 100`, one decimal.
+1. Full article body (markdown H1 line excluded); case-insensitive phrase match; flexible whitespace.
+2. Formula: `(occurrences ÷ total words) × 100`, one decimal.
+3. No SEO Review Tools API for keyword density (readability still uses SEO Review Tools when configured).
 
 | Target | Scope |
 |--------|--------|

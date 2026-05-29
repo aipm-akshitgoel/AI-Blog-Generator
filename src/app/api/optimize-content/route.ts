@@ -495,14 +495,11 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     keywordDensity: keywordVerification,
                     keywordPlan: keywordVerification.plan,
                 };
-                if (keywordVerification.skippedReason) {
-                    insights.push(keywordVerification.skippedReason);
-                }
                 for (const row of keywordVerification.rows) {
                     const delta = row.actualDensityPercent - row.targetDensityPercent;
                     if (Math.abs(delta) > 0.4) {
                         insights.push(
-                            `${row.tier} keyword "${row.phrase}": ${row.actualDensityPercent}% actual vs ${row.targetDensityPercent}% target (SEO Review Tools).`,
+                            `${row.tier} keyword "${row.phrase}": ${row.actualDensityPercent}% actual vs ${row.targetDensityPercent}% target.`,
                         );
                     }
                 }

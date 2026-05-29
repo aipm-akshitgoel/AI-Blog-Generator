@@ -9,15 +9,11 @@ export const DEFAULT_H3_PER_H2 = 2;
  * See `keywordDensityPercent` in `@/lib/seoAnalyzer`.
  */
 export const KEYWORD_DENSITY_COUNTING_RULES = [
-    "Plain text only: markdown heading lines (# …) are excluded; link anchor text is kept; punctuation is stripped for matching.",
+    "Full article body: markdown H1 line excluded; link anchor text kept in plain text.",
     "Phrase match: case-insensitive; spaces in the keyword match flexible whitespace in the copy.",
-    "Each occurrence adds the keyword’s word count to the numerator (e.g. “online mba” twice → 4 keyword-words).",
-    "Denominator: total words in the scoped span (split on whitespace).",
-    "Result: round to one decimal — (keyword-words ÷ span-words) × 100.",
-    "H1 density: intro only (from first body paragraph through text before the first ## H2).",
-    "H2 density: measured separately in each ## section (that H2’s body, excluding ### lines).",
-    "H3 density (optional): measured in each ### block under its parent H2.",
-    "Domain density (optional): full article body excluding the FAQ block, all sections combined.",
+    "Formula: (occurrences ÷ total words in the article body) × 100, rounded to one decimal.",
+    "Each occurrence counts once in the numerator (not weighted by phrase word count).",
+    "keywordPlan targets (primary / secondary / tertiary) are compared against this full-body density.",
 ] as const;
 
 /** SEO structure targets set before draft generation. */

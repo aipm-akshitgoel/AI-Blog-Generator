@@ -1,3 +1,4 @@
+import { keywordDensityPercentSeoReviewTools } from "@/lib/seoAnalyzer";
 import { markdownToReadabilityHtml } from "@/lib/seoReviewToolsReadability";
 import { getSeoReviewToolsApiKey } from "@/lib/seoReviewToolsReadability";
 
@@ -27,6 +28,28 @@ export function parseDensityPercentString(value: unknown): number {
 }
 
 /** Full HTML document for SEO Review Tools content analysis (matches their examples). */
+/** Plain text extracted the same way the content-analysis API evaluates body copy (incl. H1). */
+export function plainTextFromContentAnalysisHtml(html: string): string {
+    const body = String(html || "").match(/<body[^>]*>([\s\S]*)<\/body>/i)?.[1] ?? html;
+    return body
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "and")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+/** Local density using the same HTML scope + formula as `fetchSeoReviewToolsKeywordDensity`. */
+export function localKeywordDensityFromContentAnalysisHtml(
+    html: string,
+    focusKeyword: string,
+): number {
+    const plain = plainTextFromContentAnalysisHtml(html);
+    return keywordDensityPercentSeoReviewTools(plain, focusKeyword);
+}
+
 export function buildContentAnalysisHtml(input: {
     title: string;
     h1Title: string;

@@ -275,8 +275,8 @@ export function TopicBriefPanel({ topic, primaryKeyword, onConfirm, onBack }: To
                             <p className="text-[11px] text-neutral-500 leading-relaxed">
                                 H2s, secondary keywords, H3s, and tertiary keywords are optional hints. The content
                                 writer finalizes keywords and density targets in{" "}
-                                <strong className="text-neutral-400">keywordPlan</strong>; the optimizer verifies
-                                actual density with SEO Review Tools.
+                                <strong className="text-neutral-400">keywordPlan</strong>; the optimizer measures
+                                actual density across the full article.
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>

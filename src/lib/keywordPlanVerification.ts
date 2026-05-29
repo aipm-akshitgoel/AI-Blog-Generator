@@ -7,16 +7,9 @@ import type {
     KeywordTarget,
 } from "@/lib/types/keywordPlan";
 import {
-    buildContentAnalysisHtml,
-    fetchSeoReviewToolsKeywordDensity,
-} from "@/lib/seoReviewToolsContentAnalysis";
-import { getSeoReviewToolsApiKey } from "@/lib/seoReviewToolsReadability";
-import { keywordDensityPercent } from "@/lib/seoAnalyzer";
-import {
-    introBeforeFirstH2,
+    keywordPlanDensityPercent,
     parseH2Sections,
     parseH3Sections,
-    plainTextFromMarkdown,
 } from "@/lib/seoAnalyzer";
 
 function clampDensity(n: number): number {
@@ -55,7 +48,7 @@ export function normalizeKeywordPlanFromModel(raw: unknown): KeywordPlan | null 
     const tertiaryRaw = Array.isArray(o.tertiary) ? o.tertiary : Array.isArray(o.tertiaryKeywords) ? o.tertiaryKeywords : [];
 
     const secondary = secondaryRaw
-        .map((item, i) => normalizeTarget(item, "secondary", undefined) ?? null)
+        .map((item) => normalizeTarget(item, "secondary"))
         .filter((t): t is KeywordTarget => Boolean(t))
         .slice(0, 12);
 
@@ -116,42 +109,20 @@ function resolveKeywordPlan(
     return post.keywordPlan ?? inferKeywordPlanFromBrief(post, constraints, strategyPrimary);
 }
 
-function sectionMarkdownForTarget(markdown: string, target: KeywordTarget): string {
-    if (target.tier === "primary") {
-        const intro = introBeforeFirstH2(markdown);
-        return intro.trim() ? intro : markdown;
-    }
-    if (!target.sectionTitle?.trim()) {
-        return markdown;
-    }
+function sectionExistsInMarkdown(markdown: string, target: KeywordTarget): boolean {
+    const title = target.sectionTitle?.trim();
+    if (!title) return true;
 
-    const sections = parseH2Sections(markdown);
+    const want = title.toLowerCase();
     if (target.tier === "secondary") {
-        const match = sections.find(
-            (s) => s.title.toLowerCase() === target.sectionTitle!.toLowerCase(),
-        );
-        return match?.body?.trim() ? `## ${match.title}\n\n${match.body}` : markdown;
+        return parseH2Sections(markdown).some((s) => s.title.toLowerCase() === want);
     }
-
-    for (const h2 of sections) {
-        for (const h3 of parseH3Sections(h2.body)) {
-            if (h3.title.toLowerCase() === target.sectionTitle!.toLowerCase()) {
-                return `### ${h3.title}\n\n${h3.body}`;
-            }
+    for (const h2 of parseH2Sections(markdown)) {
+        if (parseH3Sections(h2.body).some((h3) => h3.title.toLowerCase() === want)) {
+            return true;
         }
     }
-    return markdown;
-}
-
-function localDensityForTarget(markdown: string, target: KeywordTarget): number {
-    if (target.tier === "primary") {
-        const intro = introBeforeFirstH2(markdown);
-        const span = intro ? plainTextFromMarkdown(intro) : plainTextFromMarkdown(markdown);
-        return keywordDensityPercent(span, target.phrase);
-    }
-    const sectionMd = sectionMarkdownForTarget(markdown, target);
-    const plain = plainTextFromMarkdown(sectionMd.replace(/^#+\s+[^\n]+\n?/gm, ""));
-    return keywordDensityPercent(plain, target.phrase);
+    return false;
 }
 
 function labelForTarget(target: KeywordTarget): string {
@@ -166,86 +137,28 @@ function labelForTarget(target: KeywordTarget): string {
         : "Tertiary keyword";
 }
 
-async function measureTarget(
-    markdown: string,
-    target: KeywordTarget,
-    htmlContext: { title: string; h1Title: string; metaDescription: string },
-    apiKey: string | null,
-): Promise<KeywordDensityVerificationRow> {
-    const label = labelForTarget(target);
-    const sectionMd = sectionMarkdownForTarget(markdown, target);
-
-    if (apiKey) {
-        const html = buildContentAnalysisHtml({
-            ...htmlContext,
-            bodyMarkdown: sectionMd,
-        });
-        const related =
-            target.tier === "primary"
-                ? []
-                : [];
-        const result = await fetchSeoReviewToolsKeywordDensity(html, target.phrase, {
-            apiKey,
-            relatedKeywords: related,
-        });
-        if (result) {
-            return {
-                tier: target.tier,
-                label,
-                phrase: target.phrase,
-                targetDensityPercent: target.targetDensityPercent,
-                actualDensityPercent: result.densityPercent,
-                frequency: result.frequency,
-                provider: "seo-review-tools",
-            };
-        }
-    }
-
+function measureTarget(markdown: string, target: KeywordTarget): KeywordDensityVerificationRow {
     return {
         tier: target.tier,
-        label,
+        label: labelForTarget(target),
         phrase: target.phrase,
         targetDensityPercent: target.targetDensityPercent,
-        actualDensityPercent: localDensityForTarget(markdown, target),
-        provider: "local",
-        missing: target.sectionTitle ? !sectionMd.includes(target.sectionTitle) : false,
+        actualDensityPercent: keywordPlanDensityPercent(markdown, target.phrase),
+        missing: !sectionExistsInMarkdown(markdown, target),
     };
 }
 
 /**
- * Verify writer-finalized keyword targets using SEO Review Tools (fallback: local counter).
+ * Verify keyword plan targets using local density (full article body, occurrence ÷ word count).
  */
-export async function verifyKeywordPlan(
-    markdown: string,
-    plan: KeywordPlan,
-    htmlContext: { title: string; h1Title: string; metaDescription: string },
-): Promise<KeywordDensityVerification> {
-    const apiKey = getSeoReviewToolsApiKey();
-    const rows: KeywordDensityVerificationRow[] = [];
+export function verifyKeywordPlan(markdown: string, plan: KeywordPlan): KeywordDensityVerification {
+    const rows: KeywordDensityVerificationRow[] = [
+        measureTarget(markdown, plan.primary),
+        ...plan.secondary.map((t) => measureTarget(markdown, t)),
+        ...plan.tertiary.map((t) => measureTarget(markdown, t)),
+    ];
 
-    rows.push(await measureTarget(markdown, plan.primary, htmlContext, apiKey));
-
-    for (const sec of plan.secondary) {
-        rows.push(await measureTarget(markdown, sec, htmlContext, apiKey));
-    }
-    for (const ter of plan.tertiary) {
-        rows.push(await measureTarget(markdown, ter, htmlContext, apiKey));
-    }
-
-    const apiCount = rows.filter((r) => r.provider === "seo-review-tools").length;
-    const provider: KeywordDensityVerification["provider"] =
-        apiCount === 0 ? "local" : apiCount === rows.length ? "seo-review-tools" : "mixed";
-
-    return {
-        plan,
-        rows,
-        provider,
-        skippedReason: apiKey
-            ? provider === "local"
-                ? "SEO Review Tools API did not return density for one or more keywords — local counter used"
-                : undefined
-            : "SEO_REVIEW_TOOLS_API_KEY not set — measured with local counter",
-    };
+    return { plan, rows };
 }
 
 export async function verifyKeywordPlanForPost(
@@ -255,12 +168,7 @@ export async function verifyKeywordPlanForPost(
 ): Promise<KeywordDensityVerification | null> {
     const plan = resolveKeywordPlan(post, options?.constraints, options?.strategyPrimary);
     if (!plan) return null;
-
-    return verifyKeywordPlan(markdown, plan, {
-        title: post.title,
-        h1Title: post.h1Title || post.title,
-        metaDescription: post.metaDescription,
-    });
+    return verifyKeywordPlan(markdown, plan);
 }
 
 export function keywordVerificationToDensityRows(
@@ -274,41 +182,14 @@ export function keywordVerificationToDensityRows(
         densityPercent: r.actualDensityPercent,
         targetPercent: r.targetDensityPercent,
         missing: r.missing,
-        provider: r.provider,
     }));
 }
 
-/** Local-only density rows (one per keyword in the plan, not per heading). */
 export function buildLocalKeywordPlanVerification(
     markdown: string,
     plan: KeywordPlan,
-    htmlContext: { title: string; h1Title: string; metaDescription: string },
 ): KeywordDensityVerification {
-    const rows: KeywordDensityVerificationRow[] = [
-        plan.primary,
-        ...plan.secondary,
-        ...plan.tertiary,
-    ].map((target) => ({
-        tier: target.tier,
-        label: labelForTarget(target),
-        phrase: target.phrase,
-        targetDensityPercent: target.targetDensityPercent,
-        actualDensityPercent: localDensityForTarget(markdown, target),
-        provider: "local" as const,
-        missing:
-            target.sectionTitle != null &&
-            target.sectionTitle.trim() !== "" &&
-            !sectionMarkdownForTarget(markdown, target).includes(target.sectionTitle),
-    }));
-
-    return {
-        plan,
-        rows,
-        provider: "local",
-        skippedReason: getSeoReviewToolsApiKey()
-            ? undefined
-            : "SEO_REVIEW_TOOLS_API_KEY not set — measured with local counter",
-    };
+    return verifyKeywordPlan(markdown, plan);
 }
 
 export function resolveKeywordPlanForPost(
@@ -317,21 +198,4 @@ export function resolveKeywordPlanForPost(
     strategyPrimary?: string,
 ): KeywordPlan | null {
     return resolveKeywordPlan(post, constraints, strategyPrimary);
-}
-
-export function keywordDensitySourceLabel(
-    verification: KeywordDensityVerification | null | undefined,
-): string {
-    if (!verification) return "No keyword plan on this draft";
-    if (verification.skippedReason) return verification.skippedReason;
-    switch (verification.provider) {
-        case "seo-review-tools":
-            return "Actual % from SEO Review Tools content analysis API";
-        case "local":
-            return "Local counter only (SEO Review Tools API unavailable)";
-        case "mixed":
-            return "Mixed: some rows from SEO Review Tools API, others from local counter";
-        default:
-            return "";
-    }
 }

@@ -20,15 +20,10 @@ export type KeywordDensityVerificationRow = {
     phrase: string;
     targetDensityPercent: number;
     actualDensityPercent: number;
-    frequency?: number;
-    provider: "seo-review-tools" | "local";
     missing?: boolean;
 };
 
 export type KeywordDensityVerification = {
     plan: KeywordPlan;
     rows: KeywordDensityVerificationRow[];
-    /** How actual density % was measured across all rows. */
-    provider: "seo-review-tools" | "local" | "mixed";
-    skippedReason?: string;
 };
