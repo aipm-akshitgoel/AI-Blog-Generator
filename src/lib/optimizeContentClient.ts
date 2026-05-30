@@ -7,11 +7,11 @@ import { applyInterlinkingToContent, deriveApprovedLinks } from "@/lib/interlink
 /** Server `maxDuration` for `/api/optimize-content` (seconds). */
 export const OPTIMIZE_SERVER_MAX_DURATION_SEC = 300;
 
-/** Azure completion race on the server — stay under maxDuration. */
-export const OPTIMIZE_MODEL_TIMEOUT_MS = 280_000;
+/** Azure draft pass only — leave room for readability, humanize, and scoring (see maxDuration). */
+export const OPTIMIZE_MODEL_TIMEOUT_MS = 120_000;
 
-/** Browser fetch — slightly above model timeout so the client does not abort first. */
-export const OPTIMIZE_REQUEST_TIMEOUT_MS = OPTIMIZE_MODEL_TIMEOUT_MS + 15_000;
+/** Browser fetch — match server maxDuration so the client does not abort before Vercel finishes. */
+export const OPTIMIZE_REQUEST_TIMEOUT_MS = OPTIMIZE_SERVER_MAX_DURATION_SEC * 1000 + 10_000;
 
 export const BLOG_LINKS_FETCH_TIMEOUT_MS = 6_000;
 const DOMAIN_LINKS_FETCH_TIMEOUT_MS = 15_000;
@@ -225,7 +225,7 @@ export async function requestContentOptimization(
 export function optimizationErrorMessage(err: unknown): string {
     if (err instanceof Error) {
         if (err.name === "AbortError") {
-            return "Optimization was cancelled or took too long. Retry, or continue with your draft.";
+            return `Optimization took longer than ${Math.round(OPTIMIZE_SERVER_MAX_DURATION_SEC / 60)} minutes. Retry, or continue with your draft and run Refresh metrics in the editor.`;
         }
         return err.message;
     }

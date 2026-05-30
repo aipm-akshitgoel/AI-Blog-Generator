@@ -49,6 +49,7 @@ import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 import { normalizeMarkdownTables } from "@/lib/markdownStructure";
 import { applyFinalOptimizerScores } from "@/lib/optimizerFinalScores";
+import { getOptimizePipelineProfile } from "@/lib/optimizePipelineProfile";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
 export const maxDuration = 300;
@@ -409,12 +410,19 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
 
         optimized.contentMarkdown = normalizeMarkdownTables(optimized.contentMarkdown);
 
+        const postPipelineStartedAt = Date.now();
+        const pipelineProfile = getOptimizePipelineProfile(
+            optimized.contentMarkdown,
+            postPipelineStartedAt,
+        );
+
         try {
             // 1–4: Readability improvement (keep lowest grade across up to 3 attempts)
             const readability = await runReadabilityImprovementLoop(
                 azure,
                 blogPost,
                 optimized.contentMarkdown,
+                { maxAttempts: pipelineProfile.readabilityMaxAttempts },
             );
             optimized.contentMarkdown = readability.contentMarkdown;
 
@@ -432,7 +440,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             const humanizeOpts = { preserveHeadings: true as const };
             const humanized = await runAiHumanizationLoop(markdownBeforeHumanize, {
                 ...humanizeOpts,
-                maxAttempts: 3,
+                maxAttempts: pipelineProfile.humanizePass1Max,
             });
 
             optimized.contentMarkdown = restoreSeoAfterHumanize(humanized.contentMarkdown, {
@@ -451,23 +459,25 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             const markdownAfterKeywords = optimized.contentMarkdown;
             let totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
 
-            const postSeoHumanized = await runAiHumanizationLoop(markdownAfterKeywords, {
-                ...humanizeOpts,
-                maxAttempts: 5,
-            });
-            totalHumanizeAttempts += postSeoHumanized.aiDetection?.attempts ?? 0;
+            if (pipelineProfile.humanizePass2Max > 0) {
+                const postSeoHumanized = await runAiHumanizationLoop(markdownAfterKeywords, {
+                    ...humanizeOpts,
+                    maxAttempts: pipelineProfile.humanizePass2Max,
+                });
+                totalHumanizeAttempts += postSeoHumanized.aiDetection?.attempts ?? 0;
 
-            optimized.contentMarkdown = restoreHeadingsAfterHumanize(
-                postSeoHumanized.contentMarkdown,
-                markdownAfterKeywords,
-                seoRestoreOptions,
-            );
-
-            if (keywordPlanForRestore) {
-                optimized.contentMarkdown = boostMarkdownForKeywordPlan(
-                    optimized.contentMarkdown,
-                    keywordPlanForRestore,
+                optimized.contentMarkdown = restoreHeadingsAfterHumanize(
+                    postSeoHumanized.contentMarkdown,
+                    markdownAfterKeywords,
+                    seoRestoreOptions,
                 );
+
+                if (keywordPlanForRestore) {
+                    optimized.contentMarkdown = boostMarkdownForKeywordPlan(
+                        optimized.contentMarkdown,
+                        keywordPlanForRestore,
+                    );
+                }
             }
 
             const postReadability = await runPostHumanizeReadabilityLoop(
@@ -478,6 +488,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     h1Title: blogPost.h1Title || optimized.title,
                 },
                 optimized.contentMarkdown,
+                { maxAttempts: pipelineProfile.postHumanizeReadabilityMax },
             );
             optimized.contentMarkdown = postReadability.contentMarkdown;
 
@@ -526,7 +537,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     finalAiDetection,
                     totalHumanizeAttempts,
                 );
-                if (!finalAiDetection.targetMet) {
+                if (!finalAiDetection.targetMet && !pipelineProfile.skipExtraAiPolish) {
                     const polishMarkdown = optimized.contentMarkdown;
                     const aiPolish = await runAiHumanizationLoop(polishMarkdown, {
                         ...humanizeOpts,

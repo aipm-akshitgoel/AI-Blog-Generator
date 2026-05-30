@@ -7,9 +7,11 @@ import type { ContentEditMode } from "@/lib/types/contentEdit";
 import { HelpTip } from "./HelpTip";
 import type { FactSource } from "@/lib/types/factSource";
 import {
+    buildLocalOptimizedFallback,
     optimizationErrorMessage,
     requestContentOptimization,
 } from "@/lib/optimizeContentClient";
+import { applyInterlinkingToContent } from "@/lib/interlinking";
 import {
     OPTIMIZATION_LINKS_PHASE,
     OPTIMIZATION_LOADING_STALE_HINT,
@@ -743,6 +745,33 @@ export function OptimizationAgentUI({
                         className="rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-amber-500"
                     >
                         Retry optimization
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            let fallback = buildLocalOptimizedFallback(post);
+                            if (interlinkingRules?.minLinks != null && interlinkingRules.minLinks > 0) {
+                                const { contentMarkdown } = applyInterlinkingToContent(
+                                    fallback.contentMarkdown,
+                                    businessContext,
+                                    interlinkingRules,
+                                );
+                                fallback = { ...fallback, contentMarkdown };
+                            }
+                            setOptimizedData(fallback);
+                            setLiveScores(
+                                normalizeSeoScores(
+                                    fallback.seoScores,
+                                    fallback.plagiarismReport?.overallSimilarity ?? 0,
+                                ),
+                            );
+                            setAiDetectionResolved(false);
+                            setError(null);
+                            onComplete?.(fallback);
+                        }}
+                        className="rounded-lg border border-neutral-600 bg-neutral-800 px-5 py-2.5 text-sm font-medium text-neutral-100 hover:bg-neutral-700"
+                    >
+                        Continue with draft
                     </button>
                 </div>
             </div>

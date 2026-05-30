@@ -180,7 +180,9 @@ export async function runReadabilityImprovementLoop(
     azure: AzureConfig,
     blogPost: BlogPost,
     initialMarkdown: string,
+    options?: { maxAttempts?: number },
 ): Promise<ReadabilityLoopResult> {
+    const maxAttempts = options?.maxAttempts ?? READABILITY_MAX_ATTEMPTS;
     const candidates: { markdown: string; measurement: ReadabilityGradeResult }[] = [];
     let markdown = initialMarkdown;
     let attemptsUsed = 0;
@@ -228,6 +230,7 @@ export async function runPostHumanizeReadabilityLoop(
     azure: AzureConfig,
     blogPost: BlogPost,
     initialMarkdown: string,
+    options?: { maxAttempts?: number },
 ): Promise<ReadabilityLoopResult> {
     const candidates: { markdown: string; measurement: ReadabilityGradeResult }[] = [];
     let markdown = initialMarkdown;
@@ -248,7 +251,16 @@ export async function runPostHumanizeReadabilityLoop(
 
     candidates.push({ markdown, measurement });
 
-    const maxAttempts = POST_HUMANIZE_READABILITY_MAX_ATTEMPTS;
+    const maxAttempts = options?.maxAttempts ?? POST_HUMANIZE_READABILITY_MAX_ATTEMPTS;
+    if (maxAttempts <= 0) {
+        const readabilityGrade = toReadabilityGrade(measurement, 0, true);
+        return {
+            contentMarkdown: markdown,
+            readabilityGrade,
+            readabilityPercent: fleschEaseToReadabilityPercent(measurement.fleschScore),
+        };
+    }
+
     while (attemptsUsed < maxAttempts && needsReadabilityImprovement(measurement)) {
         attemptsUsed++;
         markdown = await improveMarkdownPreservingHeadings(azure, markdown, blogPost, {

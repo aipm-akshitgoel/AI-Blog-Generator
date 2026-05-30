@@ -32,7 +32,7 @@ export const OPTIMIZATION_LINKS_PHASE =
     "Gathering published posts for internal link targets…";
 
 export const OPTIMIZATION_TIMING_NOTE =
-    "Longer drafts can take a few minutes. Keep this tab open.";
+    "Longer drafts can take up to 5 minutes. Keep this tab open until optimization finishes.";
 
 export const REFINE_LOADING_TITLE = "Applying SEO fixes…";
 
