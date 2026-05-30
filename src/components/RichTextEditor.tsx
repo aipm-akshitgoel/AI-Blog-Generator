@@ -9,12 +9,14 @@ import {
     type FactCitationDecorationOptions,
 } from "@/components/tiptap/FactCitationDecorations";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { generateJSON } from "@tiptap/html";
 import {
     markdownContainsGfmTable,
-    markdownToHtmlForEditor,
     normalizeMarkdownForStorage,
 } from "@/lib/markdownHtml";
+import {
+    markdownToTiptapDocument,
+    tiptapDocumentHasTable,
+} from "@/lib/markdownTiptapDocument";
 import { createTurndownService } from "@/lib/turndownConfig";
 import { createTiptapEditorExtensions } from "@/lib/tiptapEditorExtensions";
 
@@ -185,7 +187,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         [],
     );
 
-    function editorDocumentHasTable(tiptapEditor: NonNullable<typeof editor>): boolean {
+    function editorHasTableNode(tiptapEditor: NonNullable<typeof editor>): boolean {
         let found = false;
         tiptapEditor.state.doc.descendants((node) => {
             if (node.type.name === "table") found = true;
@@ -232,14 +234,14 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         (async () => {
             try {
                 const normalizedMd = normalizeMarkdownForStorage(nextValue || "");
-                const html = await markdownToHtmlForEditor(normalizedMd);
-                const htmlKey = `${html.length}:${html.includes("<table")}`;
                 const wantsTable = markdownContainsGfmTable(normalizedMd);
-                const hasTableInDoc = editorDocumentHasTable(editor);
+                const doc = await markdownToTiptapDocument(normalizedMd, editorExtensions);
+                const docKey = `${normalizedMd.length}:${tiptapDocumentHasTable(doc)}`;
+                const hasTableInDoc = editorHasTableNode(editor);
 
                 if (
                     normalizedMd === lastMarkdownFromEditorRef.current &&
-                    htmlKey === lastLoadedHtmlKeyRef.current &&
+                    docKey === lastLoadedHtmlKeyRef.current &&
                     !editor.isEmpty &&
                     (!wantsTable || hasTableInDoc)
                 ) {
@@ -248,10 +250,16 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
 
                 if (!alive) return;
 
-                const doc = generateJSON(html, editorExtensions);
                 lastMarkdownFromEditorRef.current = normalizedMd;
-                lastLoadedHtmlKeyRef.current = htmlKey;
+                lastLoadedHtmlKeyRef.current = docKey;
                 editor.commands.setContent(doc, { emitUpdate: false });
+
+                if (wantsTable && !editorHasTableNode(editor)) {
+                    const retryDoc = await markdownToTiptapDocument(normalizedMd, editorExtensions);
+                    if (tiptapDocumentHasTable(retryDoc)) {
+                        editor.commands.setContent(retryDoc, { emitUpdate: false });
+                    }
+                }
 
                 if (normalizedMd !== nextValue && !syncedTableNormalizeRef.current) {
                     syncedTableNormalizeRef.current = true;
@@ -497,8 +505,14 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 .tiptap-shell .ProseMirror table {
                     border-collapse: collapse;
                     width: 100%;
-                    margin: 1rem 0;
+                    margin: 1.25rem 0;
                     table-layout: auto;
+                    display: table;
+                    border: 1px solid rgba(82, 82, 91, 0.9);
+                }
+                .tiptap-shell .ProseMirror .tableWrapper {
+                    overflow-x: auto;
+                    margin: 1.25rem 0;
                 }
                 .tiptap-shell .ProseMirror th,
                 .tiptap-shell .ProseMirror td {
