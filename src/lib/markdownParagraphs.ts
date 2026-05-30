@@ -3,7 +3,11 @@
  * Common after AI Humanize / keyword-weave passes.
  */
 
-import { isMarkdownTableBlock, normalizeMarkdownTables } from "@/lib/markdownStructure";
+import {
+    isMarkdownTableBlock,
+    splitMarkdownPreservingStructure,
+    normalizeMarkdownTables,
+} from "@/lib/markdownStructure";
 
 function isStructuralBlock(text: string): boolean {
     if (isMarkdownTableBlock(text)) return true;
@@ -23,16 +27,13 @@ function isOrphanSentenceBlock(text: string): boolean {
     return true;
 }
 
-/**
- * Merge consecutive one-line blocks into proper paragraphs; keep headings and lists as-is.
- */
-export function normalizeMarkdownBodyParagraphs(markdown: string): string {
-    const blocks = normalizeMarkdownTables(String(markdown || ""))
+function normalizeBodyProse(text: string): string {
+    const blocks = String(text || "")
         .split(/\n\n+/)
         .map((b) => b.trim())
         .filter(Boolean);
 
-    if (blocks.length === 0) return String(markdown || "").trim();
+    if (blocks.length === 0) return String(text || "").trim();
 
     const out: string[] = [];
     let proseBuffer: string[] = [];
@@ -52,6 +53,26 @@ export function normalizeMarkdownBodyParagraphs(markdown: string): string {
         out.push(block);
     }
     flushProse();
+
+    return out.join("\n\n").trim();
+}
+
+/**
+ * Merge consecutive one-line blocks into proper paragraphs; keep headings, lists, and tables as-is.
+ */
+export function normalizeMarkdownBodyParagraphs(markdown: string): string {
+    const normalized = normalizeMarkdownTables(String(markdown || ""));
+    const parts = splitMarkdownPreservingStructure(normalized);
+    const out: string[] = [];
+
+    for (const part of parts) {
+        if (part.type === "table" || part.type === "heading") {
+            out.push(part.text);
+            continue;
+        }
+        const body = normalizeBodyProse(part.text);
+        if (body) out.push(body);
+    }
 
     return out.join("\n\n").trim();
 }
