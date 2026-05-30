@@ -13,8 +13,12 @@ import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
-import { marked } from "marked";
-import TurndownService from "turndown";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableCell } from "@tiptap/extension-table-cell";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { markdownToHtml } from "@/lib/markdownHtml";
+import { createTurndownService } from "@/lib/turndownConfig";
 
 interface RichTextEditorProps {
     value: string;
@@ -179,7 +183,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         sources: [],
         enabled: false,
     });
-    const turndown = useMemo(() => new TurndownService({ headingStyle: "atx", bulletListMarker: "-" }), []);
+    const turndown = useMemo(() => createTurndownService(), []);
 
     citationOptsRef.current = {
         sources: factSources,
@@ -208,6 +212,10 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
             Placeholder.configure({
                 placeholder: "Start editing your optimized content here...",
             }),
+            Table.configure({ resizable: true }),
+            TableRow,
+            TableHeader,
+            TableCell,
             FactCitationDecorations.configure({
                 getCitationOptions: () => citationOptsRef.current,
             }),
@@ -230,7 +238,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         let alive = true;
         (async () => {
             try {
-                const html = await marked.parse(nextValue || "");
+                const html = await markdownToHtml(nextValue || "");
                 if (!alive) return;
                 lastMarkdownFromEditorRef.current = nextValue;
                 editor.commands.setContent(String(html || "<p></p>"), { emitUpdate: false });
@@ -354,6 +362,43 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                     <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleCodeBlock().run()} className="toolbar-btn">{"</>"}</button>
                     <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleBulletList().run()} className="toolbar-btn">• List</button>
                     <button type="button" onMouseDown={toolbarPointerDown} onClick={() => editor?.chain().focus().toggleOrderedList().run()} className="toolbar-btn">1. List</button>
+                    <span className="mx-1 h-4 w-px bg-neutral-700" />
+                    <button
+                        type="button"
+                        onMouseDown={toolbarPointerDown}
+                        onClick={() => editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+                        className="toolbar-btn"
+                        title="Insert table"
+                    >
+                        Table
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={toolbarPointerDown}
+                        onClick={() => editor?.can().chain().focus().addRowAfter().run() && editor.chain().focus().addRowAfter().run()}
+                        className="toolbar-btn"
+                        title="Add row"
+                    >
+                        +Row
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={toolbarPointerDown}
+                        onClick={() => editor?.can().chain().focus().addColumnAfter().run() && editor.chain().focus().addColumnAfter().run()}
+                        className="toolbar-btn"
+                        title="Add column"
+                    >
+                        +Col
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={toolbarPointerDown}
+                        onClick={() => editor?.can().chain().focus().deleteTable().run() && editor.chain().focus().deleteTable().run()}
+                        className="toolbar-btn"
+                        title="Delete table"
+                    >
+                        Del Tbl
+                    </button>
                     {internalLinks.length > 0 && (
                         <button
                             type="button"
@@ -431,6 +476,27 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
                 .tiptap-shell .ProseMirror a {
                     color: #34d399;
                     text-decoration: underline;
+                }
+                .tiptap-shell .ProseMirror table {
+                    border-collapse: collapse;
+                    width: 100%;
+                    margin: 1rem 0;
+                    table-layout: auto;
+                }
+                .tiptap-shell .ProseMirror th,
+                .tiptap-shell .ProseMirror td {
+                    border: 1px solid rgba(82, 82, 91, 0.9);
+                    padding: 0.45rem 0.65rem;
+                    vertical-align: top;
+                    min-width: 4rem;
+                }
+                .tiptap-shell .ProseMirror th {
+                    background: rgba(30, 41, 59, 0.85);
+                    font-weight: 700;
+                    text-align: left;
+                }
+                .tiptap-shell .ProseMirror .selectedCell {
+                    background: rgba(52, 211, 153, 0.12);
                 }
                 .tiptap-shell .ProseMirror .fact-citation-highlight {
                     background: rgba(16, 185, 129, 0.22);

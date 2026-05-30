@@ -3,7 +3,10 @@
  * Common after AI Humanize / keyword-weave passes.
  */
 
+import { isMarkdownTableBlock } from "@/lib/markdownStructure";
+
 function isStructuralBlock(text: string): boolean {
+    if (isMarkdownTableBlock(text)) return true;
     const first = text.trim().split("\n")[0]?.trim() ?? "";
     if (/^#{1,6}\s/.test(first)) return true;
     if (/^[-*+]\s/.test(first)) return true;

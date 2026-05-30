@@ -1,4 +1,11 @@
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
+import { splitMarkdownPreservingStructure } from "@/lib/markdownStructure";
+
+export type { MarkdownPart } from "@/lib/markdownStructure";
+export {
+    splitMarkdownPreservingStructure,
+    splitMarkdownPreservingStructure as splitMarkdownPreservingHeadings,
+} from "@/lib/markdownStructure";
 
 /**
  * AI Humanize rewrite API
@@ -134,33 +141,8 @@ export async function humanizeMarkdown(
     return rewritten.join("\n\n").trim();
 }
 
-export type MarkdownPart = { type: "heading"; text: string } | { type: "body"; text: string };
-
-export function splitMarkdownPreservingHeadings(markdown: string): MarkdownPart[] {
-    const parts: MarkdownPart[] = [];
-    const lines = String(markdown || "").split("\n");
-    let bodyLines: string[] = [];
-
-    const flushBody = () => {
-        const text = bodyLines.join("\n").trim();
-        bodyLines = [];
-        if (text) parts.push({ type: "body", text });
-    };
-
-    for (const line of lines) {
-        if (/^#{1,6}\s+/.test(line)) {
-            flushBody();
-            parts.push({ type: "heading", text: line });
-        } else {
-            bodyLines.push(line);
-        }
-    }
-    flushBody();
-    return parts.length > 0 ? parts : [{ type: "body", text: String(markdown || "").trim() }];
-}
-
 /**
- * Humanize body copy only — ## / ### lines stay verbatim (readability structure unchanged).
+ * Humanize body copy only — headings and GFM tables stay verbatim.
  */
 export async function humanizeMarkdownPreservingHeadings(
     markdown: string,
@@ -171,11 +153,11 @@ export async function humanizeMarkdownPreservingHeadings(
         throw new Error("AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL are not configured");
     }
 
-    const parts = splitMarkdownPreservingHeadings(markdown);
+    const parts = splitMarkdownPreservingStructure(markdown);
     const out: string[] = [];
 
     for (const part of parts) {
-        if (part.type === "heading") {
+        if (part.type === "heading" || part.type === "table") {
             out.push(part.text);
             continue;
         }

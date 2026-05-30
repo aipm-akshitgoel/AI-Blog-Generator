@@ -5,7 +5,7 @@ import {
     createAzureClient,
     type AzureConfig,
 } from "@/lib/azureOpenAI";
-import { splitMarkdownPreservingHeadings } from "@/lib/aiHumanize";
+import { splitMarkdownPreservingStructure } from "@/lib/markdownStructure";
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 import {
     fetchReadabilityScore,
@@ -150,11 +150,11 @@ async function improveMarkdownPreservingHeadings(
     blogPost: BlogPost,
     options?: { measurement?: ReadabilityGradeResult; attempt?: number; postHumanize?: boolean },
 ): Promise<string> {
-    const parts = splitMarkdownPreservingHeadings(markdown);
+    const parts = splitMarkdownPreservingStructure(markdown);
     const out: string[] = [];
 
     for (const part of parts) {
-        if (part.type === "heading") {
+        if (part.type === "heading" || part.type === "table") {
             out.push(part.text);
             continue;
         }

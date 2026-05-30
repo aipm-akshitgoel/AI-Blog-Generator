@@ -242,6 +242,7 @@ ${internalLinksBlock}
 - JSON ESCAPING: You MUST escape all newlines within string values as \\n. NEVER output raw, unescaped newlines or tabs inside the JSON string values.
 - JSON ESCAPING: You MUST escape all double quotes inside string values as \\".
 - JSON ESCAPING: Do NOT escape single quotes ('). Do NOT use \\'.
+- Preserve existing GFM markdown tables verbatim (same rows/columns); you may fix typos in cells only. Add a table only when it clearly improves comparisons already in the draft.
 - Do NOT include the H1 title in the contentMarkdown. Start directly with the intro paragraph or H2.
 - factSources (editor-only): Preserve factSources from the input BlogPost when present (same excerpt text if still in contentMarkdown). Add new entries only for new factual claims introduced during optimization. Each entry: excerpt (EXACT substring from contentMarkdown), source (e.g. "Author brief", "Uploaded file: name.pdf", "Business profile"), optional url.
 - Return ONLY a JSON object matching the OptimizedContent schema.

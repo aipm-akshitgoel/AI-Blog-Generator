@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { getBlogBySlug } from "@/lib/blogDb";
 import { buildBlogCanonicalUrl } from "@/lib/publicSiteUrl";
 import { resolveBannerAltText, resolveOgImageList, SITE_LOCALE, SITE_NAME } from "@/lib/siteSeo";
-import ReactMarkdown from "react-markdown";
+import { MarkdownArticle } from "@/components/MarkdownArticle";
 import Link from "next/link";
 import Script from "next/script";
 import { FAQAccordion } from "@/components/FAQAccordion";
@@ -126,8 +126,9 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                             </h2>
                             <div className="prose prose-invert prose-lg md:prose-xl max-w-4xl mx-auto
                                 prose-headings:font-black prose-headings:italic prose-headings:uppercase 
-                                prose-a:text-[#02a7b6] hover:prose-a:text-[#342b7c] prose-img:rounded-3xl prose-img:shadow-2xl">
-                                <ReactMarkdown>{articleBodyMarkdown(content.contentMarkdown, content.faqs)}</ReactMarkdown>
+                                prose-a:text-[#02a7b6] hover:prose-a:text-[#342b7c] prose-img:rounded-3xl prose-img:shadow-2xl
+                                prose-table:w-full prose-th:border prose-td:border prose-th:border-white/20 prose-td:border-white/20 prose-th:bg-white/10 prose-th:px-3 prose-td:px-3">
+                                <MarkdownArticle>{articleBodyMarkdown(content.contentMarkdown, content.faqs)}</MarkdownArticle>
                             </div>
                         </div>
                     </section>
@@ -183,8 +184,9 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                             prose-headings:font-serif prose-headings:font-normal prose-headings:tracking-tight 
                             prose-h2:text-4xl prose-h3:text-2xl
                             prose-a:text-neutral-900 prose-a:underline prose-a:decoration-1 prose-a:underline-offset-4 hover:prose-a:decoration-4
-                            prose-img:rounded-none">
-                                    <ReactMarkdown>{articleBodyMarkdown(content.contentMarkdown, content.faqs)}</ReactMarkdown>
+                            prose-img:rounded-none
+                            prose-table:w-full prose-th:border prose-td:border prose-th:border-neutral-300 prose-td:border-neutral-200 prose-th:bg-neutral-100 prose-th:px-3 prose-td:px-3">
+                                    <MarkdownArticle>{articleBodyMarkdown(content.contentMarkdown, content.faqs)}</MarkdownArticle>
 
                                     {content.faqs && content.faqs.length > 0 && (
                                         <div className="mt-16">
@@ -235,8 +237,9 @@ export default async function PublicBlogPostPage({ params }: { params: Promise<{
                             {/* Markdown Content */}
                             <div className="prose prose-lg md:prose-xl prose-neutral max-w-none 
                         prose-headings:font-bold prose-headings:tracking-tight prose-a:text-emerald-600 prose-a:no-underline hover:prose-a:underline
-                        prose-img:rounded-2xl prose-img:shadow-lg prose-pre:bg-neutral-900 prose-pre:text-neutral-100">
-                                <ReactMarkdown>{articleBodyMarkdown(content.contentMarkdown, content.faqs)}</ReactMarkdown>
+                        prose-img:rounded-2xl prose-img:shadow-lg prose-pre:bg-neutral-900 prose-pre:text-neutral-100
+                        prose-table:w-full prose-th:border prose-td:border prose-th:border-neutral-300 prose-td:border-neutral-200 prose-th:bg-neutral-100 prose-th:px-3 prose-td:px-3">
+                                <MarkdownArticle>{articleBodyMarkdown(content.contentMarkdown, content.faqs)}</MarkdownArticle>
 
                                 {content.faqs && content.faqs.length > 0 && (
                                     <div className="mt-16 bg-neutral-100 rounded-3xl p-8 md:p-12 not-prose">

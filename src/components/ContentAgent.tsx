@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import ReactMarkdown from "react-markdown";
+import { MarkdownArticle } from "@/components/MarkdownArticle";
 import { type BusinessContext } from "@/lib/types/businessContext";
 import { type StrategySession, type TopicOption } from "@/lib/types/strategy";
 import { type BlogPost } from "@/lib/types/content";
@@ -195,8 +195,8 @@ export function ContentAgentUI({ businessContext, topic, topicBrief, strategySes
                     <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-neutral-950 to-transparent z-10 pointer-events-none" />
                     <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-neutral-950 to-transparent z-10 pointer-events-none" />
                     <div className="p-6 md:p-8 overflow-y-auto max-h-[500px] custom-scrollbar relative z-0">
-                        <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-emerald-400">
-                            <ReactMarkdown>{post.contentMarkdown}</ReactMarkdown>
+                        <article className="prose prose-neutral prose-invert w-full max-w-none prose-headings:font-bold prose-a:text-emerald-400 prose-table:w-full prose-th:border prose-td:border prose-th:border-neutral-700 prose-td:border-neutral-800 prose-th:bg-neutral-800/80 prose-th:px-3 prose-td:px-3">
+                            <MarkdownArticle>{post.contentMarkdown}</MarkdownArticle>
 
                             {/* Render FAQs */}
                             <div className="mt-8 pt-8 border-t border-neutral-800 pb-16">

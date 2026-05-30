@@ -8,6 +8,14 @@ export const DEFAULT_H3_PER_H2 = 2;
  * How keyword density is calculated (analyzer + writer targets use the same rules).
  * See `keywordDensityPercent` in `@/lib/seoAnalyzer`.
  */
+/** When comparisons, criteria, or side-by-side facts help the reader. */
+export const MARKDOWN_TABLE_GUIDANCE = [
+    "Use GitHub-flavored markdown tables when comparing options, fees, eligibility, pros/cons, or multi-column criteria.",
+    "Format: header row, separator row (e.g. |---|---|), then data rows. Keep tables compact (3–5 columns max).",
+    "Do not break table rows across paragraphs or insert blank lines inside a table.",
+    "Do not place internal links inside table cells unless the brief requires it.",
+] as const;
+
 export const KEYWORD_DENSITY_COUNTING_RULES = [
     "Full article body: markdown H1 line excluded; link anchor text kept in plain text.",
     "Phrase match: case-insensitive; spaces in the keyword match flexible whitespace in the copy.",
@@ -227,6 +235,7 @@ export function buildContentConstraintsPrompt(c: ContentConstraints): string {
     }
 
     lines.push("", "### Keyword density counting (analyzer uses the same rules)", ...KEYWORD_DENSITY_COUNTING_RULES.map((r) => `- ${r}`));
+    lines.push("", "### Tables (when useful)", ...MARKDOWN_TABLE_GUIDANCE.map((r) => `- ${r}`));
 
     return lines.join("\n");
 }
