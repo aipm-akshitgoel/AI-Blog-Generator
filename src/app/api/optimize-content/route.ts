@@ -551,7 +551,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                         );
                     } else {
                         insights.push(
-                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT) after humanize. Exact keywords are placed after humanize — no second humanize pass. Target is below ${20}%.`,
+                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT) after keyword placement. Humanize runs before keywords only (up to ${pipelineProfile.humanizePass1Max} pass(es)); exact phrases are not rewritten. Target is below ${20}%.`,
                         );
                     }
                 }
