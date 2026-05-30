@@ -28,7 +28,7 @@ import {
 import { DEFAULT_INTERLINKING_RULES } from "@/lib/types/topicBrief";
 import { linkCountSummary, rewriteMarkdownInternalLinksToAbsolute } from "@/lib/interlinking";
 import { stripFaqFromMarkdownWhenStructured } from "@/lib/contentWordCount";
-import { normalizeMarkdownTables } from "@/lib/markdownStructure";
+import { normalizeMarkdownForStorage } from "@/lib/markdownHtml";
 import { toAbsoluteSiteHref } from "@/lib/domainLinks";
 import { normalizeSeoScores, type KeywordDensityRow } from "@/lib/seoAnalyzer";
 import {
@@ -287,7 +287,7 @@ function resolveEditorMarkdown(
         String(contentMarkdown || post.contentMarkdown || "").trim(),
         post.faqs,
     );
-    return normalizeMarkdownTables(
+    return normalizeMarkdownForStorage(
         rewriteMarkdownInternalLinksToAbsolute(applyHeadingStructureForEditor(raw, post), domain),
     );
 }

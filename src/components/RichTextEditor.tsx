@@ -17,7 +17,7 @@ import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
-import { markdownToHtml } from "@/lib/markdownHtml";
+import { markdownToHtmlForEditor, normalizeMarkdownForStorage } from "@/lib/markdownHtml";
 import { createTurndownService } from "@/lib/turndownConfig";
 
 interface RichTextEditorProps {
@@ -179,6 +179,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const [pendingLinkRange, setPendingLinkRange] = useState<{ from: number; to: number } | null>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const lastMarkdownFromEditorRef = useRef("");
+    const syncedTableNormalizeRef = useRef(false);
     const citationOptsRef = useRef<FactCitationDecorationOptions>({
         sources: [],
         enabled: false,
@@ -238,10 +239,15 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         let alive = true;
         (async () => {
             try {
-                const html = await markdownToHtml(nextValue || "");
+                const normalizedMd = normalizeMarkdownForStorage(nextValue || "");
+                const html = await markdownToHtmlForEditor(normalizedMd);
                 if (!alive) return;
-                lastMarkdownFromEditorRef.current = nextValue;
+                lastMarkdownFromEditorRef.current = normalizedMd;
                 editor.commands.setContent(String(html || "<p></p>"), { emitUpdate: false });
+                if (normalizedMd !== nextValue && !syncedTableNormalizeRef.current) {
+                    syncedTableNormalizeRef.current = true;
+                    onChange(normalizedMd);
+                }
             } catch {
                 if (!alive) return;
                 lastMarkdownFromEditorRef.current = nextValue;
@@ -258,7 +264,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         return () => {
             alive = false;
         };
-    }, [value, editor]);
+    }, [value, editor, onChange]);
 
     useEffect(() => {
         if (!editor) return;
