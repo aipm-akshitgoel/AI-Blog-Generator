@@ -20,21 +20,25 @@ export async function applyFinalOptimizerScores(
 
     const scoreTitle = blogPost.h1Title || optimized.title || blogPost.title;
 
-    const readability = await measureFinalReadability(optimized.contentMarkdown, scoreTitle);
-    if (readability.readabilityGrade) {
-        optimized.seoScores = {
-            ...optimized.seoScores,
-            readability: readability.readabilityPercent,
-            readabilityGrade: readability.readabilityGrade,
-        };
+    if (!optimized.seoScores.readabilityGrade) {
+        const readability = await measureFinalReadability(optimized.contentMarkdown, scoreTitle);
+        if (readability.readabilityGrade) {
+            optimized.seoScores = {
+                ...optimized.seoScores,
+                readability: readability.readabilityPercent,
+                readabilityGrade: readability.readabilityGrade,
+            };
+        }
     }
 
-    const ai = await detectAiContentPercent(optimized.contentMarkdown);
-    if (ai) {
-        optimized.seoScores = applyZeroGptDetectionToScores(
-            optimized.seoScores,
-            ai,
-            humanizeAttempts,
-        );
+    if (optimized.seoScores.aiDetection?.provider !== "zerogpt") {
+        const ai = await detectAiContentPercent(optimized.contentMarkdown);
+        if (ai) {
+            optimized.seoScores = applyZeroGptDetectionToScores(
+                optimized.seoScores,
+                ai,
+                humanizeAttempts,
+            );
+        }
     }
 }

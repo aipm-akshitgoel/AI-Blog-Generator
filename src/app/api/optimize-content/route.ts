@@ -31,7 +31,7 @@ import { normalizeSeoScores } from "@/lib/seoAnalyzer";
 import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 import { jsonrepair } from "jsonrepair";
-import { OPTIMIZE_MODEL_TIMEOUT_MS } from "@/lib/optimizeContentClient";
+import { LONG_POST_BODY_WORDS } from "@/lib/optimizePipelineProfile";
 import { runAiHumanizationLoop } from "@/lib/aiHumanizationLoop";
 import { applyZeroGptDetectionToScores, detectAiContentPercent } from "@/lib/zerogptAiDetection";
 import {
@@ -53,8 +53,6 @@ import { getOptimizePipelineProfile } from "@/lib/optimizePipelineProfile";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
 export const maxDuration = 300;
-
-const MODEL_TIMEOUT_MS = OPTIMIZE_MODEL_TIMEOUT_MS;
 
 function extractFirstJsonObject(input: string): string | null {
     const text = String(input || "");
@@ -204,6 +202,19 @@ export async function POST(req: Request) {
     }
 
     try {
+        const requestStartedAt = Date.now();
+        const draftProfile = getOptimizePipelineProfile(
+            blogPost.contentMarkdown || "",
+            requestStartedAt,
+        );
+        const modelTimeoutMs = draftProfile.modelTimeoutMs;
+        const inputBodyWords = draftProfile.bodyWords;
+        if (inputBodyWords > LONG_POST_BODY_WORDS) {
+            console.info(
+                `[optimize-content] Long post (${inputBodyWords} words) — fast pipeline, Azure cap ${modelTimeoutMs}ms`,
+            );
+        }
+
         const client = createAzureClient(azure);
         const approvedList: ApprovedLink[] = buildApprovedLinksForContent(
             blogPost.contentMarkdown || "",
@@ -278,7 +289,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                                 "Optimization is still running but hit the server time limit. Retry, or continue with your draft.",
                             ),
                         ),
-                    MODEL_TIMEOUT_MS,
+                    modelTimeoutMs,
                 ),
             ),
         ]);
@@ -410,13 +421,19 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
 
         optimized.contentMarkdown = normalizeMarkdownTables(optimized.contentMarkdown);
 
-        const postPipelineStartedAt = Date.now();
         const pipelineProfile = getOptimizePipelineProfile(
             optimized.contentMarkdown,
-            postPipelineStartedAt,
+            requestStartedAt,
         );
 
         try {
+            if (pipelineProfile.skipPostPipeline) {
+                console.warn(
+                    "[optimize-content] Skipping humanize/readability loops — low time budget after Azure draft",
+                );
+                throw new Error("SKIP_POST_PIPELINE");
+            }
+
             // 1–4: Readability improvement (keep lowest grade across up to 3 attempts)
             const readability = await runReadabilityImprovementLoop(
                 azure,
@@ -641,7 +658,11 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 normalizeMarkdownBodyParagraphs(dedupeFaqsInOptimized(optimized).contentMarkdown),
             );
         } catch (postErr) {
-            console.warn("[optimize-content] Post-optimize pipeline failed:", postErr);
+            const skipOnly =
+                postErr instanceof Error && postErr.message === "SKIP_POST_PIPELINE";
+            if (!skipOnly) {
+                console.warn("[optimize-content] Post-optimize pipeline failed:", postErr);
+            }
             optimized.contentMarkdown = normalizeMarkdownTables(
                 normalizeMarkdownBodyParagraphs(optimized.contentMarkdown),
             );

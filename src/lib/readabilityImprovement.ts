@@ -202,7 +202,16 @@ export async function runReadabilityImprovementLoop(
 
     candidates.push({ markdown, measurement });
 
-    while (attemptsUsed < READABILITY_MAX_ATTEMPTS && needsReadabilityImprovement(measurement)) {
+    if (maxAttempts <= 0) {
+        const readabilityGrade = toReadabilityGrade(measurement, 0, false);
+        return {
+            contentMarkdown: markdown,
+            readabilityGrade,
+            readabilityPercent: fleschEaseToReadabilityPercent(measurement.fleschScore),
+        };
+    }
+
+    while (attemptsUsed < maxAttempts && needsReadabilityImprovement(measurement)) {
         attemptsUsed++;
         markdown = await improveMarkdownPreservingHeadings(azure, markdown, blogPost, {
             measurement,

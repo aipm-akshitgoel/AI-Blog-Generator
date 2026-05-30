@@ -225,7 +225,10 @@ export async function requestContentOptimization(
 export function optimizationErrorMessage(err: unknown): string {
     if (err instanceof Error) {
         if (err.name === "AbortError") {
-            return `Optimization took longer than ${Math.round(OPTIMIZE_SERVER_MAX_DURATION_SEC / 60)} minutes. Retry, or continue with your draft and run Refresh metrics in the editor.`;
+            return `Optimization took longer than ${Math.round(OPTIMIZE_SERVER_MAX_DURATION_SEC / 60)} minutes. Use Continue with draft, then Refresh metrics in the editor.`;
+        }
+        if (/\b504\b/.test(err.message)) {
+            return "Optimization timed out on the server (504). Long posts skip some humanize passes to finish faster — use Continue with draft, then Refresh metrics in the editor.";
         }
         return err.message;
     }
