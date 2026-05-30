@@ -1,6 +1,7 @@
 /** Attribution for readability scores verified via SEO Review Tools. */
 
 import Image from "next/image";
+import { formatReadabilityGradeNumber } from "@/lib/seoReviewToolsReadability";
 
 const DOCS_URL =
     "https://api.seoreviewtools.com/documentation/readability-score-api-content/";
@@ -99,11 +100,13 @@ export function ReadabilityGradeBadge({
               ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
               : "border-amber-500/30 bg-amber-500/10 text-amber-300";
 
+    const gradeDisplay = formatReadabilityGradeNumber({ gradeLevel, gradeLabel });
+
     return (
         <span
             className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold ${tone} ${className}`}
         >
-            {gradeLabel || `${gradeLevel}th grade`}
+            {gradeDisplay}
             {typeof fleschScore === "number" && fleschScore > 0 ? (
                 <span className="font-normal opacity-70">· Flesch {fleschScore}</span>
             ) : null}

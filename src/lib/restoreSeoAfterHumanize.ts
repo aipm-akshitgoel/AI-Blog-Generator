@@ -12,16 +12,21 @@ import {
 } from "@/lib/seoAnalyzer";
 
 const DENSITY_TARGET_TOLERANCE = 0.3;
-const MAX_EXTRA_OCCURRENCES_PER_KEYWORD = 30;
+const MAX_EXTRA_OCCURRENCES_PER_KEYWORD = 8;
+const MAX_WEAVES_PER_BLOCK = 1;
 
+/** Natural one-sentence weaves — never "Many readers search for…". */
 const KEYWORD_WEAVE_TEMPLATES: Array<(phrase: string) => string> = [
-    (p) => `Many readers search for ${p}.`,
-    (p) => `Students often compare ${p} before they enroll.`,
-    (p) => `This section explains ${p} in practical terms.`,
-    (p) => `You will also find ${p} discussed below.`,
-    (p) => `A helpful starting point is ${p}.`,
-    (p) => `The guide below covers ${p} step by step.`,
+    (p) => `When comparing options, ${p} should meet the same accreditation standards as campus programs.`,
+    (p) => `Eligibility and recognition for ${p} depend on the university and regulator approval.`,
+    (p) => `A useful checklist for ${p} covers fees, duration, and how employers view the credential.`,
+    (p) => `Students evaluating ${p} should confirm syllabus depth and evaluation methods upfront.`,
+    (p) => `The sections below explain how ${p} work in practice for working professionals.`,
+    (p) => `Before you enroll, verify that ${p} align with your career goals and schedule.`,
 ];
+
+const ROBOTIC_KEYWORD_SENTENCE =
+    /^Many readers search for .+[.!?]\s*$/i;
 
 type InsertSite =
     | { kind: "intro" }
@@ -197,17 +202,58 @@ function distributeHumanizedAcrossCanonical(
     return { intro, h2s };
 }
 
+function stripRoboticKeywordSentences(block: string): string {
+    if (!block.trim()) return block;
+    const parts = splitMarkdownBodyBlocks(block.trim());
+    const cleaned = parts
+        .map((part) => {
+            if (isMarkdownTableBlock(part)) return part;
+            const sentences = part.split(/(?<=[.!?])\s+/).filter(Boolean);
+            const kept = sentences.filter((s) => !ROBOTIC_KEYWORD_SENTENCE.test(s.trim()));
+            return kept.join(" ").trim();
+        })
+        .filter(Boolean);
+    return cleaned.join("\n\n");
+}
+
+const WEAVE_SENTENCE_STARTERS = [
+    "When comparing options,",
+    "Eligibility and recognition for",
+    "A useful checklist for",
+    "Students evaluating",
+    "The sections below explain how",
+    "Before you enroll, verify that",
+] as const;
+
+function blockWeaveCount(block: string): number {
+    let n = 0;
+    for (const starter of WEAVE_SENTENCE_STARTERS) {
+        if (block.includes(starter)) n++;
+    }
+    return n;
+}
+
+function phraseInBlock(block: string, phrase: string): boolean {
+    if (!phrase.trim()) return false;
+    const plain = block.replace(/\[(.+?)\]\([^)]+\)/g, "$1").toLowerCase();
+    return plain.includes(phrase.trim().toLowerCase());
+}
+
 /** Always appends a new sentence containing the phrase (used to raise weighted density). */
 function appendPhraseToBlock(block: string, phrase: string, weaveIndex: number): string {
     if (!phrase.trim()) return block;
     if (isMarkdownTableBlock(block)) return block;
+    if (phraseInBlock(block, phrase)) return block;
+    if (blockWeaveCount(block) >= MAX_WEAVES_PER_BLOCK) return block;
+
     const sentence = KEYWORD_WEAVE_TEMPLATES[weaveIndex % KEYWORD_WEAVE_TEMPLATES.length]!(phrase);
-    const trimmed = block.trim();
+    const trimmed = stripRoboticKeywordSentences(block).trim();
     if (!trimmed) return sentence;
 
     const parts = splitMarkdownBodyBlocks(trimmed);
     const paraIdx = weaveIndex % Math.max(1, parts.length);
     const para = (parts[paraIdx] ?? "").trim();
+    if (phraseInBlock(para, phrase)) return trimmed;
     parts[paraIdx] = `${para}${/[.!?]$/.test(para) ? "" : "."} ${sentence}`;
     return parts.join("\n\n");
 }
@@ -217,7 +263,23 @@ function densityMeetsTarget(markdown: string, phrase: string, targetPercent: num
 }
 
 function listInsertSites(struct: ArticleStructure, target: KeywordTarget): InsertSite[] {
-    if (target.tier === "primary" || !target.sectionTitle?.trim()) {
+    if (target.sectionTitle?.trim()) {
+        const sectionTitle = target.sectionTitle.trim();
+        const h2Idx = findH2Index(struct, sectionTitle);
+        if (h2Idx < 0) {
+            return struct.h2s.length > 0 ? [{ kind: "h2-lead", h2Idx: 0 }] : [{ kind: "intro" }];
+        }
+        const h2 = struct.h2s[h2Idx]!;
+        const h3Idx = findH3InH2(h2, sectionTitle);
+        if (h3Idx >= 0) {
+            return [{ kind: "h3-body", h2Idx, h3Idx }];
+        }
+        const sites: InsertSite[] = [{ kind: "h2-lead", h2Idx }];
+        h2.h3s.forEach((_, j) => sites.push({ kind: "h3-body", h2Idx, h3Idx: j }));
+        return sites;
+    }
+
+    if (target.tier === "primary") {
         const sites: InsertSite[] = [{ kind: "intro" }];
         struct.h2s.forEach((h2, h2Idx) => {
             sites.push({ kind: "h2-lead", h2Idx });
@@ -226,20 +288,13 @@ function listInsertSites(struct: ArticleStructure, target: KeywordTarget): Inser
         return sites.length > 1 ? sites : [{ kind: "intro" }];
     }
 
-    const sectionTitle = target.sectionTitle.trim();
-    const h2Idx = findH2Index(struct, sectionTitle);
-    if (h2Idx < 0) {
-        return struct.h2s.length > 0 ? [{ kind: "h2-lead", h2Idx: 0 }] : [{ kind: "intro" }];
-    }
-
-    const h2 = struct.h2s[h2Idx]!;
-    const h3Idx = findH3InH2(h2, sectionTitle);
-    if (h3Idx >= 0) {
-        return [{ kind: "h3-body", h2Idx, h3Idx }];
-    }
-    const sites: InsertSite[] = [{ kind: "h2-lead", h2Idx }];
-    h2.h3s.forEach((_, j) => sites.push({ kind: "h3-body", h2Idx, h3Idx: j }));
-    return sites;
+    // Secondary/tertiary without a section — spread across H2/H3 bodies, not the intro.
+    const sites: InsertSite[] = [];
+    struct.h2s.forEach((h2, h2Idx) => {
+        sites.push({ kind: "h2-lead", h2Idx });
+        h2.h3s.forEach((_, h3Idx) => sites.push({ kind: "h3-body", h2Idx, h3Idx }));
+    });
+    return sites.length > 0 ? sites : [{ kind: "intro" }];
 }
 
 function applyInsertSite(
@@ -290,15 +345,34 @@ function cloneStructure(struct: ArticleStructure): ArticleStructure {
     };
 }
 
+function sanitizeArticleStructure(struct: ArticleStructure): ArticleStructure {
+    return {
+        intro: stripRoboticKeywordSentences(struct.intro),
+        h2s: struct.h2s.map((h2) => ({
+            ...h2,
+            leadBody: stripRoboticKeywordSentences(h2.leadBody),
+            h3s: h2.h3s.map((h3) => ({
+                ...h3,
+                body: stripRoboticKeywordSentences(h3.body),
+            })),
+        })),
+    };
+}
+
 /** Add keyword occurrences until each plan target is within tolerance (capped per phrase). */
 export function meetKeywordPlanTargets(struct: ArticleStructure, plan: KeywordPlan): ArticleStructure {
     const targets: KeywordTarget[] = [plan.primary, ...plan.secondary, ...plan.tertiary];
-    let out = struct;
+    let out = sanitizeArticleStructure(struct);
+    let globalWeaveIndex = 0;
+    let globalSiteOffset = 0;
 
     for (const target of targets) {
         const sites = () => listInsertSites(out, target);
         let added = 0;
         let markdown = renderArticleStructure(out);
+        if (densityMeetsTarget(markdown, target.phrase, target.targetDensityPercent)) {
+            continue;
+        }
         const needed = keywordPlanOccurrencesNeeded(
             markdown,
             target.phrase,
@@ -306,7 +380,7 @@ export function meetKeywordPlanTargets(struct: ArticleStructure, plan: KeywordPl
         );
         const maxAdds = Math.min(
             MAX_EXTRA_OCCURRENCES_PER_KEYWORD,
-            Math.max(needed, 1) + 2,
+            Math.max(needed, 1),
         );
 
         while (
@@ -314,16 +388,19 @@ export function meetKeywordPlanTargets(struct: ArticleStructure, plan: KeywordPl
             added < maxAdds
         ) {
             const siteList = sites();
-            const site = siteList[added % siteList.length] ?? { kind: "intro" as const };
+            if (siteList.length === 0) break;
+            const site = siteList[globalSiteOffset % siteList.length]!;
+            globalSiteOffset++;
             const prev = markdown;
-            out = applyInsertSite(out, site, target.phrase, added);
+            out = applyInsertSite(out, site, target.phrase, globalWeaveIndex);
+            globalWeaveIndex++;
             added++;
-            markdown = renderArticleStructure(out);
+            markdown = renderArticleStructure(sanitizeArticleStructure(out));
             if (markdown === prev) break;
         }
     }
 
-    return out;
+    return sanitizeArticleStructure(out);
 }
 
 /** Boost keywordPlan phrases in finished markdown (e.g. final optimize pass). */

@@ -18,6 +18,7 @@ export const NOINDEX_PATH_PREFIXES = [
   "/setup",
   "/test",
   "/test-dashboard",
+  "/optimizer-preview",
   "/sign-in",
   "/sign-up",
   "/sign-out",

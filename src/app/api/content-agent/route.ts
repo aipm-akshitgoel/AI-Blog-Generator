@@ -48,7 +48,7 @@ ${targetWords && targetWords >= 1200 ? `CRITICAL — LENGTH: contentMarkdown bod
 1. **Relevance**: Connect to location and audience when provided in BusinessContext.
 2. **Structure**: H2 and H3 markdown headers, short paragraphs, bullets where useful. Use GFM markdown tables when comparing options, fees, or criteria (header + |---| separator + rows; 3–5 columns max; blank line before and after the table; no blank lines between rows).
 3. **FAQs**: Exactly 3 FAQs in the \`faqs\` JSON array only — do NOT add a ## FAQs (or similar) section inside \`contentMarkdown\`; the app renders FAQs in a dedicated block.
-4. **Human voice**: No em-dashes (—). Avoid "delve into", "elevate", "in today's landscape", "moreover", "in conclusion".
+4. **Human voice**: No em-dashes (—). Avoid "delve into", "elevate", "in today's landscape", "moreover", "in conclusion". NEVER write "Many readers search for…" or stack the same filler sentence pattern for keywords — weave each keyword phrase naturally into the section where it belongs.
 5. **Fact density**: Include at least 10 specific, verifiable claims (fees or fee ranges, eligibility rules, durations, accreditation, stats, exam requirements, etc.). Pull facts from the Reference Catalog and Author Brief — do not invent statistics.
 6. **keywordPlan**: After writing, set realistic targetDensityPercent values for primary / secondary / tertiary keywords you used (verified with SEO Review Tools after optimize).
 

@@ -41,44 +41,29 @@ import {
 import type { KeywordDensityVerification } from "@/lib/types/keywordPlan";
 import type { SeoScores } from "@/lib/types/optimization";
 import { AI_DETECTION_TARGET_PERCENT_MAX } from "@/lib/zerogptAiDetection";
-import { fleschEaseToReadabilityPercent } from "@/lib/seoReviewToolsReadability";
+import { fleschEaseToReadabilityPercent, formatReadabilityGradeNumber } from "@/lib/seoReviewToolsReadability";
 import {
     formatTargetGradeLabel,
-    readabilityGradeBarPercent,
     resolveReadabilityTargetGrade,
 } from "@/lib/readabilityTarget";
 
 const METRIC_BAR_GOOD = "bg-emerald-500";
 const METRIC_BAR_WARN = "bg-amber-500";
-const METRIC_BAR_READABILITY_MID = "bg-[#eab308]";
 const METRIC_BAR_AI_MID = "bg-[#a855f7]";
-
-/** Flesch ease bar + grade target: green when at or below 10th grade or ease ≥ 55. */
-function readabilityBarClass(scores: SeoScores): string {
-    if (scores.readabilityGrade?.targetMet === true) return METRIC_BAR_GOOD;
-    if (scores.readabilityGrade?.targetMet === false) return METRIC_BAR_WARN;
-    if (!scores.readabilityGrade) return METRIC_BAR_WARN;
-    if (scores.readabilityGrade.fleschScore >= 55 || scores.readability >= 55) return METRIC_BAR_GOOD;
-    if (scores.readability >= 45) return METRIC_BAR_READABILITY_MID;
-    return METRIC_BAR_WARN;
-}
 
 function readabilityMetricDisplay(
     scores: SeoScores,
     readabilityResolved: boolean,
     targetGradeMax: number,
-): { suffix: string; help: string; pending: boolean; barValue: number } {
+): { suffix: string; help: string; pending: boolean } {
     const grade = scores.readabilityGrade;
     const targetLabel = formatTargetGradeLabel(targetGradeMax);
     if (grade) {
-        const label = grade.gradeLabel?.trim() || `${grade.gradeLevel}th grade`;
+        const label = formatReadabilityGradeNumber(grade);
         return {
             suffix: label,
-            help: grade.targetMet
-                ? `Flesch-Kincaid grade from SEO Review Tools. Target for your account: ${targetLabel} or easier (lower number).`
-                : `Grade ${label} is above your account target (${targetLabel} or easier). Simplify wording or lower the target in business profile SEO defaults.`,
+            help: `Flesch-Kincaid grade level from SEO Review Tools (lower is easier). Your account target is ${targetLabel} or below.`,
             pending: false,
-            barValue: readabilityGradeBarPercent(grade.gradeLevel, targetGradeMax),
         };
     }
     if (!readabilityResolved) {
@@ -86,15 +71,46 @@ function readabilityMetricDisplay(
             suffix: "Checking…",
             help: "Measuring readability grade with SEO Review Tools on this draft.",
             pending: true,
-            barValue: 0,
         };
     }
     return {
         suffix: "Unavailable",
         help: "SEO Review Tools could not score this draft. Check SEO_REVIEW_TOOLS_API_KEY on the server, then use Refresh in the editor.",
         pending: false,
-        barValue: 0,
     };
+}
+
+function ReadabilityGradeBlock({
+    scores,
+    readabilityResolved,
+    targetGradeMax,
+    delta,
+}: {
+    scores: SeoScores;
+    readabilityResolved: boolean;
+    targetGradeMax: number;
+    delta?: number;
+}) {
+    const readability = readabilityMetricDisplay(scores, readabilityResolved, targetGradeMax);
+    return (
+        <div className="rounded-xl border border-neutral-200 bg-white px-6 py-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                    <SeoReviewToolsBadge variant="light" size="md" logoOnly />
+                    <span className="text-sm font-semibold text-[#4A5568]">Readability</span>
+                    <HelpTip text={readability.help} />
+                </div>
+                <span
+                    className={`text-sm font-bold text-[#2D3748] shrink-0 flex items-center gap-1 ${
+                        readability.pending ? "text-neutral-400 animate-pulse" : ""
+                    }`}
+                >
+                    {readability.suffix}
+                    <ScoreDeltaBadge delta={delta} />
+                </span>
+            </div>
+        </div>
+    );
 }
 
 const METRIC_BAR_PENDING = "bg-neutral-300 animate-pulse";
@@ -131,9 +147,6 @@ function formatHumanizeStatusNote(scores: SeoScores | null | undefined): string 
     }
     if (attempts > 0 && highAi) {
         return `${attempts} humanize pass(es) ran; AI % is still above 20%. Edit the draft or re-run optimize.`;
-    }
-    if (attempts > 0) {
-        return `${attempts} AI Humanize pass(es) completed.`;
     }
     return undefined;
 }
@@ -205,6 +218,8 @@ interface OptimizationAgentProps {
     contentConstraints?: ContentConstraints | null;
     primaryKeyword?: string;
     onComplete?: (optimized: OptimizedContent) => void;
+    /** Dev/preview only — render the results UI with mock scores (no optimize API). */
+    previewScores?: SeoScores;
 }
 
 type SeoScoreDeltas = {
@@ -401,6 +416,7 @@ export function OptimizationAgentUI({
     contentConstraints = null,
     primaryKeyword,
     onComplete,
+    previewScores,
 }: OptimizationAgentProps) {
     const [optimizedData, setOptimizedData] = useState<OptimizedContent | null>(null);
     const [loading, setLoading] = useState(false);
@@ -737,6 +753,28 @@ export function OptimizationAgentUI({
     }, [loading]);
 
     useEffect(() => {
+        if (previewScores) {
+            const scores = normalizeSeoScores(previewScores, 0);
+            setOptimizedData({
+                title: post.title,
+                slug: post.slug,
+                metaDescription: post.metaDescription ?? "",
+                contentMarkdown: post.contentMarkdown,
+                faqs: post.faqs ?? [],
+                internalLinks: [],
+                seoScores: scores,
+                plagiarismReport: { isSafe: true, overallSimilarity: 0, flaggedSections: [] },
+                factSources: post.factSources ?? [],
+            });
+            setLiveScores(scores);
+            setFactSources(post.factSources ?? []);
+            setAiDetectionResolved(scores.aiDetection?.provider === "zerogpt");
+            setReadabilityResolved(Boolean(scores.readabilityGrade));
+            setLoading(false);
+            setError(null);
+            return;
+        }
+
         const controller = new AbortController();
         optimizeAbortRef.current = controller;
 
@@ -788,7 +826,7 @@ export function OptimizationAgentUI({
             controller.abort();
             optimizeAbortRef.current = null;
         };
-    }, [postOptimizeKey, interlinkingRules, businessContext]);
+    }, [postOptimizeKey, interlinkingRules, businessContext, previewScores, post]);
 
     const handleAddContentPatch = () => {
         const text = editorRef.current?.getSelectionText() ?? "";
@@ -1036,68 +1074,49 @@ export function OptimizationAgentUI({
 
                     <div className="flex flex-col gap-6">
                         <div
-                            className={`rounded-xl border border-neutral-200 bg-white p-6 shadow-sm flex flex-col space-y-5 transition-all duration-500 ${
+                            className={`rounded-xl border border-neutral-200 bg-white p-6 shadow-sm flex flex-col space-y-2 transition-all duration-500 ${
                                 highlightScores ? "ring-2 ring-emerald-300 ring-offset-1" : ""
                             }`}
                         >
-                            <div className="space-y-2">
-                                {(() => {
-                                    const readability = readabilityMetricDisplay(
-                                        liveScores,
-                                        readabilityResolved,
-                                        readabilityTargetGradeMax,
-                                    );
-                                    return (
+                            {(() => {
+                                const ai = formatAiContentDisplay(liveScores, aiDetectionResolved);
+                                const humanizeNote = formatHumanizeStatusNote(liveScores);
+                                return (
+                                    <>
                                         <SeoMetricBar
-                                            label="Readability"
-                                            value={readability.barValue}
-                                            barClass={
-                                                readability.pending
-                                                    ? METRIC_BAR_PENDING
-                                                    : readabilityBarClass(liveScores)
+                                            label="AI Content%"
+                                            value={ai.value}
+                                            barClass={ai.barClass}
+                                            help={ai.help}
+                                            suffix={ai.suffix}
+                                            delta={
+                                                liveScores?.aiDetection?.provider === "zerogpt"
+                                                    ? scoreDeltas?.aiContentPercent
+                                                    : undefined
                                             }
-                                            help={readability.help}
-                                            suffix={readability.suffix}
-                                            delta={scoreDeltas?.readability}
-                                            brand={<SeoReviewToolsBadge variant="light" size="md" logoOnly />}
+                                            brand={<ZeroGptBadge variant="light" size="md" logoOnly />}
                                         />
-                                    );
-                                })()}
-                            </div>
-                            <div className="space-y-2">
-                                {(() => {
-                                    const ai = formatAiContentDisplay(liveScores, aiDetectionResolved);
-                                    const humanizeNote = formatHumanizeStatusNote(liveScores);
-                                    return (
-                                        <>
-                                            <SeoMetricBar
-                                                label="AI Content%"
-                                                value={ai.value}
-                                                barClass={ai.barClass}
-                                                help={ai.help}
-                                                suffix={ai.suffix}
-                                                delta={
-                                                    liveScores?.aiDetection?.provider === "zerogpt"
-                                                        ? scoreDeltas?.aiContentPercent
-                                                        : undefined
-                                                }
-                                                brand={<ZeroGptBadge variant="light" size="md" logoOnly />}
-                                            />
-                                            {ai.statusNote ? (
-                                                <p className="text-[11px] text-amber-700 leading-snug -mt-1">
-                                                    {ai.statusNote}. Top up credits at zerogpt.org or use Refresh
-                                                    after fixing <span className="font-mono">ZEROGPT_API_KEY</span>.
-                                                </p>
-                                            ) : humanizeNote ? (
-                                                <p className="text-[11px] text-amber-700 leading-snug -mt-1">
-                                                    {humanizeNote}
-                                                </p>
-                                            ) : null}
-                                        </>
-                                    );
-                                })()}
-                            </div>
+                                        {ai.statusNote ? (
+                                            <p className="text-[11px] text-amber-700 leading-snug">
+                                                {ai.statusNote}. Top up credits at zerogpt.org or use Refresh
+                                                after fixing <span className="font-mono">ZEROGPT_API_KEY</span>.
+                                            </p>
+                                        ) : humanizeNote ? (
+                                            <p className="text-[11px] text-amber-700 leading-snug">
+                                                {humanizeNote}
+                                            </p>
+                                        ) : null}
+                                    </>
+                                );
+                            })()}
                         </div>
+
+                        <ReadabilityGradeBlock
+                            scores={liveScores}
+                            readabilityResolved={readabilityResolved}
+                            targetGradeMax={readabilityTargetGradeMax}
+                            delta={scoreDeltas?.readability}
+                        />
 
                         {keywordDensityRows.length > 0 ? (
                             <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
@@ -1118,18 +1137,6 @@ export function OptimizationAgentUI({
                             </p>
                         )}
 
-                        {(liveScores?.actionableInsights?.length ?? 0) > 0 ? (
-                            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
-                                <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-amber-900">
-                                    Optimization notes
-                                </h3>
-                                <ul className="list-disc space-y-1 pl-4 text-[11px] text-amber-950 leading-relaxed">
-                                    {liveScores!.actionableInsights.map((tip) => (
-                                        <li key={tip}>{tip}</li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ) : null}
                     </div>
                 </div>
             )}
@@ -1243,6 +1250,16 @@ export function OptimizationAgentUI({
                                 >
                                     <div className="flex flex-1 items-center gap-3 overflow-x-auto px-3 py-2 sm:gap-4 sm:px-4 custom-scrollbar">
                                         <div className="flex items-center gap-1.5 shrink-0">
+                                            <ZeroGptBadge size="sm" logoOnly />
+                                            <EditContentMetric
+                                                label="AI Content%"
+                                                value={
+                                                    formatAiContentDisplay(liveScores, aiDetectionResolved)
+                                                        .suffix
+                                                }
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0">
                                             <SeoReviewToolsBadge size="sm" logoOnly />
                                             <EditContentMetric
                                                 label="Readability"
@@ -1252,16 +1269,6 @@ export function OptimizationAgentUI({
                                                         readabilityResolved,
                                                         readabilityTargetGradeMax,
                                                     ).suffix
-                                                }
-                                            />
-                                        </div>
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                            <ZeroGptBadge size="sm" logoOnly />
-                                            <EditContentMetric
-                                                label="AI Content%"
-                                                value={
-                                                    formatAiContentDisplay(liveScores, aiDetectionResolved)
-                                                        .suffix
                                                 }
                                             />
                                         </div>

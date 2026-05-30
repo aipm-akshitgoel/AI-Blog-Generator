@@ -43,7 +43,6 @@ import { resolveKeywordPlanForPost, verifyKeywordPlanForPost } from "@/lib/keywo
 import {
     boostMarkdownForKeywordPlan,
     restoreHeadingsAfterHumanize,
-    restoreSeoAfterHumanize,
 } from "@/lib/restoreSeoAfterHumanize";
 import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
@@ -460,51 +459,21 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 h2Suggestions: blogPost.h2Suggestions,
             };
 
-            // Pass 1: humanize readable draft. Pass 2: after keyword weave (main AI-score killer).
+            // Humanize readable draft (before exact keyword placement — no humanize after keywords).
             const humanizeOpts = { preserveHeadings: true as const };
             const humanized = await runAiHumanizationLoop(markdownBeforeHumanize, {
                 ...humanizeOpts,
                 maxAttempts: pipelineProfile.humanizePass1Max,
             });
 
-            optimized.contentMarkdown = restoreSeoAfterHumanize(humanized.contentMarkdown, {
-                canonicalMarkdown: markdownBeforeHumanize,
-                keywordPlan: keywordPlanForRestore,
-                ...seoRestoreOptions,
-            });
+            optimized.contentMarkdown = restoreHeadingsAfterHumanize(
+                humanized.contentMarkdown,
+                markdownBeforeHumanize,
+                seoRestoreOptions,
+            );
 
-            if (keywordPlanForRestore) {
-                optimized.contentMarkdown = boostMarkdownForKeywordPlan(
-                    optimized.contentMarkdown,
-                    keywordPlanForRestore,
-                );
-            }
-
-            const markdownAfterKeywords = optimized.contentMarkdown;
             let totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
             let humanizeSkippedReason = humanized.skippedReason;
-
-            if (pipelineProfile.humanizePass2Max > 0) {
-                const postSeoHumanized = await runAiHumanizationLoop(markdownAfterKeywords, {
-                    ...humanizeOpts,
-                    maxAttempts: pipelineProfile.humanizePass2Max,
-                });
-                totalHumanizeAttempts += postSeoHumanized.aiDetection?.attempts ?? 0;
-                humanizeSkippedReason ??= postSeoHumanized.skippedReason;
-
-                optimized.contentMarkdown = restoreHeadingsAfterHumanize(
-                    postSeoHumanized.contentMarkdown,
-                    markdownAfterKeywords,
-                    seoRestoreOptions,
-                );
-
-                if (keywordPlanForRestore) {
-                    optimized.contentMarkdown = boostMarkdownForKeywordPlan(
-                        optimized.contentMarkdown,
-                        keywordPlanForRestore,
-                    );
-                }
-            }
 
             const postReadability = await runPostHumanizeReadabilityLoop(
                 azure,
@@ -580,54 +549,10 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                         insights.push(
                             "No AI Humanize passes ran on this draft. Add AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL on the server, then re-run optimize.",
                         );
-                    } else if (pipelineProfile.skipExtraAiPolish) {
+                    } else {
                         insights.push(
-                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT) after ${totalHumanizeAttempts} humanize pass(es). Target is below ${20}%.`,
+                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT) after humanize. Exact keywords are placed after humanize — no second humanize pass. Target is below ${20}%.`,
                         );
-                    }
-                }
-                if (!finalAiDetection.targetMet && !pipelineProfile.skipExtraAiPolish) {
-                    const polishMarkdown = optimized.contentMarkdown;
-                    const aiPolish = await runAiHumanizationLoop(polishMarkdown, {
-                        ...humanizeOpts,
-                        maxAttempts: 2,
-                    });
-                    totalHumanizeAttempts += aiPolish.aiDetection?.attempts ?? 0;
-                    optimized.contentMarkdown = restoreHeadingsAfterHumanize(
-                        aiPolish.contentMarkdown,
-                        polishMarkdown,
-                        seoRestoreOptions,
-                    );
-                    if (keywordPlanForRestore) {
-                        optimized.contentMarkdown = boostMarkdownForKeywordPlan(
-                            optimized.contentMarkdown,
-                            keywordPlanForRestore,
-                        );
-                    }
-                    finalAiDetection =
-                        (await detectAiContentPercentWithStatus(optimized.contentMarkdown)).result ??
-                        finalAiDetection;
-                    optimized.seoScores = applyZeroGptDetectionToScores(
-                        optimized.seoScores,
-                        finalAiDetection,
-                        totalHumanizeAttempts,
-                    );
-                    if (!finalAiDetection.targetMet) {
-                        insights.push(
-                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT) after polish. Target is below ${20}%.`,
-                        );
-                    }
-                    const afterPolishReadability = await measureFinalReadability(
-                        optimized.contentMarkdown,
-                        blogPost.h1Title || optimized.title || blogPost.title,
-                        { targetGradeMax: readabilityTargetGradeMax },
-                    );
-                    if (afterPolishReadability.readabilityGrade) {
-                        optimized.seoScores = {
-                            ...optimized.seoScores,
-                            readability: afterPolishReadability.readabilityPercent,
-                            readabilityGrade: afterPolishReadability.readabilityGrade,
-                        };
                     }
                 }
             } else if (humanized.aiDetection) {

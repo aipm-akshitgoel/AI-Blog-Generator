@@ -60,6 +60,21 @@ export function parseGradeLevel(label: string): number {
     return 99;
 }
 
+/** UI label: numeric Flesch-Kincaid grade (e.g. "Grade 10" — never "College"). */
+export function formatReadabilityGradeNumber(input: {
+    gradeLevel?: number;
+    gradeLabel?: string;
+} | null | undefined): string {
+    if (!input) return "—";
+    const level = Number(input.gradeLevel);
+    if (Number.isFinite(level) && level > 0 && level < 90) {
+        return `Grade ${Math.round(level)}`;
+    }
+    const parsed = parseGradeLevel(input.gradeLabel ?? "");
+    if (parsed < 90) return `Grade ${parsed}`;
+    return "—";
+}
+
 export function meetsReadabilityTarget(gradeLevel: number, targetMax?: number): boolean {
     return meetsReadabilityTargetWithOptions(gradeLevel, targetMax);
 }

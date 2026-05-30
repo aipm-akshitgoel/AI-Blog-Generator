@@ -18,7 +18,7 @@ export type OptimizePipelineProfile = {
     modelTimeoutMs: number;
     readabilityMaxAttempts: number;
     humanizePass1Max: number;
-    /** 0 = skip second humanize loop */
+    /** @deprecated Always 0 — humanize after keyword boost removed (exact phrases must not be rewritten). */
     humanizePass2Max: number;
     /** 0 = measure only (no Azure readability edits) */
     postHumanizeReadabilityMax: number;
@@ -59,10 +59,10 @@ export function getOptimizePipelineProfile(
             bodyWords,
             modelTimeoutMs,
             readabilityMaxAttempts: 0,
-            humanizePass1Max: 2,
-            humanizePass2Max: 1,
+            humanizePass1Max: 1,
+            humanizePass2Max: 0,
             postHumanizeReadabilityMax: 0,
-            skipExtraAiPolish: false,
+            skipExtraAiPolish: true,
             skipPostPipeline: false,
         };
     }
@@ -72,10 +72,10 @@ export function getOptimizePipelineProfile(
             bodyWords,
             modelTimeoutMs,
             readabilityMaxAttempts: 0,
-            humanizePass1Max: 3,
-            humanizePass2Max: 2,
+            humanizePass1Max: 1,
+            humanizePass2Max: 0,
             postHumanizeReadabilityMax: 0,
-            skipExtraAiPolish: false,
+            skipExtraAiPolish: true,
             skipPostPipeline: false,
         };
     }
@@ -84,10 +84,10 @@ export function getOptimizePipelineProfile(
         bodyWords,
         modelTimeoutMs,
         readabilityMaxAttempts: READABILITY_MAX_ATTEMPTS,
-        humanizePass1Max: 3,
-        humanizePass2Max: 5,
+        humanizePass1Max: 1,
+        humanizePass2Max: 0,
         postHumanizeReadabilityMax: POST_HUMANIZE_READABILITY_MAX_ATTEMPTS,
-        skipExtraAiPolish: false,
+        skipExtraAiPolish: true,
         skipPostPipeline: false,
     };
 }
