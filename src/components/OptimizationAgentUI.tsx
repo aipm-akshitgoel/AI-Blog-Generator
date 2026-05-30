@@ -143,7 +143,7 @@ function formatHumanizeStatusNote(scores: SeoScores | null | undefined): string 
 
     if (skipped) return skipped;
     if (highAi && attempts === 0) {
-        return "AI Humanize did not run — set AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL on Vercel, then re-run optimize.";
+        return "AI Humanize did not run on this draft (0 passes). Re-run Optimize — if it persists, check AI Humanize word credits on aihumanize.io and confirm AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL are set on Vercel Production with a redeploy.";
     }
     if (attempts > 0 && highAi) {
         return `${attempts} humanize pass(es) ran; AI % is still above 20%. Edit the draft or re-run optimize.`;

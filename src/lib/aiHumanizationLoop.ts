@@ -40,8 +40,8 @@ export type AiHumanizationLoopOptions = {
 
 /**
  * Humanize up to maxAttempts times, each pass rewriting the **original** draft (not chained).
- * Keeps the version with the lowest ZeroGPT AI %; stops early when below target.
- * Uses AI Humanize "enhanced" model by default (see AI_HUMANIZE_MODEL).
+ * Keeps whichever version (original or any pass) has the lowest ZeroGPT AI % pre-keywords.
+ * Does not skip when the baseline is already below target — keyword boost runs after this step.
  */
 export async function runAiHumanizationLoop(
     initialMarkdown: string,
@@ -72,18 +72,21 @@ export async function runAiHumanizationLoop(
         };
     }
 
-    if (meetsAiDetectionTarget(baselineDetection.aiPercent)) {
+    if (maxAttempts <= 0) {
         return {
             contentMarkdown: initialMarkdown,
             aiDetection: toAiDetectionScore(baselineDetection, 0),
+            skippedReason:
+                "Humanize skipped for this run (time budget). Re-run optimize on a shorter draft or try again.",
         };
     }
 
     let bestMarkdown = initialMarkdown;
     let bestDetection = baselineDetection;
     let attemptsUsed = 0;
+    let skippedReason: string | undefined;
 
-    while (!meetsAiDetectionTarget(bestDetection.aiPercent) && attemptsUsed < maxAttempts) {
+    while (attemptsUsed < maxAttempts) {
         attemptsUsed++;
         try {
             const candidate = await humanize(initialMarkdown);
@@ -93,11 +96,15 @@ export async function runAiHumanizationLoop(
                 bestMarkdown = candidate;
                 bestDetection = next;
             }
-            if (meetsAiDetectionTarget(next.aiPercent)) {
+            if (meetsAiDetectionTarget(bestDetection.aiPercent)) {
                 break;
             }
         } catch (err) {
+            const msg = err instanceof Error ? err.message : "AI Humanize rewrite failed";
             console.warn("[ai-humanize] rewrite failed:", err);
+            skippedReason = msg.includes("enough words")
+                ? "AI Humanize: no word credits remaining. Top up at aihumanize.io, then re-run optimize."
+                : msg;
             break;
         }
     }
@@ -105,5 +112,6 @@ export async function runAiHumanizationLoop(
     return {
         contentMarkdown: bestMarkdown,
         aiDetection: toAiDetectionScore(bestDetection, attemptsUsed),
+        skippedReason,
     };
 }

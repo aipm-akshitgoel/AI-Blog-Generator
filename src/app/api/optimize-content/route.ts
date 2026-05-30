@@ -528,7 +528,8 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 if (!finalAiDetection.targetMet) {
                     if (totalHumanizeAttempts === 0) {
                         insights.push(
-                            "No AI Humanize passes ran on this draft. Add AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL on the server, then re-run optimize.",
+                            humanizeSkippedReason ??
+                                "No AI Humanize passes ran on this draft. Re-run optimize; check AI Humanize credits and server env vars if it persists.",
                         );
                     } else {
                         insights.push(
