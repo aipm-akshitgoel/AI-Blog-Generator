@@ -35,6 +35,7 @@ Rules:
 - Return ONLY the revised article body as markdown (no JSON, no code fences, no commentary).
 - Preserve every ## and ### heading text exactly unless a tiny wording change is required for clarity.
 - Preserve all [anchor](url) internal links exactly (same URLs and anchors).
+- Preserve GFM markdown tables exactly (same rows, columns, and pipe syntax); do not flatten tables into plain text.
 - Do NOT add an H1. Do NOT add a ## FAQs section.
 - No em-dashes (—). Avoid "delve", "elevate", "moreover", "in today's landscape".
 - Target Flesch-Kincaid grade 7–8: plain language, average sentence length under 20 words where possible.`;

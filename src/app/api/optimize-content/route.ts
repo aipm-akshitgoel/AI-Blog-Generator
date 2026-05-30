@@ -48,6 +48,7 @@ import {
 import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 import { normalizeMarkdownTables } from "@/lib/markdownStructure";
+import { applyFinalOptimizerScores } from "@/lib/optimizerFinalScores";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
 export const maxDuration = 300;
@@ -509,11 +510,6 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     );
                 }
             } else {
-                optimized.seoScores = {
-                    ...optimized.seoScores,
-                    readability: 0,
-                    readabilityGrade: undefined,
-                };
                 const reason =
                     finalReadability.skippedReason ??
                     readability.skippedReason ??
@@ -670,6 +666,12 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
 
         optimized.contentMarkdown = normalizeMarkdownTables(
             normalizeMarkdownBodyParagraphs(optimized.contentMarkdown),
+        );
+
+        await applyFinalOptimizerScores(
+            optimized,
+            blogPost,
+            optimized.seoScores.aiDetection?.attempts ?? 0,
         );
 
         return NextResponse.json({ optimized }, { status: 200 });

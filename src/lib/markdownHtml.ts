@@ -1,10 +1,19 @@
 import { marked } from "marked";
-import { normalizeMarkdownTables } from "@/lib/markdownStructure";
+import {
+    markdownTableToHtml,
+    normalizeMarkdownTables,
+    splitMarkdownPreservingStructure,
+} from "@/lib/markdownStructure";
 
 marked.setOptions({
     gfm: true,
     breaks: false,
 });
+
+/** True when markdown likely contains a GFM table (pipes row). */
+export function markdownContainsGfmTable(markdown: string): boolean {
+    return /^\s*\|[^|\n]+\|/m.test(String(markdown || ""));
+}
 
 /**
  * TipTap table cells require block content (`content: "block+"`).
@@ -24,12 +33,26 @@ export function wrapTableCellsForTipTap(html: string): string {
     });
 }
 
-/** Markdown → HTML for TipTap (normalized tables + cell paragraphs). */
+/** Markdown → HTML for TipTap (per-part tables + cell paragraphs). */
 export async function markdownToHtmlForEditor(markdown: string): Promise<string> {
     const normalized = normalizeMarkdownTables(String(markdown || ""));
-    const raw = await marked.parse(normalized);
-    const html = wrapTableCellsForTipTap(String(raw || "<p></p>"));
-    return html || "<p></p>";
+    const parts = splitMarkdownPreservingStructure(normalized);
+    const chunks: string[] = [];
+
+    for (const part of parts) {
+        if (part.type === "table") {
+            const tableHtml = markdownTableToHtml(part.text);
+            if (tableHtml) chunks.push(wrapTableCellsForTipTap(tableHtml));
+            continue;
+        }
+        const text = part.text.trim();
+        if (!text) continue;
+        const html = await marked.parse(text);
+        chunks.push(String(html || ""));
+    }
+
+    const combined = chunks.filter(Boolean).join("\n");
+    return wrapTableCellsForTipTap(combined) || "<p></p>";
 }
 
 /** Markdown (GFM tables, etc.) → HTML for static preview / publish. */

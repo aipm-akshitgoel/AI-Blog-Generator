@@ -9,16 +9,14 @@ import {
     type FactCitationDecorationOptions,
 } from "@/components/tiptap/FactCitationDecorations";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
-import Placeholder from "@tiptap/extension-placeholder";
-import { Table } from "@tiptap/extension-table";
-import { TableRow } from "@tiptap/extension-table-row";
-import { TableCell } from "@tiptap/extension-table-cell";
-import { TableHeader } from "@tiptap/extension-table-header";
-import { markdownToHtmlForEditor, normalizeMarkdownForStorage } from "@/lib/markdownHtml";
+import { generateJSON } from "@tiptap/html";
+import {
+    markdownContainsGfmTable,
+    markdownToHtmlForEditor,
+    normalizeMarkdownForStorage,
+} from "@/lib/markdownHtml";
 import { createTurndownService } from "@/lib/turndownConfig";
+import { createTiptapEditorExtensions } from "@/lib/tiptapEditorExtensions";
 
 interface RichTextEditorProps {
     value: string;
@@ -180,6 +178,20 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     const [isFullscreen, setIsFullscreen] = useState(false);
     const lastMarkdownFromEditorRef = useRef("");
     const syncedTableNormalizeRef = useRef(false);
+    const lastLoadedHtmlKeyRef = useRef("");
+
+    const editorExtensions = useMemo(
+        () => createTiptapEditorExtensions(() => citationOptsRef.current),
+        [],
+    );
+
+    function editorDocumentHasTable(tiptapEditor: NonNullable<typeof editor>): boolean {
+        let found = false;
+        tiptapEditor.state.doc.descendants((node) => {
+            if (node.type.name === "table") found = true;
+        });
+        return found;
+    }
     const citationOptsRef = useRef<FactCitationDecorationOptions>({
         sources: [],
         enabled: false,
@@ -201,26 +213,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     }, [isFullscreen]);
 
     const editor = useEditor({
-        extensions: [
-            StarterKit.configure({
-                heading: { levels: [1, 2, 3] },
-            }),
-            Link.configure({
-                openOnClick: false,
-                autolink: true,
-            }),
-            Image,
-            Placeholder.configure({
-                placeholder: "Start editing your optimized content here...",
-            }),
-            Table.configure({ resizable: true }),
-            TableRow,
-            TableHeader,
-            TableCell,
-            FactCitationDecorations.configure({
-                getCitationOptions: () => citationOptsRef.current,
-            }),
-        ],
+        extensions: editorExtensions,
         content: "",
         immediatelyRender: true,
         onUpdate: ({ editor: tiptapEditor }) => {
@@ -234,23 +227,41 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
     useEffect(() => {
         if (!editor) return;
         const nextValue = value || "";
-        if (nextValue === lastMarkdownFromEditorRef.current && !editor.isEmpty) return;
 
         let alive = true;
         (async () => {
             try {
                 const normalizedMd = normalizeMarkdownForStorage(nextValue || "");
                 const html = await markdownToHtmlForEditor(normalizedMd);
+                const htmlKey = `${html.length}:${html.includes("<table")}`;
+                const wantsTable = markdownContainsGfmTable(normalizedMd);
+                const hasTableInDoc = editorDocumentHasTable(editor);
+
+                if (
+                    normalizedMd === lastMarkdownFromEditorRef.current &&
+                    htmlKey === lastLoadedHtmlKeyRef.current &&
+                    !editor.isEmpty &&
+                    (!wantsTable || hasTableInDoc)
+                ) {
+                    return;
+                }
+
                 if (!alive) return;
+
+                const doc = generateJSON(html, editorExtensions);
                 lastMarkdownFromEditorRef.current = normalizedMd;
-                editor.commands.setContent(String(html || "<p></p>"), { emitUpdate: false });
+                lastLoadedHtmlKeyRef.current = htmlKey;
+                editor.commands.setContent(doc, { emitUpdate: false });
+
                 if (normalizedMd !== nextValue && !syncedTableNormalizeRef.current) {
                     syncedTableNormalizeRef.current = true;
                     onChange(normalizedMd);
                 }
-            } catch {
+            } catch (err) {
+                console.warn("[RichTextEditor] markdown load failed:", err);
                 if (!alive) return;
                 lastMarkdownFromEditorRef.current = nextValue;
+                lastLoadedHtmlKeyRef.current = "";
                 const escaped = nextValue
                     .replace(/&/g, "&amp;")
                     .replace(/</g, "&lt;")
@@ -264,7 +275,7 @@ export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorPro
         return () => {
             alive = false;
         };
-    }, [value, editor, onChange]);
+    }, [value, editor, onChange, editorExtensions]);
 
     useEffect(() => {
         if (!editor) return;
