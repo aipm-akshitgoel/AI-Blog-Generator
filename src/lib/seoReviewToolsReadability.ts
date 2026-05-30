@@ -13,9 +13,10 @@ import {
 export const SEO_REVIEW_TOOLS_READABILITY_URL =
     "https://api.seoreviewtools.com/readability-score/?content=1";
 
-export const READABILITY_TARGET_GRADE_MAX = 8;
-export const READABILITY_TARGET_GRADE_MIN = 7;
-export const READABILITY_MAX_ATTEMPTS = 3;
+/** Inclusive ceiling — grade 9–10 is “plain professional” (see readabilityEditorial.ts). */
+export const READABILITY_TARGET_GRADE_MAX = 10;
+export const READABILITY_TARGET_GRADE_MIN = 8;
+export const READABILITY_MAX_ATTEMPTS = 2;
 
 export type ReadabilityGradeResult = {
     /** Parsed numeric grade (e.g. 7 from "7th grade"). */

@@ -8,47 +8,46 @@ import {
 import { splitMarkdownPreservingStructure } from "@/lib/markdownStructure";
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 import {
+    buildReadabilityRetryHint,
+    READABILITY_EDITORIAL_RULES,
+    READABILITY_IMPROVE_SUMMARY,
+} from "@/lib/readabilityEditorial";
+import {
     fetchReadabilityScore,
     fleschEaseToReadabilityPercent,
     meetsReadabilityTarget,
     READABILITY_MAX_ATTEMPTS,
+    READABILITY_TARGET_GRADE_MAX,
     type ReadabilityGradeResult,
 } from "@/lib/seoReviewToolsReadability";
 
 /** After humanize — extra edits without undoing detector-friendly tone. */
-export const POST_HUMANIZE_READABILITY_MAX_ATTEMPTS = 3;
-/** Flesch ease bar we aim for on the dashboard (0–100). */
-export const FLESCH_READABILITY_BAR_TARGET = 60;
+export const POST_HUMANIZE_READABILITY_MAX_ATTEMPTS = 2;
 
-export const READABILITY_IMPROVE_USER_PROMPT =
-    "Improve the readability. Bring the text to a 7th–8th grade reading level (Flesch-Kincaid). Use shorter sentences, simpler everyday words, and clear paragraphs. Keep all facts, headings, and markdown links unchanged.";
+export const READABILITY_IMPROVE_USER_PROMPT = READABILITY_IMPROVE_SUMMARY;
 
 const READABILITY_API_UNAVAILABLE =
     "SEO Review Tools readability API failed — check SEO_REVIEW_TOOLS_API_KEY and credits on the server.";
 
 function buildReadabilitySystemPrompt(): string {
-    return `You are an expert editor focused only on readability for web articles.
+    return `You are an expert web editor improving readability without dumbing down the voice.
 
-${READABILITY_IMPROVE_USER_PROMPT}
+${READABILITY_IMPROVE_SUMMARY}
 
-Rules:
+${READABILITY_EDITORIAL_RULES}
+
+Output:
 - Return ONLY the revised article body as markdown (no JSON, no code fences, no commentary).
-- Preserve every ## and ### heading text exactly unless a tiny wording change is required for clarity.
-- Preserve all [anchor](url) internal links exactly (same URLs and anchors).
-- Preserve GFM markdown tables exactly (same rows, columns, and pipe syntax); do not flatten tables into plain text.
-- Do NOT add an H1. Do NOT add a ## FAQs section.
-- No em-dashes (—). Avoid "delve", "elevate", "moreover", "in today's landscape".
-- Target Flesch-Kincaid grade 7–8: plain language, average sentence length under 20 words where possible.`;
+- Do NOT add an H1. Do NOT add a ## FAQs section.`;
 }
 
 function buildRetryUserPrompt(
     markdown: string,
     measurement: ReadabilityGradeResult,
     attempt: number,
+    maxAttempts: number,
 ): string {
-    return `The article is still too advanced for our audience (Flesch-Kincaid ${measurement.gradeLabel}, score ${measurement.fleschScore}). Attempt ${attempt} of ${READABILITY_MAX_ATTEMPTS}.
-
-Simplify further: shorter sentences, simpler words, split long paragraphs. Grade must be 8th grade or below.
+    return `${buildReadabilityRetryHint(measurement.gradeLabel, measurement.fleschScore, attempt, maxAttempts)}
 
 Article markdown:
 ${markdown}`;
@@ -72,19 +71,21 @@ function toReadabilityGrade(
 }
 
 function buildPostHumanizeReadabilitySystemPrompt(): string {
-    return `You are an expert editor simplifying web articles for a general audience (7th–8th grade reading level).
+    return `You are an expert editor polishing web articles after AI humanization. Keep the human, professional tone.
 
-Rules:
+${READABILITY_IMPROVE_SUMMARY}
+
+${READABILITY_EDITORIAL_RULES}
+
+Output:
 - Return ONLY the revised markdown (no JSON, no code fences, no commentary).
-- Use short sentences (aim under 18 words), everyday words, and clear paragraphs.
-- Keep a natural, human voice — NOT stiff or obviously AI-written. No em-dashes (—).
-- Avoid "delve", "elevate", "moreover", "in today's landscape", "it's important to note".
-- Preserve every ## and ### heading line EXACTLY as given in each section (do not add or remove headings).
-- Preserve all [anchor](url) internal links exactly (same URLs and anchor text).
-- Preserve exact multi-word keyword phrases already in the text — do not delete or rephrase them.
-- Do NOT add an H1 or a ## FAQs section.`;
+- Preserve exact multi-word keyword phrases already in the text — do not delete or rephrase them.`;
 }
 
+/**
+ * Prefer the candidate that passes the grade ceiling with the most natural voice:
+ * among passing versions, higher grade (less oversimplified) then higher Flesch ease.
+ */
 function pickBestReadabilityCandidate(
     candidates: { markdown: string; measurement: ReadabilityGradeResult }[],
 ): { markdown: string; measurement: ReadabilityGradeResult } {
@@ -95,31 +96,43 @@ function pickBestReadabilityCandidate(
         const bMet = meetsReadabilityTarget(b.gradeLevel);
         if (cMet && !bMet) return cur;
         if (!cMet && bMet) return best;
-        if (c.fleschScore !== b.fleschScore) {
+
+        if (cMet && bMet) {
+            if (c.gradeLevel !== b.gradeLevel) {
+                return c.gradeLevel > b.gradeLevel ? cur : best;
+            }
             return c.fleschScore > b.fleschScore ? cur : best;
         }
-        return c.gradeLevel < b.gradeLevel ? cur : best;
+
+        if (c.gradeLevel !== b.gradeLevel) {
+            return c.gradeLevel < b.gradeLevel ? cur : best;
+        }
+        return c.fleschScore > b.fleschScore ? cur : best;
     });
 }
 
+/** Only rewrite when grade is above the editorial ceiling — not when Flesch is merely below an arbitrary bar. */
 function needsReadabilityImprovement(measurement: ReadabilityGradeResult): boolean {
-    return (
-        !meetsReadabilityTarget(measurement.gradeLevel) ||
-        measurement.fleschScore < FLESCH_READABILITY_BAR_TARGET
-    );
+    return measurement.gradeLevel > READABILITY_TARGET_GRADE_MAX;
 }
 
 async function improveReadabilityWithModel(
     azure: AzureConfig,
     markdown: string,
     blogPost: BlogPost,
-    options?: { measurement?: ReadabilityGradeResult; attempt?: number; postHumanize?: boolean },
+    options?: {
+        measurement?: ReadabilityGradeResult;
+        attempt?: number;
+        maxAttempts?: number;
+        postHumanize?: boolean;
+    },
 ): Promise<string> {
     const client = createAzureClient(azure);
+    const maxAttempts = options?.maxAttempts ?? READABILITY_MAX_ATTEMPTS;
     const userContent =
         options?.measurement && options.attempt
-            ? buildRetryUserPrompt(markdown, options.measurement, options.attempt)
-            : `Revise this blog article markdown for grade 7–8 readability:\n\n${markdown}`;
+            ? buildRetryUserPrompt(markdown, options.measurement, options.attempt, maxAttempts)
+            : `Revise this section for plain professional readability (grade 9–10). Use bullet lists where appropriate:\n\n${markdown}`;
 
     const systemPrompt = options?.postHumanize
         ? buildPostHumanizeReadabilitySystemPrompt()
@@ -149,17 +162,26 @@ async function improveMarkdownPreservingHeadings(
     azure: AzureConfig,
     markdown: string,
     blogPost: BlogPost,
-    options?: { measurement?: ReadabilityGradeResult; attempt?: number; postHumanize?: boolean },
+    options?: {
+        measurement?: ReadabilityGradeResult;
+        attempt?: number;
+        maxAttempts?: number;
+        postHumanize?: boolean;
+    },
 ): Promise<string> {
     const parts = splitMarkdownPreservingStructure(markdown);
     const out: string[] = [];
+    const maxAttempts = options?.maxAttempts ?? READABILITY_MAX_ATTEMPTS;
 
     for (const part of parts) {
         if (part.type === "heading" || part.type === "table") {
             out.push(part.text);
             continue;
         }
-        const revised = await improveReadabilityWithModel(azure, part.text, blogPost, options);
+        const revised = await improveReadabilityWithModel(azure, part.text, blogPost, {
+            ...options,
+            maxAttempts,
+        });
         out.push(revised.trim() ? revised.trim() : part.text);
     }
 
@@ -175,7 +197,7 @@ export type ReadabilityLoopResult = {
     skippedReason?: string;
 };
 
-/** Improvement loop: up to 3 edits; keeps the version with the lowest grade level. */
+/** Improvement loop: up to N edits; keeps the best-scoring natural version that meets the grade ceiling. */
 export async function runReadabilityImprovementLoop(
     azure: AzureConfig,
     blogPost: BlogPost,
@@ -216,6 +238,7 @@ export async function runReadabilityImprovementLoop(
         markdown = await improveMarkdownPreservingHeadings(azure, markdown, blogPost, {
             measurement,
             attempt: attemptsUsed,
+            maxAttempts,
         });
         measurement = (await measure()) ?? measurement;
         candidates.push({ markdown, measurement });
@@ -231,10 +254,7 @@ export async function runReadabilityImprovementLoop(
     };
 }
 
-/**
- * Simplify copy after humanize/keyword passes — keeps headings and keyword phrases, then picks
- * the version with the best Flesch score while staying human-sounding.
- */
+/** Simplify copy after humanize/keyword passes when grade is still above the ceiling. */
 export async function runPostHumanizeReadabilityLoop(
     azure: AzureConfig,
     blogPost: BlogPost,
@@ -275,6 +295,7 @@ export async function runPostHumanizeReadabilityLoop(
         markdown = await improveMarkdownPreservingHeadings(azure, markdown, blogPost, {
             measurement,
             attempt: attemptsUsed,
+            maxAttempts,
             postHumanize: true,
         });
         measurement = (await measure()) ?? measurement;

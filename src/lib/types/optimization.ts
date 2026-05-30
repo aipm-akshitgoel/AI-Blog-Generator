@@ -8,7 +8,7 @@ export interface ReadabilityGrade {
     gradeLabel: string;
     fleschScore: number;
     fleschLabel?: string;
-    /** True when grade level is at or below 8th grade. */
+    /** True when grade level is at or below the editorial ceiling (9th–10th grade). */
     targetMet: boolean;
     attempts: number;
     provider: "seo-review-tools";

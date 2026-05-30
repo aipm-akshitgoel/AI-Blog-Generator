@@ -48,12 +48,12 @@ const METRIC_BAR_WARN = "bg-amber-500";
 const METRIC_BAR_READABILITY_MID = "bg-[#eab308]";
 const METRIC_BAR_AI_MID = "bg-[#a855f7]";
 
-/** Flesch ease bar + grade target: green when at or below 8th grade or ease ≥ 60. */
+/** Flesch ease bar + grade target: green when at or below 10th grade or ease ≥ 55. */
 function readabilityBarClass(scores: SeoScores): string {
     if (scores.readabilityGrade?.targetMet === true) return METRIC_BAR_GOOD;
     if (scores.readabilityGrade?.targetMet === false) return METRIC_BAR_WARN;
     if (!scores.readabilityGrade) return METRIC_BAR_WARN;
-    if (scores.readabilityGrade.fleschScore >= 60 || scores.readability >= 60) return METRIC_BAR_GOOD;
+    if (scores.readabilityGrade.fleschScore >= 55 || scores.readability >= 55) return METRIC_BAR_GOOD;
     if (scores.readability >= 45) return METRIC_BAR_READABILITY_MID;
     return METRIC_BAR_WARN;
 }

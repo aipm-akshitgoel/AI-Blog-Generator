@@ -246,8 +246,8 @@ export async function POST(req: Request) {
             ? `\n${buildTocLockedOptimizePrompt(contentConstraints)}\n`
             : "";
         const flowBlock = tocLocked
-            ? "- Improve flow and readability within each existing section (paragraphs only). Do NOT change ## or ### heading text, order, or count."
-            : "- Improve flow and readability (clear headings, concise paragraphs).\n- Ensure balanced sections (no overly long or short parts).";
+            ? "- Improve flow and readability within each existing section (paragraphs only): plain professional tone, bullets for lists, no telegraphic staccato. Do NOT change ## or ### heading text, order, or count."
+            : "- Improve flow and readability: plain professional English (about 9th–10th grade), varied sentence length, bullet lists for parallel points — do NOT chop every sentence into telegraphic fragments.\n- Ensure balanced sections (no overly long or short parts).";
         const systemPrompt = `You are an expert content optimizer. Take the provided blog post JSON and:
 ${flowBlock}
 ${internalLinksBlock}
@@ -534,7 +534,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 };
                 if (!finalReadability.readabilityGrade.targetMet) {
                     insights.push(
-                        `Readability is ${finalReadability.readabilityGrade.gradeLabel} (Flesch ${finalReadability.readabilityGrade.fleschScore}). Target is 8th grade or below.`,
+                        `Readability is ${finalReadability.readabilityGrade.gradeLabel} (Flesch ${finalReadability.readabilityGrade.fleschScore}). Target is 10th grade or below.`,
                     );
                 }
             } else {
