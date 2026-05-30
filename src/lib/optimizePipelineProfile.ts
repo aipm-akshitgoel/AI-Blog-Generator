@@ -41,12 +41,12 @@ export function getOptimizePipelineProfile(
     if (tightTime) {
         return {
             bodyWords,
-            modelTimeoutMs,
+            modelTimeoutMs: 60_000,
             readabilityMaxAttempts: 0,
-            humanizePass1Max: 0,
+            humanizePass1Max: 1,
             humanizePass2Max: 0,
             skipExtraAiPolish: true,
-            skipPostPipeline: true,
+            skipPostPipeline: false,
         };
     }
 

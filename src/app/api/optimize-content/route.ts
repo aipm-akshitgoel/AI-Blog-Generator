@@ -474,6 +474,13 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             let totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
             let humanizeSkippedReason = humanized.skippedReason;
 
+            if (humanizeSkippedReason) {
+                optimized.seoScores = {
+                    ...optimized.seoScores,
+                    humanizeSkippedReason,
+                };
+            }
+
             if (keywordPlanForRestore) {
                 optimized.contentMarkdown = boostMarkdownForKeywordPlan(
                     optimized.contentMarkdown,

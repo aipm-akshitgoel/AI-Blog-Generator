@@ -682,7 +682,10 @@ export function OptimizationAgentUI({
                                 aiPercent: aiPct,
                                 humanPercent: data.humanPercent ?? 100 - aiPct,
                                 targetMet: Boolean(data.targetMet),
-                                attempts: 0,
+                                attempts:
+                                    base.aiDetection?.attempts ??
+                                    optimizedData.seoScores?.aiDetection?.attempts ??
+                                    0,
                                 provider: "zerogpt" as const,
                                 confidence: data.confidence,
                             },
