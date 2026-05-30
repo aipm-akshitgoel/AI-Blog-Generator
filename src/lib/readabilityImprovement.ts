@@ -6,6 +6,7 @@ import {
     type AzureConfig,
 } from "@/lib/azureOpenAI";
 import { splitMarkdownPreservingHeadings } from "@/lib/aiHumanize";
+import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 import {
     fetchReadabilityScore,
     fleschEaseToReadabilityPercent,
@@ -161,7 +162,9 @@ async function improveMarkdownPreservingHeadings(
         out.push(revised.trim() ? revised.trim() : part.text);
     }
 
-    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return normalizeMarkdownBodyParagraphs(
+        out.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    );
 }
 
 export type ReadabilityLoopResult = {

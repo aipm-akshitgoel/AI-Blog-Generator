@@ -1,3 +1,5 @@
+import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
+
 /**
  * AI Humanize rewrite API
  * @see https://aihumanize.io/api
@@ -181,5 +183,7 @@ export async function humanizeMarkdownPreservingHeadings(
         out.push(rewritten.trim() ? rewritten.trim() : part.text);
     }
 
-    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return normalizeMarkdownBodyParagraphs(
+        out.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    );
 }

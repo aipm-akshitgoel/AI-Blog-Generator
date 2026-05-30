@@ -1,3 +1,4 @@
+import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 import type { ContentConstraints } from "@/lib/types/contentSpec";
 import type { KeywordPlan, KeywordTarget } from "@/lib/types/keywordPlan";
 import {
@@ -71,7 +72,7 @@ function renderArticleStructure(struct: ArticleStructure): string {
             if (h3.body.trim()) parts.push(h3.body.trim());
         }
     }
-    return parts.join("\n\n").trim();
+    return normalizeMarkdownBodyParagraphs(parts.join("\n\n").trim());
 }
 
 /** Replace ## / ### lines in order with headings from the canonical markdown. */

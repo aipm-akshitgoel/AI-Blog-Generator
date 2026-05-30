@@ -46,6 +46,7 @@ import {
     restoreSeoAfterHumanize,
 } from "@/lib/restoreSeoAfterHumanize";
 import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
+import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
 export const maxDuration = 300;
@@ -625,10 +626,14 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 actionableInsights: insights.slice(0, 5),
             };
 
-            optimized.contentMarkdown = dedupeFaqsInOptimized(optimized).contentMarkdown;
+            optimized.contentMarkdown = normalizeMarkdownBodyParagraphs(
+                dedupeFaqsInOptimized(optimized).contentMarkdown,
+            );
         } catch (postErr) {
             console.warn("[optimize-content] Post-optimize pipeline failed:", postErr);
         }
+
+        optimized.contentMarkdown = normalizeMarkdownBodyParagraphs(optimized.contentMarkdown);
 
         return NextResponse.json({ optimized }, { status: 200 });
     } catch (err) {
