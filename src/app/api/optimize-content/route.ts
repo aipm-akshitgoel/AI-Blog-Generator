@@ -47,6 +47,7 @@ import {
 } from "@/lib/restoreSeoAfterHumanize";
 import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
+import { normalizeMarkdownTables } from "@/lib/markdownStructure";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
 export const maxDuration = 300;
@@ -405,6 +406,8 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             optimized.plagiarismReport.overallSimilarity,
         );
 
+        optimized.contentMarkdown = normalizeMarkdownTables(optimized.contentMarkdown);
+
         try {
             // 1–4: Readability improvement (keep lowest grade across up to 3 attempts)
             const readability = await runReadabilityImprovementLoop(
@@ -627,14 +630,47 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 actionableInsights: insights.slice(0, 5),
             };
 
-            optimized.contentMarkdown = normalizeMarkdownBodyParagraphs(
-                dedupeFaqsInOptimized(optimized).contentMarkdown,
+            optimized.contentMarkdown = normalizeMarkdownTables(
+                normalizeMarkdownBodyParagraphs(dedupeFaqsInOptimized(optimized).contentMarkdown),
             );
         } catch (postErr) {
             console.warn("[optimize-content] Post-optimize pipeline failed:", postErr);
+            optimized.contentMarkdown = normalizeMarkdownTables(
+                normalizeMarkdownBodyParagraphs(optimized.contentMarkdown),
+            );
+            const scoreTitle = blogPost.h1Title || optimized.title || blogPost.title;
+            try {
+                if (!optimized.seoScores.readabilityGrade) {
+                    const recoveredReadability = await measureFinalReadability(
+                        optimized.contentMarkdown,
+                        scoreTitle,
+                    );
+                    if (recoveredReadability.readabilityGrade) {
+                        optimized.seoScores = {
+                            ...optimized.seoScores,
+                            readability: recoveredReadability.readabilityPercent,
+                            readabilityGrade: recoveredReadability.readabilityGrade,
+                        };
+                    }
+                }
+                if (optimized.seoScores.aiDetection?.provider !== "zerogpt") {
+                    const recoveredAi = await detectAiContentPercent(optimized.contentMarkdown);
+                    if (recoveredAi) {
+                        optimized.seoScores = applyZeroGptDetectionToScores(
+                            optimized.seoScores,
+                            recoveredAi,
+                            optimized.seoScores.aiDetection?.attempts ?? 0,
+                        );
+                    }
+                }
+            } catch (recoverErr) {
+                console.warn("[optimize-content] Post-pipeline score recovery failed:", recoverErr);
+            }
         }
 
-        optimized.contentMarkdown = normalizeMarkdownBodyParagraphs(optimized.contentMarkdown);
+        optimized.contentMarkdown = normalizeMarkdownTables(
+            normalizeMarkdownBodyParagraphs(optimized.contentMarkdown),
+        );
 
         return NextResponse.json({ optimized }, { status: 200 });
     } catch (err) {

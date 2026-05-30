@@ -3,7 +3,7 @@
  * Common after AI Humanize / keyword-weave passes.
  */
 
-import { isMarkdownTableBlock } from "@/lib/markdownStructure";
+import { isMarkdownTableBlock, normalizeMarkdownTables } from "@/lib/markdownStructure";
 
 function isStructuralBlock(text: string): boolean {
     if (isMarkdownTableBlock(text)) return true;
@@ -27,7 +27,7 @@ function isOrphanSentenceBlock(text: string): boolean {
  * Merge consecutive one-line blocks into proper paragraphs; keep headings and lists as-is.
  */
 export function normalizeMarkdownBodyParagraphs(markdown: string): string {
-    const blocks = String(markdown || "")
+    const blocks = normalizeMarkdownTables(String(markdown || ""))
         .split(/\n\n+/)
         .map((b) => b.trim())
         .filter(Boolean);

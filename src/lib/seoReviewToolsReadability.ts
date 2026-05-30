@@ -3,6 +3,13 @@
  * @see https://api.seoreviewtools.com/documentation/readability-score-api-content/
  */
 
+import {
+    isMarkdownTableLine,
+    isMarkdownTableSeparatorLine,
+    markdownTableToHtml,
+    normalizeMarkdownTables,
+} from "@/lib/markdownStructure";
+
 export const SEO_REVIEW_TOOLS_READABILITY_URL =
     "https://api.seoreviewtools.com/readability-score/?content=1";
 
@@ -56,9 +63,9 @@ export function fleschEaseToReadabilityPercent(fleschScore: number): number {
     return Math.min(100, Math.max(0, Math.round(fleschScore)));
 }
 
-/** Minimal HTML for the SEO Review Tools content endpoint (paragraphs + headings). */
+/** Minimal HTML for the SEO Review Tools content endpoint (paragraphs + headings + tables). */
 export function markdownToReadabilityHtml(markdown: string): string {
-    const lines = String(markdown || "").split(/\r?\n/);
+    const lines = normalizeMarkdownTables(String(markdown || "")).split(/\r?\n/);
     const parts: string[] = [];
     let paragraph: string[] = [];
 
@@ -68,10 +75,12 @@ export function markdownToReadabilityHtml(markdown: string): string {
         paragraph = [];
     };
 
-    for (const line of lines) {
-        const trimmed = line.trim();
+    let i = 0;
+    while (i < lines.length) {
+        const trimmed = lines[i]!.trim();
         if (!trimmed) {
             flushParagraph();
+            i++;
             continue;
         }
         if (/^#{1,6}\s+/.test(trimmed)) {
@@ -80,12 +89,31 @@ export function markdownToReadabilityHtml(markdown: string): string {
             const tag = level <= 1 ? "h2" : level === 2 ? "h2" : "h3";
             const text = trimmed.replace(/^#+\s+/, "").replace(/\[(.+?)\]\([^)]+\)/g, "$1");
             parts.push(`<${tag}>${escapeHtml(text)}</${tag}>`);
+            i++;
+            continue;
+        }
+        if (isMarkdownTableLine(trimmed)) {
+            flushParagraph();
+            const tableLines: string[] = [];
+            while (i < lines.length) {
+                const lt = lines[i]!.trim();
+                if (!lt) break;
+                if (isMarkdownTableLine(lt) || isMarkdownTableSeparatorLine(lt)) {
+                    tableLines.push(lines[i]!);
+                    i++;
+                } else {
+                    break;
+                }
+            }
+            const tableHtml = markdownTableToHtml(tableLines.join("\n"));
+            if (tableHtml) parts.push(tableHtml);
             continue;
         }
         const plain = trimmed
             .replace(/\[(.+?)\]\([^)]+\)/g, "$1")
             .replace(/[*_`]/g, "");
         paragraph.push(plain);
+        i++;
     }
     flushParagraph();
 

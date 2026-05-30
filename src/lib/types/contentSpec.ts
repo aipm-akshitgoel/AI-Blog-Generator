@@ -12,7 +12,8 @@ export const DEFAULT_H3_PER_H2 = 2;
 export const MARKDOWN_TABLE_GUIDANCE = [
     "Use GitHub-flavored markdown tables when comparing options, fees, eligibility, pros/cons, or multi-column criteria.",
     "Format: header row, separator row (e.g. |---|---|), then data rows. Keep tables compact (3–5 columns max).",
-    "Do not break table rows across paragraphs or insert blank lines inside a table.",
+    "Put a blank line before the first table row and a blank line after the last table row (required for rendering).",
+    "Do not break table rows across paragraphs or insert blank lines between rows inside a table.",
     "Do not place internal links inside table cells unless the brief requires it.",
 ] as const;
 

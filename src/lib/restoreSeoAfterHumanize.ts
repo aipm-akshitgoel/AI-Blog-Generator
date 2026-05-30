@@ -1,4 +1,5 @@
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
+import { isMarkdownTableBlock, splitMarkdownBodyBlocks } from "@/lib/markdownStructure";
 import type { ContentConstraints } from "@/lib/types/contentSpec";
 import type { KeywordPlan, KeywordTarget } from "@/lib/types/keywordPlan";
 import {
@@ -199,11 +200,12 @@ function distributeHumanizedAcrossCanonical(
 /** Always appends a new sentence containing the phrase (used to raise weighted density). */
 function appendPhraseToBlock(block: string, phrase: string, weaveIndex: number): string {
     if (!phrase.trim()) return block;
+    if (isMarkdownTableBlock(block)) return block;
     const sentence = KEYWORD_WEAVE_TEMPLATES[weaveIndex % KEYWORD_WEAVE_TEMPLATES.length]!(phrase);
     const trimmed = block.trim();
     if (!trimmed) return sentence;
 
-    const parts = trimmed.split(/\n\n+/);
+    const parts = splitMarkdownBodyBlocks(trimmed);
     const paraIdx = weaveIndex % Math.max(1, parts.length);
     const para = (parts[paraIdx] ?? "").trim();
     parts[paraIdx] = `${para}${/[.!?]$/.test(para) ? "" : "."} ${sentence}`;

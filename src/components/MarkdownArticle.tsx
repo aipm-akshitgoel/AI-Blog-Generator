@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { normalizeMarkdownTables } from "@/lib/markdownStructure";
 
 type MarkdownArticleProps = {
     children: string;
@@ -8,6 +9,7 @@ type MarkdownArticleProps = {
 
 /** Published / preview markdown with GFM tables, lists, and links. */
 export function MarkdownArticle({ children, className }: MarkdownArticleProps) {
+    const source = normalizeMarkdownTables(String(children || ""));
     return (
         <div className={className}>
             <ReactMarkdown
@@ -20,7 +22,7 @@ export function MarkdownArticle({ children, className }: MarkdownArticleProps) {
                     ),
                 }}
             >
-                {children}
+                {source}
             </ReactMarkdown>
         </div>
     );

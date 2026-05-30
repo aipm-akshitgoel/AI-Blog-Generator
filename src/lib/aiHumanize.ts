@@ -1,5 +1,8 @@
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
-import { splitMarkdownPreservingStructure } from "@/lib/markdownStructure";
+import {
+    normalizeMarkdownTables,
+    splitMarkdownPreservingStructure,
+} from "@/lib/markdownStructure";
 
 export type { MarkdownPart } from "@/lib/markdownStructure";
 export {
@@ -153,7 +156,7 @@ export async function humanizeMarkdownPreservingHeadings(
         throw new Error("AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL are not configured");
     }
 
-    const parts = splitMarkdownPreservingStructure(markdown);
+    const parts = splitMarkdownPreservingStructure(normalizeMarkdownTables(markdown));
     const out: string[] = [];
 
     for (const part of parts) {

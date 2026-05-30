@@ -1,4 +1,5 @@
 import { marked } from "marked";
+import { normalizeMarkdownTables } from "@/lib/markdownStructure";
 
 marked.setOptions({
     gfm: true,
@@ -7,6 +8,7 @@ marked.setOptions({
 
 /** Markdown (GFM tables, etc.) → HTML for TipTap / preview. */
 export async function markdownToHtml(markdown: string): Promise<string> {
-    const html = await marked.parse(String(markdown || ""));
+    const normalized = normalizeMarkdownTables(String(markdown || ""));
+    const html = await marked.parse(normalized);
     return String(html || "<p></p>");
 }
