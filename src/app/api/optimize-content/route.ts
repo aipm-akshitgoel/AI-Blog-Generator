@@ -436,18 +436,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 throw new Error("SKIP_POST_PIPELINE");
             }
 
-            // 1–4: Readability improvement (keep lowest grade across up to 3 attempts)
-            const readability = await runReadabilityImprovementLoop(
-                azure,
-                blogPost,
-                optimized.contentMarkdown,
-                {
-                    maxAttempts: pipelineProfile.readabilityMaxAttempts,
-                    targetGradeMax: readabilityTargetGradeMax,
-                },
-            );
-            optimized.contentMarkdown = readability.contentMarkdown;
-
+            // Humanize Azure draft first (before readability edits — readability can skew pre-key ZeroGPT).
             const markdownBeforeHumanize = optimized.contentMarkdown;
             const keywordPlanForRestore =
                 resolveKeywordPlanForPost(blogPost, contentConstraints ?? null, contentConstraints?.domainPrimaryKeyword?.trim()) ??
@@ -458,7 +447,6 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 h2Suggestions: blogPost.h2Suggestions,
             };
 
-            // Humanize readable draft (before exact keyword placement — no humanize after keywords).
             const humanizeOpts = { preserveHeadings: true as const };
             const humanized = await runAiHumanizationLoop(markdownBeforeHumanize, {
                 ...humanizeOpts,
@@ -480,6 +468,21 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     humanizeSkippedReason,
                 };
             }
+            console.info(
+                `[optimize-content] Humanize: ${totalHumanizeAttempts} pass(es)`,
+                humanizeSkippedReason ?? "ok",
+            );
+
+            const readability = await runReadabilityImprovementLoop(
+                azure,
+                blogPost,
+                optimized.contentMarkdown,
+                {
+                    maxAttempts: pipelineProfile.readabilityMaxAttempts,
+                    targetGradeMax: readabilityTargetGradeMax,
+                },
+            );
+            optimized.contentMarkdown = readability.contentMarkdown;
 
             if (keywordPlanForRestore) {
                 optimized.contentMarkdown = boostMarkdownForKeywordPlan(
@@ -615,6 +618,12 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 postErr instanceof Error && postErr.message === "SKIP_POST_PIPELINE";
             if (!skipOnly) {
                 console.warn("[optimize-content] Post-optimize pipeline failed:", postErr);
+                const errMsg =
+                    postErr instanceof Error ? postErr.message : "Post-optimize pipeline failed";
+                optimized.seoScores = {
+                    ...optimized.seoScores,
+                    humanizeSkippedReason: `Humanize did not finish (${errMsg}). Re-run optimize.`,
+                };
             } else {
                 optimized.seoScores = {
                     ...optimized.seoScores,

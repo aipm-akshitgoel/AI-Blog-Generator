@@ -8,10 +8,10 @@ const STRUCTURE_STEP = "Optimizing structure and headings";
 export const OPTIMIZATION_LOADING_STEPS = [
     STRUCTURE_STEP,
     "Adding internal links",
-    "Improving readability",
-    "Verifying readability with SEO Review Tools",
     "Humanizing with AI Humanize (enhanced)",
     "Restoring headings",
+    "Improving readability",
+    "Verifying readability with SEO Review Tools",
     "Placing exact keywords",
     "Checking AI detection with ZeroGPT",
     "Finishing up…",

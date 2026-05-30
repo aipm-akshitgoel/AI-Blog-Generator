@@ -134,9 +134,12 @@ function shortZeroGptErrorLabel(error: string): string {
     return "ZeroGPT unavailable";
 }
 
-function formatHumanizeStatusNote(scores: SeoScores | null | undefined): string | undefined {
+function formatHumanizeStatusNote(
+    scores: SeoScores | null | undefined,
+    fallbackSkippedReason?: string | null,
+): string | undefined {
     const attempts = scores?.aiDetection?.attempts ?? 0;
-    const skipped = scores?.humanizeSkippedReason?.trim();
+    const skipped = scores?.humanizeSkippedReason?.trim() || fallbackSkippedReason?.trim();
     const highAi =
         scores?.aiDetection?.provider === "zerogpt" &&
         scores.aiDetection.targetMet === false;
@@ -1083,7 +1086,10 @@ export function OptimizationAgentUI({
                         >
                             {(() => {
                                 const ai = formatAiContentDisplay(liveScores, aiDetectionResolved);
-                                const humanizeNote = formatHumanizeStatusNote(liveScores);
+                                const humanizeNote = formatHumanizeStatusNote(
+                                    liveScores,
+                                    optimizedData?.seoScores?.humanizeSkippedReason,
+                                );
                                 return (
                                     <>
                                         <SeoMetricBar
