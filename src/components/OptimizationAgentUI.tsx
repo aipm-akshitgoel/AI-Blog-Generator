@@ -62,8 +62,8 @@ function readabilityMetricDisplay(scores: SeoScores): { suffix: string; help: st
         };
     }
     return {
-        suffix: `${scores.readability}/100 · ${grade.gradeLabel}`,
-        help: "Flesch Reading Ease (0–100) from SEO Review Tools. Higher means easier to read. Green = on target (grade 8 or below, or ease ≥ 60).",
+        suffix: `${scores.readability}/100`,
+        help: "Flesch Reading Ease (0–100) from SEO Review Tools. Higher means easier to read.",
     };
 }
 
@@ -196,13 +196,6 @@ function EditContentMetric({
     );
 }
 
-function densityStatus(actual: number, target?: number): string | null {
-    if (target == null || target <= 0) return null;
-    const delta = actual - target;
-    if (Math.abs(delta) <= 0.3) return "on target";
-    return delta < 0 ? "below target" : "above target";
-}
-
 function keywordTierColumnLabel(level: KeywordDensityRow["level"]): string {
     switch (level) {
         case "primary":
@@ -251,7 +244,6 @@ function KeywordDensityPanel({ rows }: { rows: KeywordDensityRow[] }) {
                 </thead>
                 <tbody className="bg-white">
                     {rows.map((row) => {
-                        const status = densityStatus(row.densityPercent, row.targetPercent);
                         const sectionHint = keywordSectionHint(row.label);
                         return (
                             <tr key={`${row.level}-${row.label}-${row.keyword}`} className="border-t border-neutral-100">
@@ -272,19 +264,8 @@ function KeywordDensityPanel({ rows }: { rows: KeywordDensityRow[] }) {
                                 <td className="px-4 py-3 align-top text-right text-sm tabular-nums text-[#718096]">
                                     {row.targetPercent != null ? `${row.targetPercent}%` : "—"}
                                 </td>
-                                <td className="px-4 py-3 align-top text-right">
-                                    <span className="text-sm font-semibold tabular-nums text-[#2D3748]">
-                                        {row.densityPercent}%
-                                    </span>
-                                    {status && (
-                                        <span
-                                            className={`mt-0.5 block text-[11px] font-semibold ${
-                                                status === "on target" ? "text-emerald-600" : "text-amber-600"
-                                            }`}
-                                        >
-                                            {status}
-                                        </span>
-                                    )}
+                                <td className="px-4 py-3 align-top text-right text-sm font-semibold tabular-nums text-[#2D3748]">
+                                    {row.densityPercent}%
                                 </td>
                             </tr>
                         );
