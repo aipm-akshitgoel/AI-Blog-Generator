@@ -36,7 +36,6 @@ import { runAiHumanizationLoop } from "@/lib/aiHumanizationLoop";
 import { applyZeroGptDetectionToScores, detectAiContentPercentWithStatus } from "@/lib/zerogptAiDetection";
 import {
     measureFinalReadability,
-    runPostHumanizeReadabilityLoop,
     runReadabilityImprovementLoop,
 } from "@/lib/readabilityImprovement";
 import { resolveKeywordPlanForPost, verifyKeywordPlanForPost } from "@/lib/keywordPlanVerification";
@@ -475,21 +474,6 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             let totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
             let humanizeSkippedReason = humanized.skippedReason;
 
-            const postReadability = await runPostHumanizeReadabilityLoop(
-                azure,
-                {
-                    ...blogPost,
-                    title: optimized.title,
-                    h1Title: blogPost.h1Title || optimized.title,
-                },
-                optimized.contentMarkdown,
-                {
-                    maxAttempts: pipelineProfile.postHumanizeReadabilityMax,
-                    targetGradeMax: readabilityTargetGradeMax,
-                },
-            );
-            optimized.contentMarkdown = postReadability.contentMarkdown;
-
             if (keywordPlanForRestore) {
                 optimized.contentMarkdown = boostMarkdownForKeywordPlan(
                     optimized.contentMarkdown,
@@ -499,14 +483,11 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
 
             const insights = [...optimized.seoScores.actionableInsights];
 
-            let finalReadability = postReadability;
-            if (!postReadability.readabilityGrade) {
-                finalReadability = await measureFinalReadability(
-                    optimized.contentMarkdown,
-                    blogPost.h1Title || optimized.title || blogPost.title,
-                    { targetGradeMax: readabilityTargetGradeMax },
-                );
-            }
+            const finalReadability = await measureFinalReadability(
+                optimized.contentMarkdown,
+                blogPost.h1Title || optimized.title || blogPost.title,
+                { targetGradeMax: readabilityTargetGradeMax },
+            );
 
             if (finalReadability.readabilityGrade) {
                 optimized.seoScores = {

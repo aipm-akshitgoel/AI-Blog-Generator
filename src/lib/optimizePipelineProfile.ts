@@ -1,6 +1,5 @@
 import { countMarkdownBodyWords } from "@/lib/contentWordCount";
 import { OPTIMIZE_SERVER_MAX_DURATION_SEC } from "@/lib/optimizeContentClient";
-import { POST_HUMANIZE_READABILITY_MAX_ATTEMPTS } from "@/lib/readabilityImprovement";
 import { READABILITY_MAX_ATTEMPTS } from "@/lib/seoReviewToolsReadability";
 
 /** Above this word count, use a shorter post-AI pipeline to finish within Vercel limits. */
@@ -20,8 +19,6 @@ export type OptimizePipelineProfile = {
     humanizePass1Max: number;
     /** @deprecated Always 0 — humanize after keyword boost removed (exact phrases must not be rewritten). */
     humanizePass2Max: number;
-    /** 0 = measure only (no Azure readability edits) */
-    postHumanizeReadabilityMax: number;
     skipExtraAiPolish: boolean;
     /** When true, only run final SEO Review Tools + ZeroGPT scoring. */
     skipPostPipeline: boolean;
@@ -48,7 +45,6 @@ export function getOptimizePipelineProfile(
             readabilityMaxAttempts: 0,
             humanizePass1Max: 0,
             humanizePass2Max: 0,
-            postHumanizeReadabilityMax: 0,
             skipExtraAiPolish: true,
             skipPostPipeline: true,
         };
@@ -61,7 +57,6 @@ export function getOptimizePipelineProfile(
             readabilityMaxAttempts: 0,
             humanizePass1Max: 2,
             humanizePass2Max: 0,
-            postHumanizeReadabilityMax: 0,
             skipExtraAiPolish: true,
             skipPostPipeline: false,
         };
@@ -74,7 +69,6 @@ export function getOptimizePipelineProfile(
             readabilityMaxAttempts: 0,
             humanizePass1Max: 3,
             humanizePass2Max: 0,
-            postHumanizeReadabilityMax: 0,
             skipExtraAiPolish: true,
             skipPostPipeline: false,
         };
@@ -86,7 +80,6 @@ export function getOptimizePipelineProfile(
         readabilityMaxAttempts: READABILITY_MAX_ATTEMPTS,
         humanizePass1Max: 3,
         humanizePass2Max: 0,
-        postHumanizeReadabilityMax: POST_HUMANIZE_READABILITY_MAX_ATTEMPTS,
         skipExtraAiPolish: true,
         skipPostPipeline: false,
     };
