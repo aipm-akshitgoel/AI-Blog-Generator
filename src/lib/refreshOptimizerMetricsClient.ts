@@ -84,12 +84,12 @@ export async function refreshOptimizerMetrics(
     if (aiRes?.ok) {
         const data = (await aiRes.json()) as AiDetectionApiResponse;
         if (!data.error && typeof data.aiPercent === "number") {
-            next = applyZeroGptDetectionToScores(base, {
+            next = applyZeroGptDetectionToScores(next, {
                 aiPercent: data.aiPercent,
                 humanPercent: data.humanPercent,
                 targetMet: data.targetMet,
                 confidence: data.confidence,
-            }, base.aiDetection?.attempts ?? 0);
+            }, next.aiDetection?.attempts ?? 0);
         }
     }
 

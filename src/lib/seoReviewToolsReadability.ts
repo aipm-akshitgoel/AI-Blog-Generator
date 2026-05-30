@@ -147,6 +147,20 @@ ${body}
 </html>`;
 }
 
+function findFleschBlockDeep(node: unknown, depth = 0): Record<string, unknown> | null {
+    if (!node || typeof node !== "object" || depth > 8) return null;
+    const rec = node as Record<string, unknown>;
+    const direct = rec["Flesch Kincaid Reading Ease"];
+    if (direct && typeof direct === "object") {
+        return direct as Record<string, unknown>;
+    }
+    for (const value of Object.values(rec)) {
+        const found = findFleschBlockDeep(value, depth + 1);
+        if (found) return found;
+    }
+    return null;
+}
+
 function pickFleschBlock(data: Record<string, unknown>): Record<string, unknown> | null {
     const nested = data?.data as Record<string, unknown> | undefined;
     const inner = nested?.data as Record<string, unknown> | undefined;
@@ -154,19 +168,28 @@ function pickFleschBlock(data: Record<string, unknown>): Record<string, unknown>
         (inner?.["Flesch Kincaid Reading Ease"] as Record<string, unknown>) ??
         (nested?.["Flesch Kincaid Reading Ease"] as Record<string, unknown>) ??
         (data?.["Flesch Kincaid Reading Ease"] as Record<string, unknown>);
-    return fk ?? null;
+    return fk ?? findFleschBlockDeep(data);
+}
+
+function isReadabilityApiSuccess(root: Record<string, unknown>): boolean {
+    const status = String(root.status ?? "").trim().toLowerCase();
+    if (status === "ok" || status === "success") return true;
+    const result = root.result;
+    return result === 1 || result === "1" || result === true;
 }
 
 export function parseReadabilityApiResponse(json: unknown): ReadabilityGradeResult | null {
     if (!json || typeof json !== "object") return null;
     const root = json as Record<string, unknown>;
-    if (root.status !== "ok" && root.result !== 1) return null;
+    if (!isReadabilityApiSuccess(root)) return null;
 
     const data = (root.data as Record<string, unknown>) ?? root;
     const fk = pickFleschBlock(data);
     if (!fk) return null;
 
-    const gradeLabel = String(fk["grade level"] ?? fk.gradeLevel ?? "").trim();
+    const gradeLabel = String(
+        fk["grade level"] ?? fk.gradeLevel ?? fk.grade_level ?? "",
+    ).trim();
     const gradeLevel = parseGradeLevel(gradeLabel);
     const fleschScore = Number(fk.score ?? fk.Score ?? 0);
     if (!Number.isFinite(fleschScore)) return null;

@@ -41,6 +41,7 @@ import {
 import type { KeywordDensityVerification } from "@/lib/types/keywordPlan";
 import type { SeoScores } from "@/lib/types/optimization";
 import { AI_DETECTION_TARGET_PERCENT_MAX } from "@/lib/zerogptAiDetection";
+import { fleschEaseToReadabilityPercent } from "@/lib/seoReviewToolsReadability";
 
 const METRIC_BAR_GOOD = "bg-emerald-500";
 const METRIC_BAR_WARN = "bg-amber-500";
@@ -57,17 +58,29 @@ function readabilityBarClass(scores: SeoScores): string {
     return METRIC_BAR_WARN;
 }
 
-function readabilityMetricDisplay(scores: SeoScores): { suffix: string; help: string } {
+function readabilityMetricDisplay(
+    scores: SeoScores,
+    readabilityResolved: boolean,
+): { suffix: string; help: string; pending: boolean } {
     const grade = scores.readabilityGrade;
-    if (!grade) {
+    if (grade) {
         return {
-            suffix: "Not verified",
-            help: "SEO Review Tools did not return a readability score. Check SEO_REVIEW_TOOLS_API_KEY on the server, then re-run Optimize or Refresh.",
+            suffix: `${scores.readability}/100`,
+            help: "Flesch Reading Ease (0–100) from SEO Review Tools. Higher means easier to read.",
+            pending: false,
+        };
+    }
+    if (!readabilityResolved) {
+        return {
+            suffix: "Checking…",
+            help: "Measuring readability with SEO Review Tools on this draft.",
+            pending: true,
         };
     }
     return {
-        suffix: `${scores.readability}/100`,
-        help: "Flesch Reading Ease (0–100) from SEO Review Tools. Higher means easier to read.",
+        suffix: "Unavailable",
+        help: "SEO Review Tools could not score this draft. Check SEO_REVIEW_TOOLS_API_KEY on the server, then use Refresh in the editor.",
+        pending: false,
     };
 }
 
@@ -345,6 +358,7 @@ export function OptimizationAgentUI({
     const [isRefreshingMetrics, setIsRefreshingMetrics] = useState(false);
     const [metricsRefreshError, setMetricsRefreshError] = useState<string | null>(null);
     const [aiDetectionResolved, setAiDetectionResolved] = useState(false);
+    const [readabilityResolved, setReadabilityResolved] = useState(false);
     const optimizeAbortRef = useRef<AbortController | null>(null);
     const resultsTopRef = useRef<HTMLDivElement>(null);
     const postOptimizeKey = `${post.slug}|${post.contentMarkdown?.length ?? 0}`;
@@ -453,6 +467,94 @@ export function OptimizationAgentUI({
 
     useEffect(() => {
         if (!optimizedData || isEditing) return;
+        if (optimizedData.seoScores?.readabilityGrade || liveScores?.readabilityGrade) {
+            setReadabilityResolved(true);
+            return;
+        }
+
+        let cancelled = false;
+        setReadabilityResolved(false);
+        void fetch("/api/readability-score", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ markdown: optimizedData.contentMarkdown }),
+        })
+            .then((res) => (res.ok ? res.json() : null))
+            .then(
+                (
+                    data: {
+                        fleschScore?: number;
+                        gradeLevel?: number;
+                        gradeLabel?: string;
+                        fleschLabel?: string;
+                        targetMet?: boolean;
+                        error?: string;
+                    } | null,
+                ) => {
+                    if (cancelled || !data || data.error || typeof data.fleschScore !== "number") return;
+                    setLiveScores((prev) => {
+                        const base =
+                            prev ??
+                            normalizeSeoScores(
+                                optimizedData.seoScores,
+                                optimizedData.plagiarismReport?.overallSimilarity ?? 0,
+                            );
+                        const flesch = data.fleschScore!;
+                        return {
+                            ...base,
+                            readability: fleschEaseToReadabilityPercent(flesch),
+                            readabilityGrade: {
+                                gradeLevel: data.gradeLevel ?? 99,
+                                gradeLabel: data.gradeLabel ?? "",
+                                fleschScore: flesch,
+                                fleschLabel: data.fleschLabel,
+                                targetMet: Boolean(data.targetMet),
+                                attempts: base.readabilityGrade?.attempts ?? 0,
+                                provider: "seo-review-tools",
+                                isFinal: true,
+                            },
+                        };
+                    });
+                    setOptimizedData((prev) =>
+                        prev
+                            ? {
+                                  ...prev,
+                                  seoScores: {
+                                      ...prev.seoScores,
+                                      readability: fleschEaseToReadabilityPercent(data.fleschScore!),
+                                      readabilityGrade: {
+                                          gradeLevel: data.gradeLevel ?? 99,
+                                          gradeLabel: data.gradeLabel ?? "",
+                                          fleschScore: data.fleschScore!,
+                                          fleschLabel: data.fleschLabel,
+                                          targetMet: Boolean(data.targetMet),
+                                          attempts: 0,
+                                          provider: "seo-review-tools",
+                                          isFinal: true,
+                                      },
+                                  },
+                              }
+                            : prev,
+                    );
+                },
+            )
+            .catch(() => undefined)
+            .finally(() => {
+                if (!cancelled) setReadabilityResolved(true);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        optimizedData,
+        isEditing,
+        liveScores?.readabilityGrade,
+        optimizedData?.seoScores?.readabilityGrade,
+    ]);
+
+    useEffect(() => {
+        if (!optimizedData || isEditing) return;
         if (liveScores?.aiDetection?.provider === "zerogpt") {
             setAiDetectionResolved(true);
             return;
@@ -525,6 +627,7 @@ export function OptimizationAgentUI({
             });
             setLiveScores(refreshed);
             setAiDetectionResolved(refreshed.aiDetection?.provider === "zerogpt");
+            setReadabilityResolved(Boolean(refreshed.readabilityGrade));
             setHighlightScores(true);
             return refreshed;
         } catch (err) {
@@ -577,6 +680,7 @@ export function OptimizationAgentUI({
                 );
                 setLiveScores(scores);
                 setAiDetectionResolved(scores.aiDetection?.provider === "zerogpt");
+                setReadabilityResolved(Boolean(scores.readabilityGrade));
                 setScoreDeltas(null);
                 setError(null);
             } catch (err) {
@@ -766,6 +870,7 @@ export function OptimizationAgentUI({
                                 ),
                             );
                             setAiDetectionResolved(false);
+                            setReadabilityResolved(false);
                             setError(null);
                             onComplete?.(fallback);
                         }}
@@ -849,12 +954,19 @@ export function OptimizationAgentUI({
                         >
                             <div className="space-y-2">
                                 {(() => {
-                                    const readability = readabilityMetricDisplay(liveScores);
+                                    const readability = readabilityMetricDisplay(
+                                        liveScores,
+                                        readabilityResolved,
+                                    );
                                     return (
                                         <SeoMetricBar
                                             label="Readability"
                                             value={liveScores.readabilityGrade ? liveScores.readability : 0}
-                                            barClass={readabilityBarClass(liveScores)}
+                                            barClass={
+                                                readability.pending
+                                                    ? METRIC_BAR_PENDING
+                                                    : readabilityBarClass(liveScores)
+                                            }
                                             help={readability.help}
                                             suffix={readability.suffix}
                                             delta={scoreDeltas?.readability}
