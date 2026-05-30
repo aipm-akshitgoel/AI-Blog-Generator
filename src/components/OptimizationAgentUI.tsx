@@ -796,7 +796,7 @@ export function OptimizationAgentUI({
                                 : linkSummary.min != null
                                   ? ` (target at least ${linkSummary.min})`
                                   : ` (target at most ${linkSummary.max})`}
-                            {!linkSummary.metMin ? " — open Edit content to add more if needed." : ""}
+                            {!linkSummary.metMin ? " Open Edit content to add more if needed." : ""}
                         </p>
                     )}
                 </div>
@@ -870,7 +870,7 @@ export function OptimizationAgentUI({
                             </div>
                         ) : resolvedKeywordPlan ? null : (
                             <p className="rounded-xl border border-neutral-200 bg-white p-4 text-[11px] text-[#718096]">
-                                No keyword plan on this draft — the writer must set{" "}
+                                No keyword plan on this draft. The writer must set{" "}
                                 <span className="font-medium">keywordPlan</span> during drafting.
                             </p>
                         )}
