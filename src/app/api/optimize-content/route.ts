@@ -36,6 +36,7 @@ import { runAiHumanizationLoop } from "@/lib/aiHumanizationLoop";
 import { applyZeroGptDetectionToScores, detectAiContentPercent } from "@/lib/zerogptAiDetection";
 import {
     measureFinalReadability,
+    runPostHumanizeReadabilityLoop,
     runReadabilityImprovementLoop,
 } from "@/lib/readabilityImprovement";
 import { resolveKeywordPlanForPost, verifyKeywordPlanForPost } from "@/lib/keywordPlanVerification";
@@ -463,13 +464,33 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 );
             }
 
-            // 5: Final readability after humanization (dashboard score)
-            const finalReadability = await measureFinalReadability(
+            const postReadability = await runPostHumanizeReadabilityLoop(
+                azure,
+                {
+                    ...blogPost,
+                    title: optimized.title,
+                    h1Title: blogPost.h1Title || optimized.title,
+                },
                 optimized.contentMarkdown,
-                blogPost.h1Title || optimized.title || blogPost.title,
             );
+            optimized.contentMarkdown = postReadability.contentMarkdown;
+
+            if (keywordPlanForRestore) {
+                optimized.contentMarkdown = boostMarkdownForKeywordPlan(
+                    optimized.contentMarkdown,
+                    keywordPlanForRestore,
+                );
+            }
 
             const insights = [...optimized.seoScores.actionableInsights];
+
+            let finalReadability = postReadability;
+            if (!postReadability.readabilityGrade) {
+                finalReadability = await measureFinalReadability(
+                    optimized.contentMarkdown,
+                    blogPost.h1Title || optimized.title || blogPost.title,
+                );
+            }
 
             if (finalReadability.readabilityGrade) {
                 optimized.seoScores = {
@@ -479,15 +500,9 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 };
                 if (!finalReadability.readabilityGrade.targetMet) {
                     insights.push(
-                        `Readability is ${finalReadability.readabilityGrade.gradeLabel} after humanization. Target is 8th grade or below.`,
+                        `Readability is ${finalReadability.readabilityGrade.gradeLabel} (Flesch ${finalReadability.readabilityGrade.fleschScore}). Target is 8th grade or below.`,
                     );
                 }
-            } else if (readability.readabilityGrade) {
-                optimized.seoScores = {
-                    ...optimized.seoScores,
-                    readability: readability.readabilityPercent,
-                    readabilityGrade: readability.readabilityGrade,
-                };
             } else {
                 optimized.seoScores = {
                     ...optimized.seoScores,
@@ -503,7 +518,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             }
 
             // Always re-score final markdown with ZeroGPT (matches zerogpt.com on published body).
-            const finalAiDetection = await detectAiContentPercent(optimized.contentMarkdown);
+            let finalAiDetection = await detectAiContentPercent(optimized.contentMarkdown);
             if (finalAiDetection) {
                 optimized.seoScores = applyZeroGptDetectionToScores(
                     optimized.seoScores,
@@ -511,9 +526,46 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     totalHumanizeAttempts,
                 );
                 if (!finalAiDetection.targetMet) {
-                    insights.push(
-                        `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT). Target is below ${20}%.`,
+                    const polishMarkdown = optimized.contentMarkdown;
+                    const aiPolish = await runAiHumanizationLoop(polishMarkdown, {
+                        ...humanizeOpts,
+                        maxAttempts: 2,
+                    });
+                    totalHumanizeAttempts += aiPolish.aiDetection?.attempts ?? 0;
+                    optimized.contentMarkdown = restoreHeadingsAfterHumanize(
+                        aiPolish.contentMarkdown,
+                        polishMarkdown,
+                        seoRestoreOptions,
                     );
+                    if (keywordPlanForRestore) {
+                        optimized.contentMarkdown = boostMarkdownForKeywordPlan(
+                            optimized.contentMarkdown,
+                            keywordPlanForRestore,
+                        );
+                    }
+                    finalAiDetection =
+                        (await detectAiContentPercent(optimized.contentMarkdown)) ?? finalAiDetection;
+                    optimized.seoScores = applyZeroGptDetectionToScores(
+                        optimized.seoScores,
+                        finalAiDetection,
+                        totalHumanizeAttempts,
+                    );
+                    if (!finalAiDetection.targetMet) {
+                        insights.push(
+                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT). Target is below ${20}%.`,
+                        );
+                    }
+                    const afterPolishReadability = await measureFinalReadability(
+                        optimized.contentMarkdown,
+                        blogPost.h1Title || optimized.title || blogPost.title,
+                    );
+                    if (afterPolishReadability.readabilityGrade) {
+                        optimized.seoScores = {
+                            ...optimized.seoScores,
+                            readability: afterPolishReadability.readabilityPercent,
+                            readabilityGrade: afterPolishReadability.readabilityGrade,
+                        };
+                    }
                 }
             } else if (humanized.aiDetection) {
                 optimized.seoScores = applyZeroGptDetectionToScores(

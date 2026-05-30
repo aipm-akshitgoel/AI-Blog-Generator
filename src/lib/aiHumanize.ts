@@ -132,9 +132,9 @@ export async function humanizeMarkdown(
     return rewritten.join("\n\n").trim();
 }
 
-type MarkdownPart = { type: "heading"; text: string } | { type: "body"; text: string };
+export type MarkdownPart = { type: "heading"; text: string } | { type: "body"; text: string };
 
-function splitMarkdownPreservingHeadings(markdown: string): MarkdownPart[] {
+export function splitMarkdownPreservingHeadings(markdown: string): MarkdownPart[] {
     const parts: MarkdownPart[] = [];
     const lines = String(markdown || "").split("\n");
     let bodyLines: string[] = [];

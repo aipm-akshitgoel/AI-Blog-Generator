@@ -48,7 +48,7 @@ function readabilityBarClass(scores: SeoScores): string {
     if (scores.readabilityGrade?.targetMet === true) return METRIC_BAR_GOOD;
     if (scores.readabilityGrade?.targetMet === false) return METRIC_BAR_WARN;
     if (!scores.readabilityGrade) return METRIC_BAR_WARN;
-    if (scores.readability >= 60) return METRIC_BAR_GOOD;
+    if (scores.readabilityGrade.fleschScore >= 60 || scores.readability >= 60) return METRIC_BAR_GOOD;
     if (scores.readability >= 45) return METRIC_BAR_READABILITY_MID;
     return METRIC_BAR_WARN;
 }

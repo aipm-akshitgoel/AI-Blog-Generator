@@ -5,6 +5,7 @@ import {
     createAzureClient,
     type AzureConfig,
 } from "@/lib/azureOpenAI";
+import { splitMarkdownPreservingHeadings } from "@/lib/aiHumanize";
 import {
     fetchReadabilityScore,
     fleschEaseToReadabilityPercent,
@@ -12,6 +13,11 @@ import {
     READABILITY_MAX_ATTEMPTS,
     type ReadabilityGradeResult,
 } from "@/lib/seoReviewToolsReadability";
+
+/** After humanize — extra edits without undoing detector-friendly tone. */
+export const POST_HUMANIZE_READABILITY_MAX_ATTEMPTS = 3;
+/** Flesch ease bar we aim for on the dashboard (0–100). */
+export const FLESCH_READABILITY_BAR_TARGET = 60;
 
 export const READABILITY_IMPROVE_USER_PROMPT =
     "Improve the readability. Bring the text to a 7th–8th grade reading level (Flesch-Kincaid). Use shorter sentences, simpler everyday words, and clear paragraphs. Keep all facts, headings, and markdown links unchanged.";
@@ -46,16 +52,6 @@ Article markdown:
 ${markdown}`;
 }
 
-function pickLowestGradeCandidate(
-    candidates: { markdown: string; measurement: ReadabilityGradeResult }[],
-): { markdown: string; measurement: ReadabilityGradeResult } {
-    return candidates.reduce((best, cur) => {
-        if (cur.measurement.gradeLevel < best.measurement.gradeLevel) return cur;
-        if (cur.measurement.gradeLevel > best.measurement.gradeLevel) return best;
-        return cur.measurement.fleschScore >= best.measurement.fleschScore ? cur : best;
-    });
-}
-
 function toReadabilityGrade(
     measurement: ReadabilityGradeResult,
     attempts: number,
@@ -73,11 +69,49 @@ function toReadabilityGrade(
     };
 }
 
+function buildPostHumanizeReadabilitySystemPrompt(): string {
+    return `You are an expert editor simplifying web articles for a general audience (7th–8th grade reading level).
+
+Rules:
+- Return ONLY the revised markdown (no JSON, no code fences, no commentary).
+- Use short sentences (aim under 18 words), everyday words, and clear paragraphs.
+- Keep a natural, human voice — NOT stiff or obviously AI-written. No em-dashes (—).
+- Avoid "delve", "elevate", "moreover", "in today's landscape", "it's important to note".
+- Preserve every ## and ### heading line EXACTLY as given in each section (do not add or remove headings).
+- Preserve all [anchor](url) internal links exactly (same URLs and anchor text).
+- Preserve exact multi-word keyword phrases already in the text — do not delete or rephrase them.
+- Do NOT add an H1 or a ## FAQs section.`;
+}
+
+function pickBestReadabilityCandidate(
+    candidates: { markdown: string; measurement: ReadabilityGradeResult }[],
+): { markdown: string; measurement: ReadabilityGradeResult } {
+    return candidates.reduce((best, cur) => {
+        const c = cur.measurement;
+        const b = best.measurement;
+        const cMet = meetsReadabilityTarget(c.gradeLevel);
+        const bMet = meetsReadabilityTarget(b.gradeLevel);
+        if (cMet && !bMet) return cur;
+        if (!cMet && bMet) return best;
+        if (c.fleschScore !== b.fleschScore) {
+            return c.fleschScore > b.fleschScore ? cur : best;
+        }
+        return c.gradeLevel < b.gradeLevel ? cur : best;
+    });
+}
+
+function needsReadabilityImprovement(measurement: ReadabilityGradeResult): boolean {
+    return (
+        !meetsReadabilityTarget(measurement.gradeLevel) ||
+        measurement.fleschScore < FLESCH_READABILITY_BAR_TARGET
+    );
+}
+
 async function improveReadabilityWithModel(
     azure: AzureConfig,
     markdown: string,
     blogPost: BlogPost,
-    options?: { measurement?: ReadabilityGradeResult; attempt?: number },
+    options?: { measurement?: ReadabilityGradeResult; attempt?: number; postHumanize?: boolean },
 ): Promise<string> {
     const client = createAzureClient(azure);
     const userContent =
@@ -85,11 +119,15 @@ async function improveReadabilityWithModel(
             ? buildRetryUserPrompt(markdown, options.measurement, options.attempt)
             : `Revise this blog article markdown for grade 7–8 readability:\n\n${markdown}`;
 
+    const systemPrompt = options?.postHumanize
+        ? buildPostHumanizeReadabilitySystemPrompt()
+        : buildReadabilitySystemPrompt();
+
     const response = await client.chat.completions.create({
         model: azure.deployment,
         max_completion_tokens: 4000,
         messages: [
-            { role: "system", content: buildReadabilitySystemPrompt() },
+            { role: "system", content: systemPrompt },
             {
                 role: "user",
                 content: `Title (context only): ${blogPost.title}\n\n${userContent}`,
@@ -102,6 +140,28 @@ async function improveReadabilityWithModel(
     text = text.replace(/^```(?:markdown)?\s*/i, "").replace(/\s*```$/i, "").trim();
     if (!text) return markdown;
     return text.replace(/\\n/g, "\n");
+}
+
+/** Simplify body blocks only; heading lines are returned unchanged. */
+async function improveMarkdownPreservingHeadings(
+    azure: AzureConfig,
+    markdown: string,
+    blogPost: BlogPost,
+    options?: { measurement?: ReadabilityGradeResult; attempt?: number; postHumanize?: boolean },
+): Promise<string> {
+    const parts = splitMarkdownPreservingHeadings(markdown);
+    const out: string[] = [];
+
+    for (const part of parts) {
+        if (part.type === "heading") {
+            out.push(part.text);
+            continue;
+        }
+        const revised = await improveReadabilityWithModel(azure, part.text, blogPost, options);
+        out.push(revised.trim() ? revised.trim() : part.text);
+    }
+
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export type ReadabilityLoopResult = {
@@ -136,13 +196,9 @@ export async function runReadabilityImprovementLoop(
 
     candidates.push({ markdown, measurement });
 
-    while (attemptsUsed < READABILITY_MAX_ATTEMPTS) {
-        if (meetsReadabilityTarget(measurement.gradeLevel)) {
-            break;
-        }
-
+    while (attemptsUsed < READABILITY_MAX_ATTEMPTS && needsReadabilityImprovement(measurement)) {
         attemptsUsed++;
-        markdown = await improveReadabilityWithModel(azure, markdown, blogPost, {
+        markdown = await improveMarkdownPreservingHeadings(azure, markdown, blogPost, {
             measurement,
             attempt: attemptsUsed,
         });
@@ -150,8 +206,58 @@ export async function runReadabilityImprovementLoop(
         candidates.push({ markdown, measurement });
     }
 
-    const best = pickLowestGradeCandidate(candidates);
+    const best = pickBestReadabilityCandidate(candidates);
     const readabilityGrade = toReadabilityGrade(best.measurement, attemptsUsed, false);
+
+    return {
+        contentMarkdown: best.markdown,
+        readabilityGrade,
+        readabilityPercent: fleschEaseToReadabilityPercent(best.measurement.fleschScore),
+    };
+}
+
+/**
+ * Simplify copy after humanize/keyword passes — keeps headings and keyword phrases, then picks
+ * the version with the best Flesch score while staying human-sounding.
+ */
+export async function runPostHumanizeReadabilityLoop(
+    azure: AzureConfig,
+    blogPost: BlogPost,
+    initialMarkdown: string,
+): Promise<ReadabilityLoopResult> {
+    const candidates: { markdown: string; measurement: ReadabilityGradeResult }[] = [];
+    let markdown = initialMarkdown;
+    let attemptsUsed = 0;
+    const title = blogPost.h1Title || blogPost.title;
+
+    const measure = async () => fetchReadabilityScore(markdown, undefined, { title });
+
+    let measurement = await measure();
+    if (!measurement) {
+        return {
+            contentMarkdown: markdown,
+            readabilityGrade: null,
+            readabilityPercent: 0,
+            skippedReason: READABILITY_API_UNAVAILABLE,
+        };
+    }
+
+    candidates.push({ markdown, measurement });
+
+    const maxAttempts = POST_HUMANIZE_READABILITY_MAX_ATTEMPTS;
+    while (attemptsUsed < maxAttempts && needsReadabilityImprovement(measurement)) {
+        attemptsUsed++;
+        markdown = await improveMarkdownPreservingHeadings(azure, markdown, blogPost, {
+            measurement,
+            attempt: attemptsUsed,
+            postHumanize: true,
+        });
+        measurement = (await measure()) ?? measurement;
+        candidates.push({ markdown, measurement });
+    }
+
+    const best = pickBestReadabilityCandidate(candidates);
+    const readabilityGrade = toReadabilityGrade(best.measurement, attemptsUsed, true);
 
     return {
         contentMarkdown: best.markdown,
