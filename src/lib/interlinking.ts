@@ -475,21 +475,48 @@ function phraseCandidatesForLink(link: ApprovedLink, domain?: string): string[] 
     );
 }
 
+/** Match phrase only on whole words (avoids linking "program" inside "programmes"). */
+function findWholePhraseInParagraph(
+    paragraph: string,
+    phrase: string,
+): { index: number; length: number } | null {
+    const needle = phrase.trim();
+    if (!needle || needle.length < 3) return null;
+
+    const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = escaped.replace(/\s+/g, "\\s+");
+    const re = new RegExp(`(?<![a-z0-9])${pattern}(?![a-z0-9])`, "i");
+    const match = re.exec(paragraph);
+    if (!match || match.index == null) return null;
+    return { index: match.index, length: match[0].length };
+}
+
+function rangeOverlapsMarkdownLink(paragraph: string, start: number, end: number): boolean {
+    for (const m of paragraph.matchAll(MARKDOWN_LINK_RE)) {
+        const idx = m.index ?? -1;
+        if (idx < 0) continue;
+        const linkEnd = idx + m[0].length;
+        if (start < linkEnd && end > idx) return true;
+    }
+    return false;
+}
+
 function insertLinkOnPhrase(paragraph: string, phrase: string, href: string): string | null {
     const needle = phrase.trim();
     if (!needle || needle.length < 3) return null;
     if (paragraph.includes(`](${href})`)) return null;
 
-    const lower = paragraph.toLowerCase();
-    const idx = lower.indexOf(needle.toLowerCase());
-    if (idx < 0) return null;
+    const found = findWholePhraseInParagraph(paragraph, needle);
+    if (!found) return null;
 
+    const { index: idx, length } = found;
     const before = paragraph.slice(0, idx);
-    const match = paragraph.slice(idx, idx + needle.length);
-    const after = paragraph.slice(idx + needle.length);
+    const match = paragraph.slice(idx, idx + length);
+    const after = paragraph.slice(idx + length);
 
     if (before.endsWith("[") || after.startsWith("](")) return null;
     if (/\[[^\]]*$/.test(before)) return null;
+    if (rangeOverlapsMarkdownLink(paragraph, idx, idx + length)) return null;
 
     return `${before}[${match}](${href})${after}`;
 }
@@ -584,8 +611,11 @@ function phraseCandidatesForEnforcement(
         "online MBA",
         "MBA program",
         "MBA programs",
+        "MBA programmes",
         "degree program",
         "degree programs",
+        "degree programme",
+        "degree programmes",
         "college degree",
         "career goals",
         "accreditation",
