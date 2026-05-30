@@ -436,7 +436,17 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 throw new Error("SKIP_POST_PIPELINE");
             }
 
-            // Humanize Azure draft first (before readability edits — readability can skew pre-key ZeroGPT).
+            const readability = await runReadabilityImprovementLoop(
+                azure,
+                blogPost,
+                optimized.contentMarkdown,
+                {
+                    maxAttempts: pipelineProfile.readabilityMaxAttempts,
+                    targetGradeMax: readabilityTargetGradeMax,
+                },
+            );
+            optimized.contentMarkdown = readability.contentMarkdown;
+
             const markdownBeforeHumanize = optimized.contentMarkdown;
             const keywordPlanForRestore =
                 resolveKeywordPlanForPost(blogPost, contentConstraints ?? null, contentConstraints?.domainPrimaryKeyword?.trim()) ??
@@ -472,17 +482,6 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 `[optimize-content] Humanize: ${totalHumanizeAttempts} pass(es)`,
                 humanizeSkippedReason ?? "ok",
             );
-
-            const readability = await runReadabilityImprovementLoop(
-                azure,
-                blogPost,
-                optimized.contentMarkdown,
-                {
-                    maxAttempts: pipelineProfile.readabilityMaxAttempts,
-                    targetGradeMax: readabilityTargetGradeMax,
-                },
-            );
-            optimized.contentMarkdown = readability.contentMarkdown;
 
             if (keywordPlanForRestore) {
                 optimized.contentMarkdown = boostMarkdownForKeywordPlan(
