@@ -39,7 +39,8 @@ export type AiHumanizationLoopOptions = {
 };
 
 /**
- * Humanize until ZeroGPT AI % is below target, or attempts exhausted.
+ * Humanize up to maxAttempts times, each pass rewriting the **original** draft (not chained).
+ * Keeps the version with the lowest ZeroGPT AI %; stops early when below target.
  * Uses AI Humanize "enhanced" model by default (see AI_HUMANIZE_MODEL).
  */
 export async function runAiHumanizationLoop(
@@ -50,14 +51,11 @@ export async function runAiHumanizationLoop(
     const preserveHeadings = options?.preserveHeadings !== false;
     const humanize = preserveHeadings ? humanizeMarkdownPreservingHeadings : humanizeMarkdown;
 
-    let markdown = initialMarkdown;
-    let attemptsUsed = 0;
-
-    const initialStatus = await detectAiContentPercentWithStatus(markdown);
-    let detection = initialStatus.result;
-    if (!detection) {
+    const initialStatus = await detectAiContentPercentWithStatus(initialMarkdown);
+    const baselineDetection = initialStatus.result;
+    if (!baselineDetection) {
         return {
-            contentMarkdown: markdown,
+            contentMarkdown: initialMarkdown,
             aiDetection: null,
             skippedReason:
                 initialStatus.error ??
@@ -67,35 +65,45 @@ export async function runAiHumanizationLoop(
 
     if (!getAiHumanizeConfig()) {
         return {
-            contentMarkdown: markdown,
-            aiDetection: toAiDetectionScore(detection, 0),
+            contentMarkdown: initialMarkdown,
+            aiDetection: toAiDetectionScore(baselineDetection, 0),
             skippedReason:
                 "AI Humanize not configured (AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL) — showing ZeroGPT score only",
         };
     }
 
-    if (meetsAiDetectionTarget(detection.aiPercent)) {
+    if (meetsAiDetectionTarget(baselineDetection.aiPercent)) {
         return {
-            contentMarkdown: markdown,
-            aiDetection: toAiDetectionScore(detection, 0),
+            contentMarkdown: initialMarkdown,
+            aiDetection: toAiDetectionScore(baselineDetection, 0),
         };
     }
 
-    while (!meetsAiDetectionTarget(detection.aiPercent) && attemptsUsed < maxAttempts) {
+    let bestMarkdown = initialMarkdown;
+    let bestDetection = baselineDetection;
+    let attemptsUsed = 0;
+
+    while (!meetsAiDetectionTarget(bestDetection.aiPercent) && attemptsUsed < maxAttempts) {
         attemptsUsed++;
         try {
-            markdown = await humanize(markdown);
+            const candidate = await humanize(initialMarkdown);
+            const next = await detectAiContentPercent(candidate);
+            if (!next) break;
+            if (next.aiPercent < bestDetection.aiPercent) {
+                bestMarkdown = candidate;
+                bestDetection = next;
+            }
+            if (meetsAiDetectionTarget(next.aiPercent)) {
+                break;
+            }
         } catch (err) {
             console.warn("[ai-humanize] rewrite failed:", err);
             break;
         }
-        const next = await detectAiContentPercent(markdown);
-        if (!next) break;
-        detection = next;
     }
 
     return {
-        contentMarkdown: markdown,
-        aiDetection: toAiDetectionScore(detection, attemptsUsed),
+        contentMarkdown: bestMarkdown,
+        aiDetection: toAiDetectionScore(bestDetection, attemptsUsed),
     };
 }
