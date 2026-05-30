@@ -1,5 +1,9 @@
 import type { AiDetectionScore } from "@/lib/types/optimization";
-import { getAiHumanizeConfig, humanizeMarkdown } from "@/lib/aiHumanize";
+import {
+    getAiHumanizeConfig,
+    humanizeMarkdown,
+    humanizeMarkdownPreservingHeadings,
+} from "@/lib/aiHumanize";
 import {
     AI_DETECTION_MAX_HUMANIZE_ATTEMPTS,
     detectAiContentPercent,
@@ -26,9 +30,25 @@ export type AiHumanizationLoopResult = {
     skippedReason?: string;
 };
 
+export type AiHumanizationLoopOptions = {
+    /** Max full-article humanize passes (default from env cap). */
+    maxAttempts?: number;
+    /** Keep markdown headings unchanged (recommended — protects readability structure). */
+    preserveHeadings?: boolean;
+};
+
+/**
+ * Humanize until ZeroGPT AI % is below target, or attempts exhausted.
+ * Uses AI Humanize "enhanced" model by default (see AI_HUMANIZE_MODEL).
+ */
 export async function runAiHumanizationLoop(
     initialMarkdown: string,
+    options?: AiHumanizationLoopOptions,
 ): Promise<AiHumanizationLoopResult> {
+    const maxAttempts = options?.maxAttempts ?? AI_DETECTION_MAX_HUMANIZE_ATTEMPTS;
+    const preserveHeadings = options?.preserveHeadings !== false;
+    const humanize = preserveHeadings ? humanizeMarkdownPreservingHeadings : humanizeMarkdown;
+
     let markdown = initialMarkdown;
     let attemptsUsed = 0;
 
@@ -51,10 +71,17 @@ export async function runAiHumanizationLoop(
         };
     }
 
-    while (!meetsAiDetectionTarget(detection.aiPercent) && attemptsUsed < AI_DETECTION_MAX_HUMANIZE_ATTEMPTS) {
+    if (meetsAiDetectionTarget(detection.aiPercent)) {
+        return {
+            contentMarkdown: markdown,
+            aiDetection: toAiDetectionScore(detection, 0),
+        };
+    }
+
+    while (!meetsAiDetectionTarget(detection.aiPercent) && attemptsUsed < maxAttempts) {
         attemptsUsed++;
         try {
-            markdown = await humanizeMarkdown(markdown);
+            markdown = await humanize(markdown);
         } catch (err) {
             console.warn("[ai-humanize] rewrite failed:", err);
             break;

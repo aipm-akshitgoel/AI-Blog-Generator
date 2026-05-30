@@ -39,7 +39,11 @@ import {
     runReadabilityImprovementLoop,
 } from "@/lib/readabilityImprovement";
 import { resolveKeywordPlanForPost, verifyKeywordPlanForPost } from "@/lib/keywordPlanVerification";
-import { boostMarkdownForKeywordPlan, restoreSeoAfterHumanize } from "@/lib/restoreSeoAfterHumanize";
+import {
+    boostMarkdownForKeywordPlan,
+    restoreHeadingsAfterHumanize,
+    restoreSeoAfterHumanize,
+} from "@/lib/restoreSeoAfterHumanize";
 import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
@@ -407,19 +411,50 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             );
             optimized.contentMarkdown = readability.contentMarkdown;
 
-            // AI humanize until ZeroGPT AI < 20% (max 3 humanize passes)
             const markdownBeforeHumanize = optimized.contentMarkdown;
-            const humanized = await runAiHumanizationLoop(markdownBeforeHumanize);
             const keywordPlanForRestore =
                 resolveKeywordPlanForPost(blogPost, contentConstraints ?? null, contentConstraints?.domainPrimaryKeyword?.trim()) ??
                 blogPost.keywordPlan ??
                 null;
+            const seoRestoreOptions = {
+                contentConstraints: contentConstraints ?? null,
+                h2Suggestions: blogPost.h2Suggestions,
+            };
+
+            // Pass 1: humanize readable draft. Pass 2: after keyword weave (main AI-score killer).
+            const humanizeOpts = { preserveHeadings: true as const };
+            const humanized = await runAiHumanizationLoop(markdownBeforeHumanize, {
+                ...humanizeOpts,
+                maxAttempts: 3,
+            });
+
             optimized.contentMarkdown = restoreSeoAfterHumanize(humanized.contentMarkdown, {
                 canonicalMarkdown: markdownBeforeHumanize,
                 keywordPlan: keywordPlanForRestore,
-                contentConstraints: contentConstraints ?? null,
-                h2Suggestions: blogPost.h2Suggestions,
+                ...seoRestoreOptions,
             });
+
+            if (keywordPlanForRestore) {
+                optimized.contentMarkdown = boostMarkdownForKeywordPlan(
+                    optimized.contentMarkdown,
+                    keywordPlanForRestore,
+                );
+            }
+
+            const markdownAfterKeywords = optimized.contentMarkdown;
+            let totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
+
+            const postSeoHumanized = await runAiHumanizationLoop(markdownAfterKeywords, {
+                ...humanizeOpts,
+                maxAttempts: 5,
+            });
+            totalHumanizeAttempts += postSeoHumanized.aiDetection?.attempts ?? 0;
+
+            optimized.contentMarkdown = restoreHeadingsAfterHumanize(
+                postSeoHumanized.contentMarkdown,
+                markdownAfterKeywords,
+                seoRestoreOptions,
+            );
 
             if (keywordPlanForRestore) {
                 optimized.contentMarkdown = boostMarkdownForKeywordPlan(
@@ -473,7 +508,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 optimized.seoScores = applyZeroGptDetectionToScores(
                     optimized.seoScores,
                     finalAiDetection,
-                    humanized.aiDetection?.attempts ?? 0,
+                    totalHumanizeAttempts,
                 );
                 if (!finalAiDetection.targetMet) {
                     insights.push(

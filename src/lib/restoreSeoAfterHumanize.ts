@@ -333,6 +333,20 @@ export function boostMarkdownForKeywordPlan(markdown: string, plan: KeywordPlan)
  * After AI Humanize, restore locked/canonical ## / ### headings and re-insert keywordPlan phrases
  * that were removed during rewriting.
  */
+/** Restore headings only (no keyword boost) — use between humanize passes. */
+export function restoreHeadingsAfterHumanize(
+    humanizedMarkdown: string,
+    canonicalMarkdown: string,
+    options?: Pick<RestoreSeoAfterHumanizeOptions, "contentConstraints" | "h2Suggestions">,
+): string {
+    return restoreSeoAfterHumanize(humanizedMarkdown, {
+        canonicalMarkdown,
+        keywordPlan: null,
+        contentConstraints: options?.contentConstraints ?? null,
+        h2Suggestions: options?.h2Suggestions,
+    });
+}
+
 export function restoreSeoAfterHumanize(
     humanizedMarkdown: string,
     options: RestoreSeoAfterHumanizeOptions,

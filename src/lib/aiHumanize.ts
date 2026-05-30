@@ -7,11 +7,16 @@ const REWRITE_URL = "https://aihumanize.io/api/v1/rewrite";
 const MIN_CHARS = 100;
 const MAX_CHARS = 10_000;
 
-export function getAiHumanizeConfig(): { apiKey: string; email: string; model: string } | null {
+/** 0 = quality, 1 = balance, 2 = enhanced (best for bypassing ZeroGPT / AI detectors). */
+export const AI_HUMANIZE_MODEL_ENHANCED = "2";
+
+export type AiHumanizeConfig = { apiKey: string; email: string; model: string };
+
+export function getAiHumanizeConfig(): AiHumanizeConfig | null {
     const apiKey = process.env.AI_HUMANIZE_API_KEY?.trim();
     const email = process.env.AI_HUMANIZE_EMAIL?.trim();
     if (!apiKey || !email) return null;
-    const model = process.env.AI_HUMANIZE_MODEL?.trim() || "0";
+    const model = process.env.AI_HUMANIZE_MODEL?.trim() || AI_HUMANIZE_MODEL_ENHANCED;
     return { apiKey, email, model };
 }
 
@@ -107,9 +112,12 @@ export async function humanizeMarkdownChunk(
     return json.data.trim();
 }
 
-export async function humanizeMarkdown(markdown: string): Promise<string> {
-    const config = getAiHumanizeConfig();
-    if (!config) {
+export async function humanizeMarkdown(
+    markdown: string,
+    config?: AiHumanizeConfig,
+): Promise<string> {
+    const cfg = config ?? getAiHumanizeConfig();
+    if (!cfg) {
         throw new Error("AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL are not configured");
     }
 
@@ -118,8 +126,60 @@ export async function humanizeMarkdown(markdown: string): Promise<string> {
 
     const rewritten: string[] = [];
     for (const chunk of chunks) {
-        rewritten.push(await humanizeMarkdownChunk(chunk, config));
+        rewritten.push(await humanizeMarkdownChunk(chunk, cfg));
     }
 
     return rewritten.join("\n\n").trim();
+}
+
+type MarkdownPart = { type: "heading"; text: string } | { type: "body"; text: string };
+
+function splitMarkdownPreservingHeadings(markdown: string): MarkdownPart[] {
+    const parts: MarkdownPart[] = [];
+    const lines = String(markdown || "").split("\n");
+    let bodyLines: string[] = [];
+
+    const flushBody = () => {
+        const text = bodyLines.join("\n").trim();
+        bodyLines = [];
+        if (text) parts.push({ type: "body", text });
+    };
+
+    for (const line of lines) {
+        if (/^#{1,6}\s+/.test(line)) {
+            flushBody();
+            parts.push({ type: "heading", text: line });
+        } else {
+            bodyLines.push(line);
+        }
+    }
+    flushBody();
+    return parts.length > 0 ? parts : [{ type: "body", text: String(markdown || "").trim() }];
+}
+
+/**
+ * Humanize body copy only — ## / ### lines stay verbatim (readability structure unchanged).
+ */
+export async function humanizeMarkdownPreservingHeadings(
+    markdown: string,
+    config?: AiHumanizeConfig,
+): Promise<string> {
+    const cfg = config ?? getAiHumanizeConfig();
+    if (!cfg) {
+        throw new Error("AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL are not configured");
+    }
+
+    const parts = splitMarkdownPreservingHeadings(markdown);
+    const out: string[] = [];
+
+    for (const part of parts) {
+        if (part.type === "heading") {
+            out.push(part.text);
+            continue;
+        }
+        const rewritten = await humanizeMarkdown(part.text, cfg);
+        out.push(rewritten.trim() ? rewritten.trim() : part.text);
+    }
+
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }

@@ -4,7 +4,7 @@
  */
 
 export const AI_DETECTION_TARGET_PERCENT_MAX = 20;
-export const AI_DETECTION_MAX_HUMANIZE_ATTEMPTS = 3;
+export const AI_DETECTION_MAX_HUMANIZE_ATTEMPTS = 5;
 
 const DEFAULT_ORG_DETECT_URL = "https://api.zerogpt.org/api/v1/developer/detect";
 /** Legacy zerogpt.com keys (UUID) use ApiKey header + detectText endpoint. */
