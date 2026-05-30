@@ -118,12 +118,12 @@ function shortZeroGptErrorLabel(error: string): string {
     return "ZeroGPT unavailable";
 }
 
-/** Show ZeroGPT when verified; otherwise optimizer estimate (AI Humanize when ZeroGPT is off). */
+/** Show ZeroGPT when verified; otherwise optimizer estimate with reason. */
 function formatAiContentDisplay(
     scores: SeoScores | null | undefined,
     detectionResolved: boolean,
     detectionError?: string | null,
-): { value: number; suffix: string; barClass: string; help: string; statusNote?: string; showZeroGptBrand: boolean } {
+): { value: number; suffix: string; barClass: string; help: string; statusNote?: string } {
     if (scores?.aiDetection?.provider === "zerogpt") {
         const pct = scores.aiDetection.aiPercent;
         const rounded = Math.round(pct * 10) / 10;
@@ -132,7 +132,6 @@ function formatAiContentDisplay(
             suffix: `${rounded}%`,
             barClass: aiContentBarClass(scores),
             help: "Verified with ZeroGPT on this draft. Lower is better. Green = below 20%.",
-            showZeroGptBrand: true,
         };
     }
     if (!detectionResolved) {
@@ -140,8 +139,7 @@ function formatAiContentDisplay(
             value: 0,
             suffix: "Checking…",
             barClass: METRIC_BAR_PENDING,
-            help: "Measuring AI content on this draft.",
-            showZeroGptBrand: false,
+            help: "Running ZeroGPT on this draft. The score appears when verification finishes.",
         };
     }
 
@@ -149,7 +147,6 @@ function formatAiContentDisplay(
         detectionError?.trim() ||
         scores?.aiDetectionError?.trim() ||
         null;
-    const isDisabled = err?.toLowerCase().includes("disabled");
     const estimate = scores?.aiContentPercent;
     const hasEstimate = typeof estimate === "number" && Number.isFinite(estimate);
 
@@ -157,29 +154,23 @@ function formatAiContentDisplay(
         const rounded = Math.round(estimate);
         return {
             value: rounded,
-            suffix: isDisabled || !err ? `${rounded}% est.` : `${rounded}% est.`,
+            suffix: err ? `${rounded}% est.` : `${rounded}%`,
             barClass: METRIC_BAR_AI_MID,
-            help: isDisabled
-                ? "Optimizer estimate. AI Humanize (enhanced) ran on this draft; ZeroGPT verification is off."
-                : err
-                  ? `ZeroGPT unavailable (${err}). Showing optimizer estimate. Top up ZeroGPT credits or set ZEROGPT_ENABLED=true, then Refresh.`
-                  : "Optimizer estimate. ZeroGPT verification did not run on this draft.",
-            statusNote: err && !isDisabled ? shortZeroGptErrorLabel(err) : undefined,
-            showZeroGptBrand: false,
+            help: err
+                ? `ZeroGPT unavailable (${err}). Showing optimizer estimate. Top up ZeroGPT credits or fix ZEROGPT_API_KEY on Vercel, then Refresh.`
+                : "Optimizer estimate. ZeroGPT verification did not run on this draft.",
+            statusNote: err ? shortZeroGptErrorLabel(err) : undefined,
         };
     }
 
     return {
         value: 0,
-        suffix: err && !isDisabled ? shortZeroGptErrorLabel(err) : "Unavailable",
+        suffix: err ? shortZeroGptErrorLabel(err) : "Unavailable",
         barClass: METRIC_BAR_AI_MID,
-        help: isDisabled
-            ? "AI Humanize (enhanced) ran on this draft. ZeroGPT verification is off."
-            : err
-              ? `ZeroGPT unavailable: ${err}. Add ZEROGPT_API_KEY and set ZEROGPT_ENABLED=true, then Refresh.`
-              : "ZeroGPT could not score this draft. Check ZEROGPT_API_KEY and credits, then Refresh.",
-        statusNote: err && !isDisabled ? err : undefined,
-        showZeroGptBrand: false,
+        help: err
+            ? `ZeroGPT unavailable: ${err}. Add ZEROGPT_API_KEY and credits on Vercel, then Refresh.`
+            : "ZeroGPT could not score this draft. Check ZEROGPT_API_KEY and credits, then Refresh.",
+        statusNote: err ?? undefined,
     };
 }
 
@@ -414,7 +405,6 @@ export function OptimizationAgentUI({
     const [isRefreshingMetrics, setIsRefreshingMetrics] = useState(false);
     const [metricsRefreshError, setMetricsRefreshError] = useState<string | null>(null);
     const [aiDetectionResolved, setAiDetectionResolved] = useState(false);
-    const [zeroGptEnabled, setZeroGptEnabled] = useState(false);
     const [readabilityResolved, setReadabilityResolved] = useState(false);
     const optimizeAbortRef = useRef<AbortController | null>(null);
     const resultsTopRef = useRef<HTMLDivElement>(null);
@@ -623,14 +613,6 @@ export function OptimizationAgentUI({
             setAiDetectionResolved(true);
             return;
         }
-        if (!zeroGptEnabled) {
-            setAiDetectionResolved(true);
-            return;
-        }
-        if (liveScores?.aiDetectionError?.trim()) {
-            setAiDetectionResolved(true);
-            return;
-        }
 
         let cancelled = false;
         void fetch("/api/ai-detection", {
@@ -645,14 +627,8 @@ export function OptimizationAgentUI({
                     targetMet?: boolean;
                     confidence?: string;
                     error?: string;
-                    disabled?: boolean;
                 };
                 if (cancelled) return;
-
-                if (data.disabled) {
-                    setAiDetectionResolved(true);
-                    return;
-                }
 
                 if (res.ok && typeof data.aiPercent === "number" && !data.error) {
                     const aiPct = data.aiPercent;
@@ -700,7 +676,7 @@ export function OptimizationAgentUI({
         return () => {
             cancelled = true;
         };
-    }, [optimizedData, isEditing, liveScores?.aiDetection?.provider, liveScores?.aiDetectionError, zeroGptEnabled]);
+    }, [optimizedData, isEditing, liveScores?.aiDetection?.provider]);
 
     const metricsRefreshOptions = {
         post: { ...post, contentMarkdown: optimizedData?.contentMarkdown ?? post.contentMarkdown },
@@ -718,7 +694,7 @@ export function OptimizationAgentUI({
                 post: { ...metricsRefreshOptions.post, contentMarkdown: markdown },
             });
             setLiveScores(refreshed);
-            setAiDetectionResolved(true);
+            setAiDetectionResolved(refreshed.aiDetection?.provider === "zerogpt");
             setReadabilityResolved(Boolean(refreshed.readabilityGrade));
             setHighlightScores(true);
             return refreshed;
@@ -750,7 +726,6 @@ export function OptimizationAgentUI({
             setLoadingPhase("links");
             setError(null);
             setAiDetectionResolved(false);
-            setZeroGptEnabled(false);
             try {
                 setLoadingPhase("optimize");
                 const data = await requestContentOptimization(
@@ -762,7 +737,6 @@ export function OptimizationAgentUI({
 
                 if (latestRequestRef.current !== requestId) return;
                 setOptimizedData(data.optimized);
-                setZeroGptEnabled(data.zeroGptEnabled === true);
                 setFactSources(
                     data.optimized.factSources?.length
                         ? data.optimized.factSources
@@ -773,9 +747,7 @@ export function OptimizationAgentUI({
                     data.optimized.plagiarismReport?.overallSimilarity ?? 0,
                 );
                 setLiveScores(scores);
-                setAiDetectionResolved(
-                    data.zeroGptEnabled !== true || scores.aiDetection?.provider === "zerogpt",
-                );
+                setAiDetectionResolved(scores.aiDetection?.provider === "zerogpt");
                 setReadabilityResolved(Boolean(scores.readabilityGrade));
                 setScoreDeltas(null);
                 setError(null);
@@ -1088,17 +1060,12 @@ export function OptimizationAgentUI({
                                                         ? scoreDeltas?.aiContentPercent
                                                         : undefined
                                                 }
-                                                brand={
-                                                    ai.showZeroGptBrand ? (
-                                                        <ZeroGptBadge variant="light" size="md" logoOnly />
-                                                    ) : undefined
-                                                }
+                                                brand={<ZeroGptBadge variant="light" size="md" logoOnly />}
                                             />
                                             {ai.statusNote ? (
                                                 <p className="text-[11px] text-amber-700 leading-snug -mt-1">
-                                                    {ai.statusNote}. Top up credits at zerogpt.org or set{" "}
-                                                    <span className="font-mono">ZEROGPT_ENABLED=true</span>, then
-                                                    Refresh.
+                                                    {ai.statusNote}. Top up credits at zerogpt.org or use Refresh
+                                                    after fixing <span className="font-mono">ZEROGPT_API_KEY</span>.
                                                 </p>
                                             ) : null}
                                         </>
@@ -1251,10 +1218,7 @@ export function OptimizationAgentUI({
                                             />
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                            {formatAiContentDisplay(liveScores, aiDetectionResolved)
-                                                .showZeroGptBrand ? (
-                                                <ZeroGptBadge size="sm" logoOnly />
-                                            ) : null}
+                                            <ZeroGptBadge size="sm" logoOnly />
                                             <EditContentMetric
                                                 label="AI Content%"
                                                 value={
@@ -1295,8 +1259,8 @@ export function OptimizationAgentUI({
                                     <p className="mt-2 text-xs text-amber-400/90 px-1">{metricsRefreshError}</p>
                                 ) : (
                                     <p className="mt-2 text-[11px] text-neutral-500 px-1">
-                                        Refresh re-runs readability (SEO Review Tools) and keyword density on your
-                                        current draft.
+                                        Refresh re-runs readability (SEO Review Tools), keyword density, and ZeroGPT
+                                        on your current draft.
                                     </p>
                                 )}
                             </div>

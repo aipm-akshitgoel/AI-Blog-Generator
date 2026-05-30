@@ -8,7 +8,6 @@ import {
     AI_DETECTION_MAX_HUMANIZE_ATTEMPTS,
     detectAiContentPercent,
     detectAiContentPercentWithStatus,
-    isZeroGptEnabled,
     meetsAiDetectionTarget,
 } from "@/lib/zerogptAiDetection";
 
@@ -41,7 +40,7 @@ export type AiHumanizationLoopOptions = {
 
 /**
  * Humanize until ZeroGPT AI % is below target, or attempts exhausted.
- * When ZeroGPT is disabled, runs a fixed number of AI Humanize passes instead.
+ * Uses AI Humanize "enhanced" model by default (see AI_HUMANIZE_MODEL).
  */
 export async function runAiHumanizationLoop(
     initialMarkdown: string,
@@ -50,38 +49,6 @@ export async function runAiHumanizationLoop(
     const maxAttempts = options?.maxAttempts ?? AI_DETECTION_MAX_HUMANIZE_ATTEMPTS;
     const preserveHeadings = options?.preserveHeadings !== false;
     const humanize = preserveHeadings ? humanizeMarkdownPreservingHeadings : humanizeMarkdown;
-
-    if (maxAttempts <= 0) {
-        return { contentMarkdown: initialMarkdown, aiDetection: null };
-    }
-
-    if (!getAiHumanizeConfig()) {
-        return {
-            contentMarkdown: initialMarkdown,
-            aiDetection: null,
-            skippedReason:
-                "AI Humanize not configured (AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL)",
-        };
-    }
-
-    if (!isZeroGptEnabled()) {
-        let markdown = initialMarkdown;
-        let attemptsUsed = 0;
-        // One enhanced pass per stage — ZeroGPT is not gating retries.
-        const passes = Math.min(1, maxAttempts);
-        for (; attemptsUsed < passes; attemptsUsed++) {
-            try {
-                markdown = await humanize(markdown);
-            } catch (err) {
-                console.warn("[ai-humanize] rewrite failed:", err);
-                break;
-            }
-        }
-        return {
-            contentMarkdown: markdown,
-            aiDetection: null,
-        };
-    }
 
     let markdown = initialMarkdown;
     let attemptsUsed = 0;
@@ -95,6 +62,15 @@ export async function runAiHumanizationLoop(
             skippedReason:
                 initialStatus.error ??
                 "ZeroGPT not configured (ZEROGPT_API_KEY) or detection API unavailable",
+        };
+    }
+
+    if (!getAiHumanizeConfig()) {
+        return {
+            contentMarkdown: markdown,
+            aiDetection: toAiDetectionScore(detection, 0),
+            skippedReason:
+                "AI Humanize not configured (AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL) — showing ZeroGPT score only",
         };
     }
 

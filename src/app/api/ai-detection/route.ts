@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
-import { detectAiContentPercentWithStatus, isZeroGptEnabled } from "@/lib/zerogptAiDetection";
-
-export async function GET() {
-    return NextResponse.json({ enabled: isZeroGptEnabled() });
-}
+import { detectAiContentPercentWithStatus, getZeroGptConfig } from "@/lib/zerogptAiDetection";
 
 export async function POST(req: Request) {
-    if (!isZeroGptEnabled()) {
+    const config = getZeroGptConfig();
+    if (!config) {
         return NextResponse.json(
-            { error: "ZeroGPT is disabled.", disabled: true },
+            { error: "ZEROGPT_API_KEY is not configured on the server." },
             { status: 503 },
         );
     }

@@ -33,7 +33,7 @@ import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConf
 import { jsonrepair } from "jsonrepair";
 import { LONG_POST_BODY_WORDS } from "@/lib/optimizePipelineProfile";
 import { runAiHumanizationLoop } from "@/lib/aiHumanizationLoop";
-import { applyZeroGptDetectionToScores, detectAiContentPercentWithStatus, isZeroGptEnabled } from "@/lib/zerogptAiDetection";
+import { applyZeroGptDetectionToScores, detectAiContentPercentWithStatus } from "@/lib/zerogptAiDetection";
 import {
     measureFinalReadability,
     runPostHumanizeReadabilityLoop,
@@ -557,85 +557,83 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 insights.push(reason);
             }
 
-            if (isZeroGptEnabled()) {
-                // Re-score final markdown with ZeroGPT (matches zerogpt.com on published body).
-                let aiStatus = await detectAiContentPercentWithStatus(optimized.contentMarkdown);
-                let finalAiDetection = aiStatus.result;
-                if (finalAiDetection) {
+            // Always re-score final markdown with ZeroGPT (matches zerogpt.com on published body).
+            let aiStatus = await detectAiContentPercentWithStatus(optimized.contentMarkdown);
+            let finalAiDetection = aiStatus.result;
+            if (finalAiDetection) {
+                optimized.seoScores = applyZeroGptDetectionToScores(
+                    optimized.seoScores,
+                    finalAiDetection,
+                    totalHumanizeAttempts,
+                );
+                if (!finalAiDetection.targetMet && !pipelineProfile.skipExtraAiPolish) {
+                    const polishMarkdown = optimized.contentMarkdown;
+                    const aiPolish = await runAiHumanizationLoop(polishMarkdown, {
+                        ...humanizeOpts,
+                        maxAttempts: 2,
+                    });
+                    totalHumanizeAttempts += aiPolish.aiDetection?.attempts ?? 0;
+                    optimized.contentMarkdown = restoreHeadingsAfterHumanize(
+                        aiPolish.contentMarkdown,
+                        polishMarkdown,
+                        seoRestoreOptions,
+                    );
+                    if (keywordPlanForRestore) {
+                        optimized.contentMarkdown = boostMarkdownForKeywordPlan(
+                            optimized.contentMarkdown,
+                            keywordPlanForRestore,
+                        );
+                    }
+                    finalAiDetection =
+                        (await detectAiContentPercentWithStatus(optimized.contentMarkdown)).result ??
+                        finalAiDetection;
                     optimized.seoScores = applyZeroGptDetectionToScores(
                         optimized.seoScores,
                         finalAiDetection,
                         totalHumanizeAttempts,
                     );
-                    if (!finalAiDetection.targetMet && !pipelineProfile.skipExtraAiPolish) {
-                        const polishMarkdown = optimized.contentMarkdown;
-                        const aiPolish = await runAiHumanizationLoop(polishMarkdown, {
-                            ...humanizeOpts,
-                            maxAttempts: 2,
-                        });
-                        totalHumanizeAttempts += aiPolish.aiDetection?.attempts ?? 0;
-                        optimized.contentMarkdown = restoreHeadingsAfterHumanize(
-                            aiPolish.contentMarkdown,
-                            polishMarkdown,
-                            seoRestoreOptions,
+                    if (!finalAiDetection.targetMet) {
+                        insights.push(
+                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT). Target is below ${20}%.`,
                         );
-                        if (keywordPlanForRestore) {
-                            optimized.contentMarkdown = boostMarkdownForKeywordPlan(
-                                optimized.contentMarkdown,
-                                keywordPlanForRestore,
-                            );
-                        }
-                        finalAiDetection =
-                            (await detectAiContentPercentWithStatus(optimized.contentMarkdown)).result ??
-                            finalAiDetection;
-                        optimized.seoScores = applyZeroGptDetectionToScores(
-                            optimized.seoScores,
-                            finalAiDetection,
-                            totalHumanizeAttempts,
-                        );
-                        if (!finalAiDetection.targetMet) {
-                            insights.push(
-                                `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT). Target is below ${20}%.`,
-                            );
-                        }
-                        const afterPolishReadability = await measureFinalReadability(
-                            optimized.contentMarkdown,
-                            blogPost.h1Title || optimized.title || blogPost.title,
-                            { targetGradeMax: readabilityTargetGradeMax },
-                        );
-                        if (afterPolishReadability.readabilityGrade) {
-                            optimized.seoScores = {
-                                ...optimized.seoScores,
-                                readability: afterPolishReadability.readabilityPercent,
-                                readabilityGrade: afterPolishReadability.readabilityGrade,
-                            };
-                        }
                     }
-                } else if (humanized.aiDetection) {
-                    optimized.seoScores = applyZeroGptDetectionToScores(
-                        optimized.seoScores,
-                        {
-                            aiPercent: humanized.aiDetection.aiPercent,
-                            humanPercent: humanized.aiDetection.humanPercent,
-                            targetMet: humanized.aiDetection.targetMet,
-                            confidence: humanized.aiDetection.confidence,
-                        },
-                        humanized.aiDetection.attempts,
+                    const afterPolishReadability = await measureFinalReadability(
+                        optimized.contentMarkdown,
+                        blogPost.h1Title || optimized.title || blogPost.title,
+                        { targetGradeMax: readabilityTargetGradeMax },
                     );
-                } else {
-                    const zgError =
-                        aiStatus.error ??
-                        humanized.skippedReason ??
-                        "ZeroGPT detection unavailable";
-                    optimized.seoScores = {
-                        ...optimized.seoScores,
-                        aiDetectionError: zgError,
-                    };
-                    console.warn("[optimize-content]", zgError);
-                    insights.push(
-                        `ZeroGPT could not verify AI % (${zgError}). Showing optimizer estimate until credits or API key are fixed.`,
-                    );
+                    if (afterPolishReadability.readabilityGrade) {
+                        optimized.seoScores = {
+                            ...optimized.seoScores,
+                            readability: afterPolishReadability.readabilityPercent,
+                            readabilityGrade: afterPolishReadability.readabilityGrade,
+                        };
+                    }
                 }
+            } else if (humanized.aiDetection) {
+                optimized.seoScores = applyZeroGptDetectionToScores(
+                    optimized.seoScores,
+                    {
+                        aiPercent: humanized.aiDetection.aiPercent,
+                        humanPercent: humanized.aiDetection.humanPercent,
+                        targetMet: humanized.aiDetection.targetMet,
+                        confidence: humanized.aiDetection.confidence,
+                    },
+                    humanized.aiDetection.attempts,
+                );
+            } else {
+                const zgError =
+                    aiStatus.error ??
+                    humanized.skippedReason ??
+                    "ZeroGPT detection unavailable";
+                optimized.seoScores = {
+                    ...optimized.seoScores,
+                    aiDetectionError: zgError,
+                };
+                console.warn("[optimize-content]", zgError);
+                insights.push(
+                    `ZeroGPT could not verify AI % (${zgError}). Showing optimizer estimate until credits or API key are fixed.`,
+                );
             }
 
             const postForKeywords: BlogPost = {
@@ -703,7 +701,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                         };
                     }
                 }
-                if (isZeroGptEnabled() && optimized.seoScores.aiDetection?.provider !== "zerogpt") {
+                if (optimized.seoScores.aiDetection?.provider !== "zerogpt") {
                     const recovered = await detectAiContentPercentWithStatus(optimized.contentMarkdown);
                     if (recovered.result) {
                         optimized.seoScores = applyZeroGptDetectionToScores(
@@ -734,7 +732,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             readabilityTargetGradeMax,
         );
 
-        return NextResponse.json({ optimized, zeroGptEnabled: isZeroGptEnabled() }, { status: 200 });
+        return NextResponse.json({ optimized }, { status: 200 });
     } catch (err) {
         const message = err instanceof Error ? err.message : "Optimization failed";
         return NextResponse.json({ error: message }, { status: 500 });

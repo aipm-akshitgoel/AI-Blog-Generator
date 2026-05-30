@@ -37,17 +37,7 @@ type ZeroGptNetResponse = {
     };
 };
 
-/** Opt-in: set ZEROGPT_ENABLED=true with ZEROGPT_API_KEY. Off by default. */
-export function isZeroGptEnabled(): boolean {
-    const flag = process.env.ZEROGPT_ENABLED?.trim().toLowerCase();
-    if (flag === "true" || flag === "1" || flag === "yes") {
-        return Boolean(process.env.ZEROGPT_API_KEY?.trim());
-    }
-    return false;
-}
-
 export function getZeroGptConfig(): { apiKey: string; detectUrl: string } | null {
-    if (!isZeroGptEnabled()) return null;
     const apiKey = process.env.ZEROGPT_API_KEY?.trim();
     if (!apiKey) return null;
     const explicit = process.env.ZEROGPT_DETECT_URL?.trim();
@@ -245,16 +235,11 @@ export type ZeroGptDetectionResult = {
 export type ZeroGptDetectionStatus = {
     result: ZeroGptDetectionResult | null;
     error?: string;
-    disabled?: boolean;
 };
 
 export async function detectAiContentPercentWithStatus(
     markdown: string,
 ): Promise<ZeroGptDetectionStatus> {
-    if (!isZeroGptEnabled()) {
-        return { result: null, error: "ZeroGPT is disabled.", disabled: true };
-    }
-
     const config = getZeroGptConfig();
     if (!config) {
         return { result: null, error: "ZEROGPT_API_KEY is not configured on the server." };

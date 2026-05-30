@@ -14,6 +14,7 @@ export const OPTIMIZATION_LOADING_STEPS = [
     "Restoring headings and keywords",
     "Final humanize pass (keyword-safe)",
     "Improving readability (post-humanize)",
+    "Checking AI detection with ZeroGPT",
     "Finishing up…",
 ] as const;
 

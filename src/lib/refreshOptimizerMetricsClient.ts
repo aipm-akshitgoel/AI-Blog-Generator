@@ -21,7 +21,6 @@ type AiDetectionApiResponse = {
     targetMet: boolean;
     confidence?: string;
     error?: string;
-    disabled?: boolean;
 };
 
 export type RefreshOptimizerMetricsOptions = {
@@ -31,7 +30,7 @@ export type RefreshOptimizerMetricsOptions = {
     readabilityTargetGradeMax?: number;
 };
 
-/** Re-verify readability (SEO Review Tools), AI % (ZeroGPT when enabled), and keyword density for the current draft. */
+/** Re-verify readability (SEO Review Tools), AI % (ZeroGPT), and keyword density for the current draft. */
 export async function refreshOptimizerMetrics(
     markdown: string,
     base: SeoScores,
@@ -98,12 +97,12 @@ export async function refreshOptimizerMetrics(
                 confidence: data.confidence,
             }, next.aiDetection?.attempts ?? 0);
             delete next.aiDetectionError;
-        } else if (data.error && !data.disabled) {
+        } else if (data.error) {
             next = { ...next, aiDetectionError: data.error };
         }
     } else if (aiRes) {
         const data = (await aiRes.json().catch(() => ({}))) as AiDetectionApiResponse;
-        if (data.error && !data.disabled) {
+        if (data.error) {
             next = { ...next, aiDetectionError: data.error };
         }
     }
