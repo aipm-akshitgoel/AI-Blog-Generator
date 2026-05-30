@@ -59,10 +59,10 @@ export function getOptimizePipelineProfile(
             bodyWords,
             modelTimeoutMs,
             readabilityMaxAttempts: 0,
-            humanizePass1Max: 1,
-            humanizePass2Max: 0,
+            humanizePass1Max: 2,
+            humanizePass2Max: 1,
             postHumanizeReadabilityMax: 0,
-            skipExtraAiPolish: true,
+            skipExtraAiPolish: false,
             skipPostPipeline: false,
         };
     }
@@ -72,10 +72,10 @@ export function getOptimizePipelineProfile(
             bodyWords,
             modelTimeoutMs,
             readabilityMaxAttempts: 0,
-            humanizePass1Max: 1,
-            humanizePass2Max: 0,
+            humanizePass1Max: 3,
+            humanizePass2Max: 2,
             postHumanizeReadabilityMax: 0,
-            skipExtraAiPolish: true,
+            skipExtraAiPolish: false,
             skipPostPipeline: false,
         };
     }

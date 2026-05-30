@@ -408,6 +408,7 @@ export function normalizeSeoScores(
         readabilityGrade: raw?.readabilityGrade,
         aiDetection: raw?.aiDetection,
         aiDetectionError: raw?.aiDetectionError,
+        humanizeSkippedReason: raw?.humanizeSkippedReason,
         keywordDensity: raw?.keywordDensity,
         keywordPlan: raw?.keywordPlan,
     };

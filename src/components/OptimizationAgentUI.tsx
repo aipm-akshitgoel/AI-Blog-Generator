@@ -118,6 +118,26 @@ function shortZeroGptErrorLabel(error: string): string {
     return "ZeroGPT unavailable";
 }
 
+function formatHumanizeStatusNote(scores: SeoScores | null | undefined): string | undefined {
+    const attempts = scores?.aiDetection?.attempts ?? 0;
+    const skipped = scores?.humanizeSkippedReason?.trim();
+    const highAi =
+        scores?.aiDetection?.provider === "zerogpt" &&
+        scores.aiDetection.targetMet === false;
+
+    if (skipped) return skipped;
+    if (highAi && attempts === 0) {
+        return "AI Humanize did not run — set AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL on Vercel, then re-run optimize.";
+    }
+    if (attempts > 0 && highAi) {
+        return `${attempts} humanize pass(es) ran; AI % is still above 20%. Edit the draft or re-run optimize.`;
+    }
+    if (attempts > 0) {
+        return `${attempts} AI Humanize pass(es) completed.`;
+    }
+    return undefined;
+}
+
 /** Show ZeroGPT when verified; otherwise optimizer estimate with reason. */
 function formatAiContentDisplay(
     scores: SeoScores | null | undefined,
@@ -1047,6 +1067,7 @@ export function OptimizationAgentUI({
                             <div className="space-y-2">
                                 {(() => {
                                     const ai = formatAiContentDisplay(liveScores, aiDetectionResolved);
+                                    const humanizeNote = formatHumanizeStatusNote(liveScores);
                                     return (
                                         <>
                                             <SeoMetricBar
@@ -1066,6 +1087,10 @@ export function OptimizationAgentUI({
                                                 <p className="text-[11px] text-amber-700 leading-snug -mt-1">
                                                     {ai.statusNote}. Top up credits at zerogpt.org or use Refresh
                                                     after fixing <span className="font-mono">ZEROGPT_API_KEY</span>.
+                                                </p>
+                                            ) : humanizeNote ? (
+                                                <p className="text-[11px] text-amber-700 leading-snug -mt-1">
+                                                    {humanizeNote}
                                                 </p>
                                             ) : null}
                                         </>
@@ -1092,6 +1117,19 @@ export function OptimizationAgentUI({
                                 <span className="font-medium">keywordPlan</span> during drafting.
                             </p>
                         )}
+
+                        {(liveScores?.actionableInsights?.length ?? 0) > 0 ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+                                <h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-amber-900">
+                                    Optimization notes
+                                </h3>
+                                <ul className="list-disc space-y-1 pl-4 text-[11px] text-amber-950 leading-relaxed">
+                                    {liveScores!.actionableInsights.map((tip) => (
+                                        <li key={tip}>{tip}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ) : null}
                     </div>
                 </div>
             )}

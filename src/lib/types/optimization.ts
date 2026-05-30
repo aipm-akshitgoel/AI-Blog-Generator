@@ -44,6 +44,8 @@ export interface SeoScores {
     aiDetection?: AiDetectionScore;
     /** Why ZeroGPT could not verify AI % (e.g. credits exhausted). */
     aiDetectionError?: string;
+    /** Why AI Humanize did not rewrite (missing API key, time budget, etc.). */
+    humanizeSkippedReason?: string;
     /** Writer-finalized keyword plan + SEO Review Tools density verification. */
     keywordDensity?: KeywordDensityVerification;
     keywordPlan?: KeywordPlan;

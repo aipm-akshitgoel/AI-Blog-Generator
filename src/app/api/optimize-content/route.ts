@@ -482,6 +482,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
 
             const markdownAfterKeywords = optimized.contentMarkdown;
             let totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
+            let humanizeSkippedReason = humanized.skippedReason;
 
             if (pipelineProfile.humanizePass2Max > 0) {
                 const postSeoHumanized = await runAiHumanizationLoop(markdownAfterKeywords, {
@@ -489,6 +490,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     maxAttempts: pipelineProfile.humanizePass2Max,
                 });
                 totalHumanizeAttempts += postSeoHumanized.aiDetection?.attempts ?? 0;
+                humanizeSkippedReason ??= postSeoHumanized.skippedReason;
 
                 optimized.contentMarkdown = restoreHeadingsAfterHumanize(
                     postSeoHumanized.contentMarkdown,
@@ -566,6 +568,24 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     finalAiDetection,
                     totalHumanizeAttempts,
                 );
+                if (humanizeSkippedReason) {
+                    optimized.seoScores = {
+                        ...optimized.seoScores,
+                        humanizeSkippedReason,
+                    };
+                    insights.push(humanizeSkippedReason);
+                }
+                if (!finalAiDetection.targetMet) {
+                    if (totalHumanizeAttempts === 0) {
+                        insights.push(
+                            "No AI Humanize passes ran on this draft. Add AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL on the server, then re-run optimize.",
+                        );
+                    } else if (pipelineProfile.skipExtraAiPolish) {
+                        insights.push(
+                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT) after ${totalHumanizeAttempts} humanize pass(es). Target is below ${20}%.`,
+                        );
+                    }
+                }
                 if (!finalAiDetection.targetMet && !pipelineProfile.skipExtraAiPolish) {
                     const polishMarkdown = optimized.contentMarkdown;
                     const aiPolish = await runAiHumanizationLoop(polishMarkdown, {
@@ -594,7 +614,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     );
                     if (!finalAiDetection.targetMet) {
                         insights.push(
-                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT). Target is below ${20}%.`,
+                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT) after polish. Target is below ${20}%.`,
                         );
                     }
                     const afterPolishReadability = await measureFinalReadability(
@@ -681,6 +701,16 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 postErr instanceof Error && postErr.message === "SKIP_POST_PIPELINE";
             if (!skipOnly) {
                 console.warn("[optimize-content] Post-optimize pipeline failed:", postErr);
+            } else {
+                optimized.seoScores = {
+                    ...optimized.seoScores,
+                    humanizeSkippedReason:
+                        "Optimization ran out of time after the draft pass — humanize and readability loops were skipped.",
+                    actionableInsights: [
+                        ...optimized.seoScores.actionableInsights,
+                        "Humanize was skipped (time budget). Re-run optimize or use Refresh after editing.",
+                    ].slice(0, 5),
+                };
             }
             optimized.contentMarkdown = normalizeMarkdownTables(
                 normalizeMarkdownBodyParagraphs(optimized.contentMarkdown),
