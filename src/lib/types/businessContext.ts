@@ -25,6 +25,8 @@ export interface SeoDefaults {
   defaultSchemaType?: "Article" | "BlogPosting";
   includeFaqSchemaByDefault?: boolean;
   canonicalBaseUrl?: string;
+  /** Flesch-Kincaid grade ceiling (inclusive). Default 10 = plain professional. */
+  readabilityTargetGradeMax?: number;
 }
 
 /** Account-wide rules injected into blog writing and optimization prompts. */

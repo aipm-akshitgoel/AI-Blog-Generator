@@ -49,6 +49,7 @@ export async function POST(req: Request) {
     positioning,
     brandTone,
     contentGuidelines,
+    seoDefaults,
   } = body;
 
   if (
@@ -86,6 +87,7 @@ export async function POST(req: Request) {
       positioning: String(positioning).trim(),
       brandTone: brandTone ? String(brandTone).trim() : undefined,
       contentGuidelines: contentGuidelines ?? undefined,
+      seoDefaults: seoDefaults ?? undefined,
     };
 
     const guidelinesFromBody = body.contentGuidelines;
@@ -97,6 +99,7 @@ export async function POST(req: Request) {
         ...updated,
         brandTone: updated.brandTone ?? brandToneFromBody,
         contentGuidelines: updated.contentGuidelines ?? guidelinesFromBody,
+        seoDefaults: updated.seoDefaults ?? body.seoDefaults,
       });
     } else {
       const created = await createBusinessContext(contextData, userId);
@@ -104,6 +107,7 @@ export async function POST(req: Request) {
         ...created,
         brandTone: created.brandTone ?? brandToneFromBody,
         contentGuidelines: created.contentGuidelines ?? guidelinesFromBody,
+        seoDefaults: created.seoDefaults ?? body.seoDefaults,
       });
     }
   } catch (err) {

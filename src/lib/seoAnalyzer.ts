@@ -407,6 +407,7 @@ export function normalizeSeoScores(
         actionableInsights: Array.isArray(raw?.actionableInsights) ? raw!.actionableInsights : [],
         readabilityGrade: raw?.readabilityGrade,
         aiDetection: raw?.aiDetection,
+        aiDetectionError: raw?.aiDetectionError,
         keywordDensity: raw?.keywordDensity,
         keywordPlan: raw?.keywordPlan,
     };

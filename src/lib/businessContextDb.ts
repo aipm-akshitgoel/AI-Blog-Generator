@@ -3,7 +3,11 @@ import {
   normalizeContentGuidelines,
   parseContentGuidelinesFromDb,
 } from "@/lib/contentGuidelines";
-import type { BusinessContext, ContentGuidelines } from "@/lib/types/businessContext";
+import {
+  normalizeSeoDefaultsFromDb,
+  seoDefaultsToDbValue,
+} from "@/lib/readabilityTarget";
+import type { BusinessContext, ContentGuidelines, SeoDefaults } from "@/lib/types/businessContext";
 
 export interface BusinessContextRow {
   id: string;
@@ -19,6 +23,7 @@ export interface BusinessContextRow {
   brand_tone?: string | null;
   positioning: string;
   content_guidelines?: unknown | null;
+  seo_defaults?: unknown | null;
   confirmed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -29,6 +34,7 @@ type BusinessContextColumnFlags = {
   domain: boolean;
   brandTone: boolean;
   contentGuidelines: boolean;
+  seoDefaults: boolean;
 };
 
 let columnFlagsCache: BusinessContextColumnFlags | null = null;
@@ -64,6 +70,7 @@ async function getBusinessContextColumnFlags(): Promise<BusinessContextColumnFla
     domain: true,
     brandTone: true,
     contentGuidelines: true,
+    seoDefaults: true,
   };
 
   for (const [key, column] of [
@@ -71,6 +78,7 @@ async function getBusinessContextColumnFlags(): Promise<BusinessContextColumnFla
     ["domain", "domain"],
     ["brandTone", "brand_tone"],
     ["contentGuidelines", "content_guidelines"],
+    ["seoDefaults", "seo_defaults"],
   ] as const) {
     const { error } = await supabase.from("business_context").select(column).limit(0);
     if (error && isMissingColumnError(error, column)) {
@@ -101,6 +109,7 @@ function businessContextSelectColumns(flags: BusinessContextColumnFlags): string
   if (flags.domain) cols.splice(flags.platform ? 5 : 4, 0, "domain");
   if (flags.brandTone) cols.splice(cols.indexOf("target_audience") + 1, 0, "brand_tone");
   if (flags.contentGuidelines) cols.push("content_guidelines");
+  if (flags.seoDefaults) cols.push("seo_defaults");
   return cols.join(", ");
 }
 
@@ -129,6 +138,7 @@ function rowToContext(row: BusinessContextRow): BusinessContext {
     brandTone: row.brand_tone?.trim() || undefined,
     positioning: row.positioning,
     contentGuidelines: parseContentGuidelinesFromDb(row.content_guidelines),
+    seoDefaults: normalizeSeoDefaultsFromDb(row.seo_defaults),
     confirmedAt: row.confirmed_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -137,13 +147,14 @@ function rowToContext(row: BusinessContextRow): BusinessContext {
 
 function withInputFields(
   ctx: BusinessContext,
-  input?: { brandTone?: string; contentGuidelines?: ContentGuidelines },
+  input?: { brandTone?: string; contentGuidelines?: ContentGuidelines; seoDefaults?: SeoDefaults },
 ): BusinessContext {
   let out = ctx;
   const tone = input?.brandTone?.trim();
   if (tone) out = { ...out, brandTone: tone };
   const guidelines = normalizeContentGuidelines(input?.contentGuidelines);
   if (guidelines) out = { ...out, contentGuidelines: guidelines };
+  if (input?.seoDefaults) out = { ...out, seoDefaults: input.seoDefaults };
   return out;
 }
 
@@ -179,6 +190,9 @@ export async function createBusinessContext(
   if (flags.contentGuidelines) {
     insertRow.content_guidelines = guidelinesToDbValue(data.contentGuidelines);
   }
+  if (flags.seoDefaults) {
+    insertRow.seo_defaults = seoDefaultsToDbValue(data.seoDefaults);
+  }
 
   const { data: row, error } = await supabase
     .from("business_context")
@@ -193,6 +207,7 @@ export async function createBusinessContext(
   return withInputFields(rowToContext(row as unknown as BusinessContextRow), {
     brandTone: data.brandTone,
     contentGuidelines: data.contentGuidelines,
+    seoDefaults: data.seoDefaults,
   });
 }
 
@@ -224,6 +239,9 @@ export async function updateBusinessContext(
   if (flags.contentGuidelines && data.contentGuidelines !== undefined) {
     updateData.content_guidelines = guidelinesToDbValue(data.contentGuidelines);
   }
+  if (flags.seoDefaults && data.seoDefaults !== undefined) {
+    updateData.seo_defaults = seoDefaultsToDbValue(data.seoDefaults);
+  }
 
   updateData.updated_at = new Date().toISOString();
 
@@ -241,6 +259,7 @@ export async function updateBusinessContext(
   return withInputFields(rowToContext(row as unknown as BusinessContextRow), {
     brandTone: data.brandTone,
     contentGuidelines: data.contentGuidelines,
+    seoDefaults: data.seoDefaults,
   });
 }
 

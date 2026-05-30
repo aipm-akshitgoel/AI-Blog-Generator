@@ -37,7 +37,17 @@ type ZeroGptNetResponse = {
     };
 };
 
+/** Opt-in: set ZEROGPT_ENABLED=true with ZEROGPT_API_KEY. Off by default. */
+export function isZeroGptEnabled(): boolean {
+    const flag = process.env.ZEROGPT_ENABLED?.trim().toLowerCase();
+    if (flag === "true" || flag === "1" || flag === "yes") {
+        return Boolean(process.env.ZEROGPT_API_KEY?.trim());
+    }
+    return false;
+}
+
 export function getZeroGptConfig(): { apiKey: string; detectUrl: string } | null {
+    if (!isZeroGptEnabled()) return null;
     const apiKey = process.env.ZEROGPT_API_KEY?.trim();
     if (!apiKey) return null;
     const explicit = process.env.ZEROGPT_DETECT_URL?.trim();
@@ -158,11 +168,25 @@ function parseAiPercentFromJson(json: unknown, detectUrl: string): number | null
     return Math.max(...candidates);
 }
 
+type DetectChunkResult =
+    | { ok: true; aiPercent: number; confidence?: string }
+    | { ok: false; error: string };
+
+function zeroGptApiErrorMessage(json: unknown, httpStatus: number): string | null {
+    if (!json || typeof json !== "object") return null;
+    const root = json as Record<string, unknown>;
+    if (root.success !== false) return null;
+    const message = String(root.message ?? root.error ?? "").trim();
+    if (message) return message;
+    const code = root.code;
+    return code != null ? `ZeroGPT error (${code})` : `ZeroGPT request failed (HTTP ${httpStatus})`;
+}
+
 async function detectChunk(
     apiKey: string,
     detectUrl: string,
     text: string,
-): Promise<{ aiPercent: number; confidence?: string } | null> {
+): Promise<DetectChunkResult> {
     const isLegacyDetectText = detectUrl.includes("detectText");
     const body = isLegacyDetectText ? { input_text: text } : { text };
 
@@ -182,21 +206,30 @@ async function detectChunk(
         body: JSON.stringify(body),
     });
 
+    const json = await res.json().catch(() => null);
+
     if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        console.warn("[zerogpt] detection failed", res.status, errText.slice(0, 200));
-        return null;
+        const apiMessage = zeroGptApiErrorMessage(json, res.status);
+        const errText = apiMessage ?? JSON.stringify(json)?.slice(0, 200) ?? `HTTP ${res.status}`;
+        console.warn("[zerogpt] detection failed", res.status, errText);
+        return { ok: false, error: apiMessage ?? `ZeroGPT HTTP ${res.status}` };
     }
 
-    const json = await res.json().catch(() => null);
+    const apiMessage = zeroGptApiErrorMessage(json, res.status);
+    if (apiMessage) {
+        console.warn("[zerogpt] detection rejected", apiMessage);
+        return { ok: false, error: apiMessage };
+    }
+
     const aiPercent = parseAiPercentFromJson(json, detectUrl);
     if (aiPercent == null) {
         console.warn("[zerogpt] could not parse AI percent from response", JSON.stringify(json)?.slice(0, 300));
-        return null;
+        return { ok: false, error: "Could not parse ZeroGPT response" };
     }
 
     const org = json as ZeroGptOrgResponse;
     return {
+        ok: true,
         aiPercent,
         confidence: org.data?.confidence,
     };
@@ -209,26 +242,44 @@ export type ZeroGptDetectionResult = {
     confidence?: string;
 };
 
-export async function detectAiContentPercent(
+export type ZeroGptDetectionStatus = {
+    result: ZeroGptDetectionResult | null;
+    error?: string;
+    disabled?: boolean;
+};
+
+export async function detectAiContentPercentWithStatus(
     markdown: string,
-): Promise<ZeroGptDetectionResult | null> {
+): Promise<ZeroGptDetectionStatus> {
+    if (!isZeroGptEnabled()) {
+        return { result: null, error: "ZeroGPT is disabled.", disabled: true };
+    }
+
     const config = getZeroGptConfig();
-    if (!config) return null;
+    if (!config) {
+        return { result: null, error: "ZEROGPT_API_KEY is not configured on the server." };
+    }
 
     const plain = markdownToPlainTextForDetection(markdown);
     if (plain.length < MIN_CHARS_FOR_DETECTION) {
         console.warn("[zerogpt] text too short for detection", plain.length);
-        return null;
+        return { result: null, error: "Draft is too short for ZeroGPT detection." };
     }
 
     const chunks = chunkTextForDetection(plain);
-    if (chunks.length === 0) return null;
+    if (chunks.length === 0) {
+        return { result: null, error: "Draft is too short for ZeroGPT detection." };
+    }
 
     const chunkResults: { aiPercent: number; confidence?: string }[] = [];
+    let lastError = "ZeroGPT detection failed";
 
     for (const chunk of chunks) {
         const result = await detectChunk(config.apiKey, config.detectUrl, chunk);
-        if (!result) return null;
+        if (!result.ok) {
+            lastError = result.error;
+            return { result: null, error: lastError };
+        }
         chunkResults.push(result);
     }
 
@@ -240,11 +291,20 @@ export async function detectAiContentPercent(
     const humanPercent = Math.round((100 - aiPercent) * 10) / 10;
 
     return {
-        aiPercent,
-        humanPercent,
-        targetMet: aiPercent < AI_DETECTION_TARGET_PERCENT_MAX,
-        confidence,
+        result: {
+            aiPercent,
+            humanPercent,
+            targetMet: aiPercent < AI_DETECTION_TARGET_PERCENT_MAX,
+            confidence,
+        },
     };
+}
+
+export async function detectAiContentPercent(
+    markdown: string,
+): Promise<ZeroGptDetectionResult | null> {
+    const { result } = await detectAiContentPercentWithStatus(markdown);
+    return result;
 }
 
 export function meetsAiDetectionTarget(aiPercent: number): boolean {

@@ -8,10 +8,12 @@ export interface ReadabilityGrade {
     gradeLabel: string;
     fleschScore: number;
     fleschLabel?: string;
-    /** True when grade level is at or below the editorial ceiling (9th–10th grade). */
+    /** True when grade level is at or below the account readability target. */
     targetMet: boolean;
     attempts: number;
     provider: "seo-review-tools";
+    /** Account target used when this score was measured. */
+    targetGradeMax?: number;
     /** True when measured after humanization (dashboard-facing score). */
     isFinal?: boolean;
 }
@@ -40,6 +42,8 @@ export interface SeoScores {
     readabilityGrade?: ReadabilityGrade;
     /** Verified AI % from ZeroGPT (optimize step). */
     aiDetection?: AiDetectionScore;
+    /** Why ZeroGPT could not verify AI % (e.g. credits exhausted). */
+    aiDetectionError?: string;
     /** Writer-finalized keyword plan + SEO Review Tools density verification. */
     keywordDensity?: KeywordDensityVerification;
     keywordPlan?: KeywordPlan;

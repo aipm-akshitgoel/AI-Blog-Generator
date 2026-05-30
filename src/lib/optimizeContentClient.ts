@@ -136,6 +136,8 @@ export async function fetchPublishedBlogLinks(signal?: AbortSignal): Promise<
 export type OptimizeContentResult = {
     optimized: OptimizedContent;
     parseWarning?: string;
+    /** Whether the server will run ZeroGPT during optimize / refresh. */
+    zeroGptEnabled?: boolean;
 };
 
 export async function requestContentOptimization(

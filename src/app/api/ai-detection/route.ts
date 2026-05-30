@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { detectAiContentPercent, getZeroGptConfig } from "@/lib/zerogptAiDetection";
+import { detectAiContentPercentWithStatus, isZeroGptEnabled } from "@/lib/zerogptAiDetection";
+
+export async function GET() {
+    return NextResponse.json({ enabled: isZeroGptEnabled() });
+}
 
 export async function POST(req: Request) {
-    const config = getZeroGptConfig();
-    if (!config) {
+    if (!isZeroGptEnabled()) {
         return NextResponse.json(
-            { error: "ZEROGPT_API_KEY is not configured on the server." },
+            { error: "ZeroGPT is disabled.", disabled: true },
             { status: 503 },
         );
     }
@@ -23,10 +26,10 @@ export async function POST(req: Request) {
     }
 
     try {
-        const result = await detectAiContentPercent(markdown);
+        const { result, error } = await detectAiContentPercentWithStatus(markdown);
         if (!result) {
             return NextResponse.json(
-                { error: "Could not parse AI detection response from ZeroGPT." },
+                { error: error ?? "Could not parse AI detection response from ZeroGPT." },
                 { status: 502 },
             );
         }

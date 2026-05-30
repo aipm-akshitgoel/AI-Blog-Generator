@@ -33,7 +33,7 @@ import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConf
 import { jsonrepair } from "jsonrepair";
 import { LONG_POST_BODY_WORDS } from "@/lib/optimizePipelineProfile";
 import { runAiHumanizationLoop } from "@/lib/aiHumanizationLoop";
-import { applyZeroGptDetectionToScores, detectAiContentPercent } from "@/lib/zerogptAiDetection";
+import { applyZeroGptDetectionToScores, detectAiContentPercentWithStatus, isZeroGptEnabled } from "@/lib/zerogptAiDetection";
 import {
     measureFinalReadability,
     runPostHumanizeReadabilityLoop,
@@ -49,6 +49,7 @@ import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 import { normalizeMarkdownTables } from "@/lib/markdownStructure";
 import { applyFinalOptimizerScores } from "@/lib/optimizerFinalScores";
+import { resolveReadabilityTargetGrade, formatTargetGradeLabel } from "@/lib/readabilityTarget";
 import { getOptimizePipelineProfile } from "@/lib/optimizePipelineProfile";
 
 /** Must be a literal for Next.js route segment config (see optimizeContentClient.ts). */
@@ -192,6 +193,7 @@ export async function POST(req: Request) {
             | "domain"
             | "services"
             | "contentGuidelines"
+            | "seoDefaults"
         >;
         isRefining?: boolean;
         interlinkingRules?: InterlinkingRules;
@@ -200,6 +202,8 @@ export async function POST(req: Request) {
     if (!blogPost) {
         return NextResponse.json({ error: "Missing blogPost" }, { status: 400 });
     }
+
+    const readabilityTargetGradeMax = resolveReadabilityTargetGrade(businessContext?.seoDefaults);
 
     try {
         const requestStartedAt = Date.now();
@@ -439,7 +443,10 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 azure,
                 blogPost,
                 optimized.contentMarkdown,
-                { maxAttempts: pipelineProfile.readabilityMaxAttempts },
+                {
+                    maxAttempts: pipelineProfile.readabilityMaxAttempts,
+                    targetGradeMax: readabilityTargetGradeMax,
+                },
             );
             optimized.contentMarkdown = readability.contentMarkdown;
 
@@ -505,7 +512,10 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     h1Title: blogPost.h1Title || optimized.title,
                 },
                 optimized.contentMarkdown,
-                { maxAttempts: pipelineProfile.postHumanizeReadabilityMax },
+                {
+                    maxAttempts: pipelineProfile.postHumanizeReadabilityMax,
+                    targetGradeMax: readabilityTargetGradeMax,
+                },
             );
             optimized.contentMarkdown = postReadability.contentMarkdown;
 
@@ -523,6 +533,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 finalReadability = await measureFinalReadability(
                     optimized.contentMarkdown,
                     blogPost.h1Title || optimized.title || blogPost.title,
+                    { targetGradeMax: readabilityTargetGradeMax },
                 );
             }
 
@@ -534,7 +545,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 };
                 if (!finalReadability.readabilityGrade.targetMet) {
                     insights.push(
-                        `Readability is ${finalReadability.readabilityGrade.gradeLabel} (Flesch ${finalReadability.readabilityGrade.fleschScore}). Target is 10th grade or below.`,
+                        `Readability is ${finalReadability.readabilityGrade.gradeLabel} (Flesch ${finalReadability.readabilityGrade.fleschScore}). Target is ${formatTargetGradeLabel(readabilityTargetGradeMax)} or easier.`,
                     );
                 }
             } else {
@@ -546,75 +557,85 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 insights.push(reason);
             }
 
-            // Always re-score final markdown with ZeroGPT (matches zerogpt.com on published body).
-            let finalAiDetection = await detectAiContentPercent(optimized.contentMarkdown);
-            if (finalAiDetection) {
-                optimized.seoScores = applyZeroGptDetectionToScores(
-                    optimized.seoScores,
-                    finalAiDetection,
-                    totalHumanizeAttempts,
-                );
-                if (!finalAiDetection.targetMet && !pipelineProfile.skipExtraAiPolish) {
-                    const polishMarkdown = optimized.contentMarkdown;
-                    const aiPolish = await runAiHumanizationLoop(polishMarkdown, {
-                        ...humanizeOpts,
-                        maxAttempts: 2,
-                    });
-                    totalHumanizeAttempts += aiPolish.aiDetection?.attempts ?? 0;
-                    optimized.contentMarkdown = restoreHeadingsAfterHumanize(
-                        aiPolish.contentMarkdown,
-                        polishMarkdown,
-                        seoRestoreOptions,
-                    );
-                    if (keywordPlanForRestore) {
-                        optimized.contentMarkdown = boostMarkdownForKeywordPlan(
-                            optimized.contentMarkdown,
-                            keywordPlanForRestore,
-                        );
-                    }
-                    finalAiDetection =
-                        (await detectAiContentPercent(optimized.contentMarkdown)) ?? finalAiDetection;
+            if (isZeroGptEnabled()) {
+                // Re-score final markdown with ZeroGPT (matches zerogpt.com on published body).
+                let aiStatus = await detectAiContentPercentWithStatus(optimized.contentMarkdown);
+                let finalAiDetection = aiStatus.result;
+                if (finalAiDetection) {
                     optimized.seoScores = applyZeroGptDetectionToScores(
                         optimized.seoScores,
                         finalAiDetection,
                         totalHumanizeAttempts,
                     );
-                    if (!finalAiDetection.targetMet) {
-                        insights.push(
-                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT). Target is below ${20}%.`,
+                    if (!finalAiDetection.targetMet && !pipelineProfile.skipExtraAiPolish) {
+                        const polishMarkdown = optimized.contentMarkdown;
+                        const aiPolish = await runAiHumanizationLoop(polishMarkdown, {
+                            ...humanizeOpts,
+                            maxAttempts: 2,
+                        });
+                        totalHumanizeAttempts += aiPolish.aiDetection?.attempts ?? 0;
+                        optimized.contentMarkdown = restoreHeadingsAfterHumanize(
+                            aiPolish.contentMarkdown,
+                            polishMarkdown,
+                            seoRestoreOptions,
                         );
+                        if (keywordPlanForRestore) {
+                            optimized.contentMarkdown = boostMarkdownForKeywordPlan(
+                                optimized.contentMarkdown,
+                                keywordPlanForRestore,
+                            );
+                        }
+                        finalAiDetection =
+                            (await detectAiContentPercentWithStatus(optimized.contentMarkdown)).result ??
+                            finalAiDetection;
+                        optimized.seoScores = applyZeroGptDetectionToScores(
+                            optimized.seoScores,
+                            finalAiDetection,
+                            totalHumanizeAttempts,
+                        );
+                        if (!finalAiDetection.targetMet) {
+                            insights.push(
+                                `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT). Target is below ${20}%.`,
+                            );
+                        }
+                        const afterPolishReadability = await measureFinalReadability(
+                            optimized.contentMarkdown,
+                            blogPost.h1Title || optimized.title || blogPost.title,
+                            { targetGradeMax: readabilityTargetGradeMax },
+                        );
+                        if (afterPolishReadability.readabilityGrade) {
+                            optimized.seoScores = {
+                                ...optimized.seoScores,
+                                readability: afterPolishReadability.readabilityPercent,
+                                readabilityGrade: afterPolishReadability.readabilityGrade,
+                            };
+                        }
                     }
-                    const afterPolishReadability = await measureFinalReadability(
-                        optimized.contentMarkdown,
-                        blogPost.h1Title || optimized.title || blogPost.title,
+                } else if (humanized.aiDetection) {
+                    optimized.seoScores = applyZeroGptDetectionToScores(
+                        optimized.seoScores,
+                        {
+                            aiPercent: humanized.aiDetection.aiPercent,
+                            humanPercent: humanized.aiDetection.humanPercent,
+                            targetMet: humanized.aiDetection.targetMet,
+                            confidence: humanized.aiDetection.confidence,
+                        },
+                        humanized.aiDetection.attempts,
                     );
-                    if (afterPolishReadability.readabilityGrade) {
-                        optimized.seoScores = {
-                            ...optimized.seoScores,
-                            readability: afterPolishReadability.readabilityPercent,
-                            readabilityGrade: afterPolishReadability.readabilityGrade,
-                        };
-                    }
+                } else {
+                    const zgError =
+                        aiStatus.error ??
+                        humanized.skippedReason ??
+                        "ZeroGPT detection unavailable";
+                    optimized.seoScores = {
+                        ...optimized.seoScores,
+                        aiDetectionError: zgError,
+                    };
+                    console.warn("[optimize-content]", zgError);
+                    insights.push(
+                        `ZeroGPT could not verify AI % (${zgError}). Showing optimizer estimate until credits or API key are fixed.`,
+                    );
                 }
-            } else if (humanized.aiDetection) {
-                optimized.seoScores = applyZeroGptDetectionToScores(
-                    optimized.seoScores,
-                    {
-                        aiPercent: humanized.aiDetection.aiPercent,
-                        humanPercent: humanized.aiDetection.humanPercent,
-                        targetMet: humanized.aiDetection.targetMet,
-                        confidence: humanized.aiDetection.confidence,
-                    },
-                    humanized.aiDetection.attempts,
-                );
-            } else {
-                console.warn(
-                    "[optimize-content]",
-                    humanized.skippedReason ?? "ZeroGPT detection unavailable",
-                );
-                insights.push(
-                    "ZeroGPT could not verify AI % — the bar may show an optimizer estimate. Use Refresh in the editor or check ZEROGPT_API_KEY.",
-                );
             }
 
             const postForKeywords: BlogPost = {
@@ -672,6 +693,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     const recoveredReadability = await measureFinalReadability(
                         optimized.contentMarkdown,
                         scoreTitle,
+                        { targetGradeMax: readabilityTargetGradeMax },
                     );
                     if (recoveredReadability.readabilityGrade) {
                         optimized.seoScores = {
@@ -681,14 +703,19 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                         };
                     }
                 }
-                if (optimized.seoScores.aiDetection?.provider !== "zerogpt") {
-                    const recoveredAi = await detectAiContentPercent(optimized.contentMarkdown);
-                    if (recoveredAi) {
+                if (isZeroGptEnabled() && optimized.seoScores.aiDetection?.provider !== "zerogpt") {
+                    const recovered = await detectAiContentPercentWithStatus(optimized.contentMarkdown);
+                    if (recovered.result) {
                         optimized.seoScores = applyZeroGptDetectionToScores(
                             optimized.seoScores,
-                            recoveredAi,
+                            recovered.result,
                             optimized.seoScores.aiDetection?.attempts ?? 0,
                         );
+                    } else if (recovered.error) {
+                        optimized.seoScores = {
+                            ...optimized.seoScores,
+                            aiDetectionError: recovered.error,
+                        };
                     }
                 }
             } catch (recoverErr) {
@@ -704,9 +731,10 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             optimized,
             blogPost,
             optimized.seoScores.aiDetection?.attempts ?? 0,
+            readabilityTargetGradeMax,
         );
 
-        return NextResponse.json({ optimized }, { status: 200 });
+        return NextResponse.json({ optimized, zeroGptEnabled: isZeroGptEnabled() }, { status: 200 });
     } catch (err) {
         const message = err instanceof Error ? err.message : "Optimization failed";
         return NextResponse.json({ error: message }, { status: 500 });

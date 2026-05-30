@@ -13,6 +13,7 @@ import {
   persistLocalContentGuidelines,
   readLocalContentGuidelines,
 } from "@/lib/businessSetupStorage";
+import { READABILITY_TARGET_GRADE_OPTIONS } from "@/lib/readabilityTarget";
 
 export function BusinessContextSetup({
   onComplete,
@@ -40,6 +41,7 @@ export function BusinessContextSetup({
   const [editSchemaType, setEditSchemaType] = useState<"Article" | "BlogPosting">("BlogPosting");
   const [editCanonicalBaseUrl, setEditCanonicalBaseUrl] = useState("");
   const [editIncludeFaqSchema, setEditIncludeFaqSchema] = useState(true);
+  const [editReadabilityTargetGrade, setEditReadabilityTargetGrade] = useState(10);
   const [editDosText, setEditDosText] = useState("");
   const [editDontsText, setEditDontsText] = useState("");
 
@@ -110,6 +112,7 @@ export function BusinessContextSetup({
       setEditSchemaType(contextData.seoDefaults?.defaultSchemaType || "BlogPosting");
       setEditCanonicalBaseUrl(contextData.seoDefaults?.canonicalBaseUrl || "");
       setEditIncludeFaqSchema(contextData.seoDefaults?.includeFaqSchemaByDefault ?? true);
+      setEditReadabilityTargetGrade(contextData.seoDefaults?.readabilityTargetGradeMax ?? 10);
       setEditDosText(guidelinesToText(contextData.contentGuidelines?.dos));
       setEditDontsText(guidelinesToText(contextData.contentGuidelines?.donts));
       setStep("verify");
@@ -139,11 +142,13 @@ export function BusinessContextSetup({
         country: contextToSave.location?.country?.trim() || "",
       },
       services: parsedServices.length > 0 ? parsedServices : (contextToSave.services || []),
-      seoDefaults: contextToSave.seoDefaults ?? {
+      seoDefaults: {
+        ...(contextToSave.seoDefaults ?? {}),
         defaultPostCategory: editDefaultCategory || "Guide",
         defaultSchemaType: editSchemaType,
         includeFaqSchemaByDefault: editIncludeFaqSchema,
         canonicalBaseUrl: editCanonicalBaseUrl.trim() || "",
+        readabilityTargetGradeMax: editReadabilityTargetGrade,
       },
       contentGuidelines: buildContentGuidelinesFromText(editDosText, editDontsText),
     };
@@ -224,6 +229,7 @@ export function BusinessContextSetup({
         defaultSchemaType: "BlogPosting",
         includeFaqSchemaByDefault: true,
         canonicalBaseUrl: canonical,
+        readabilityTargetGradeMax: 10,
       },
     };
     setDraftContext(draft);
@@ -232,6 +238,7 @@ export function BusinessContextSetup({
     setEditSchemaType("BlogPosting");
     setEditCanonicalBaseUrl(canonical);
     setEditIncludeFaqSchema(true);
+    setEditReadabilityTargetGrade(10);
     setEditDosText("");
     setEditDontsText("");
 
@@ -554,6 +561,25 @@ export function BusinessContextSetup({
                   <option value="BlogPosting">BlogPosting</option>
                   <option value="Article">Article</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">
+                  Readability target (max grade)
+                </label>
+                <select
+                  value={editReadabilityTargetGrade}
+                  onChange={(e) => setEditReadabilityTargetGrade(Number(e.target.value))}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                >
+                  {READABILITY_TARGET_GRADE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[11px] text-neutral-500 leading-relaxed">
+                  Optimizer aims for this Flesch-Kincaid grade or easier. Lower numbers mean simpler copy.
+                </p>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-xs font-black uppercase tracking-widest text-neutral-500 mb-1.5">Canonical Base URL (Optional)</label>

@@ -4,6 +4,7 @@ import {
     getSeoReviewToolsApiKey,
     meetsReadabilityTarget,
 } from "@/lib/seoReviewToolsReadability";
+import { normalizeReadabilityTargetGrade } from "@/lib/readabilityTarget";
 
 export async function POST(req: Request) {
     const apiKey = getSeoReviewToolsApiKey();
@@ -16,7 +17,11 @@ export async function POST(req: Request) {
         );
     }
 
-    let body: { markdown?: string; contentMarkdown?: string };
+    let body: {
+        markdown?: string;
+        contentMarkdown?: string;
+        readabilityTargetGradeMax?: number;
+    };
     try {
         body = await req.json();
     } catch {
@@ -39,7 +44,11 @@ export async function POST(req: Request) {
 
         return NextResponse.json({
             ...result,
-            targetMet: meetsReadabilityTarget(result.gradeLevel),
+            targetGradeMax: normalizeReadabilityTargetGrade(body.readabilityTargetGradeMax),
+            targetMet: meetsReadabilityTarget(
+                result.gradeLevel,
+                body.readabilityTargetGradeMax,
+            ),
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : "Readability check failed";

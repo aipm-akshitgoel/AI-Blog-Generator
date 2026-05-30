@@ -10,11 +10,16 @@ import {
     normalizeMarkdownTables,
 } from "@/lib/markdownStructure";
 
+import {
+    DEFAULT_READABILITY_TARGET_GRADE_MAX,
+    meetsReadabilityTarget as meetsReadabilityTargetWithOptions,
+} from "@/lib/readabilityTarget";
+
 export const SEO_REVIEW_TOOLS_READABILITY_URL =
     "https://api.seoreviewtools.com/readability-score/?content=1";
 
-/** Inclusive ceiling — grade 9–10 is “plain professional” (see readabilityEditorial.ts). */
-export const READABILITY_TARGET_GRADE_MAX = 10;
+/** @deprecated Use DEFAULT_READABILITY_TARGET_GRADE_MAX from readabilityTarget.ts */
+export const READABILITY_TARGET_GRADE_MAX = DEFAULT_READABILITY_TARGET_GRADE_MAX;
 export const READABILITY_TARGET_GRADE_MIN = 8;
 export const READABILITY_MAX_ATTEMPTS = 2;
 
@@ -55,8 +60,8 @@ export function parseGradeLevel(label: string): number {
     return 99;
 }
 
-export function meetsReadabilityTarget(gradeLevel: number): boolean {
-    return gradeLevel <= READABILITY_TARGET_GRADE_MAX;
+export function meetsReadabilityTarget(gradeLevel: number, targetMax?: number): boolean {
+    return meetsReadabilityTargetWithOptions(gradeLevel, targetMax);
 }
 
 /** Map Flesch Reading Ease (0–100) to the optimizer UI 0–100 readability bar. */

@@ -17,9 +17,17 @@ import {
     fleschEaseToReadabilityPercent,
     meetsReadabilityTarget,
     READABILITY_MAX_ATTEMPTS,
-    READABILITY_TARGET_GRADE_MAX,
     type ReadabilityGradeResult,
 } from "@/lib/seoReviewToolsReadability";
+import {
+    DEFAULT_READABILITY_TARGET_GRADE_MAX,
+    normalizeReadabilityTargetGrade,
+} from "@/lib/readabilityTarget";
+
+export type ReadabilityLoopOptions = {
+    maxAttempts?: number;
+    targetGradeMax?: number;
+};
 
 /** After humanize — extra edits without undoing detector-friendly tone. */
 export const POST_HUMANIZE_READABILITY_MAX_ATTEMPTS = 2;
@@ -57,43 +65,32 @@ function toReadabilityGrade(
     measurement: ReadabilityGradeResult,
     attempts: number,
     isFinal: boolean,
+    targetGradeMax = DEFAULT_READABILITY_TARGET_GRADE_MAX,
 ): ReadabilityGrade {
+    const target = normalizeReadabilityTargetGrade(targetGradeMax);
     return {
         gradeLevel: measurement.gradeLevel,
         gradeLabel: measurement.gradeLabel,
         fleschScore: measurement.fleschScore,
         fleschLabel: measurement.fleschLabel,
-        targetMet: meetsReadabilityTarget(measurement.gradeLevel),
+        targetMet: meetsReadabilityTarget(measurement.gradeLevel, target),
+        targetGradeMax: target,
         attempts,
         provider: "seo-review-tools",
         isFinal,
     };
 }
 
-function buildPostHumanizeReadabilitySystemPrompt(): string {
-    return `You are an expert editor polishing web articles after AI humanization. Keep the human, professional tone.
-
-${READABILITY_IMPROVE_SUMMARY}
-
-${READABILITY_EDITORIAL_RULES}
-
-Output:
-- Return ONLY the revised markdown (no JSON, no code fences, no commentary).
-- Preserve exact multi-word keyword phrases already in the text — do not delete or rephrase them.`;
-}
-
-/**
- * Prefer the candidate that passes the grade ceiling with the most natural voice:
- * among passing versions, higher grade (less oversimplified) then higher Flesch ease.
- */
 function pickBestReadabilityCandidate(
     candidates: { markdown: string; measurement: ReadabilityGradeResult }[],
+    targetGradeMax = DEFAULT_READABILITY_TARGET_GRADE_MAX,
 ): { markdown: string; measurement: ReadabilityGradeResult } {
+    const target = normalizeReadabilityTargetGrade(targetGradeMax);
     return candidates.reduce((best, cur) => {
         const c = cur.measurement;
         const b = best.measurement;
-        const cMet = meetsReadabilityTarget(c.gradeLevel);
-        const bMet = meetsReadabilityTarget(b.gradeLevel);
+        const cMet = meetsReadabilityTarget(c.gradeLevel, target);
+        const bMet = meetsReadabilityTarget(b.gradeLevel, target);
         if (cMet && !bMet) return cur;
         if (!cMet && bMet) return best;
 
@@ -111,9 +108,24 @@ function pickBestReadabilityCandidate(
     });
 }
 
-/** Only rewrite when grade is above the editorial ceiling — not when Flesch is merely below an arbitrary bar. */
-function needsReadabilityImprovement(measurement: ReadabilityGradeResult): boolean {
-    return measurement.gradeLevel > READABILITY_TARGET_GRADE_MAX;
+function buildPostHumanizeReadabilitySystemPrompt(): string {
+    return `You are an expert editor polishing web articles after AI humanization. Keep the human, professional tone.
+
+${READABILITY_IMPROVE_SUMMARY}
+
+${READABILITY_EDITORIAL_RULES}
+
+Output:
+- Return ONLY the revised markdown (no JSON, no code fences, no commentary).
+- Preserve exact multi-word keyword phrases already in the text — do not delete or rephrase them.`;
+}
+
+/** Only rewrite when grade is above the account target ceiling. */
+function needsReadabilityImprovement(
+    measurement: ReadabilityGradeResult,
+    targetGradeMax = DEFAULT_READABILITY_TARGET_GRADE_MAX,
+): boolean {
+    return measurement.gradeLevel > normalizeReadabilityTargetGrade(targetGradeMax);
 }
 
 async function improveReadabilityWithModel(
@@ -202,9 +214,10 @@ export async function runReadabilityImprovementLoop(
     azure: AzureConfig,
     blogPost: BlogPost,
     initialMarkdown: string,
-    options?: { maxAttempts?: number },
+    options?: ReadabilityLoopOptions,
 ): Promise<ReadabilityLoopResult> {
     const maxAttempts = options?.maxAttempts ?? READABILITY_MAX_ATTEMPTS;
+    const targetGradeMax = normalizeReadabilityTargetGrade(options?.targetGradeMax);
     const candidates: { markdown: string; measurement: ReadabilityGradeResult }[] = [];
     let markdown = initialMarkdown;
     let attemptsUsed = 0;
@@ -225,7 +238,7 @@ export async function runReadabilityImprovementLoop(
     candidates.push({ markdown, measurement });
 
     if (maxAttempts <= 0) {
-        const readabilityGrade = toReadabilityGrade(measurement, 0, false);
+        const readabilityGrade = toReadabilityGrade(measurement, 0, false, targetGradeMax);
         return {
             contentMarkdown: markdown,
             readabilityGrade,
@@ -233,7 +246,7 @@ export async function runReadabilityImprovementLoop(
         };
     }
 
-    while (attemptsUsed < maxAttempts && needsReadabilityImprovement(measurement)) {
+    while (attemptsUsed < maxAttempts && needsReadabilityImprovement(measurement, targetGradeMax)) {
         attemptsUsed++;
         markdown = await improveMarkdownPreservingHeadings(azure, markdown, blogPost, {
             measurement,
@@ -244,8 +257,8 @@ export async function runReadabilityImprovementLoop(
         candidates.push({ markdown, measurement });
     }
 
-    const best = pickBestReadabilityCandidate(candidates);
-    const readabilityGrade = toReadabilityGrade(best.measurement, attemptsUsed, false);
+    const best = pickBestReadabilityCandidate(candidates, targetGradeMax);
+    const readabilityGrade = toReadabilityGrade(best.measurement, attemptsUsed, false, targetGradeMax);
 
     return {
         contentMarkdown: best.markdown,
@@ -259,12 +272,13 @@ export async function runPostHumanizeReadabilityLoop(
     azure: AzureConfig,
     blogPost: BlogPost,
     initialMarkdown: string,
-    options?: { maxAttempts?: number },
+    options?: ReadabilityLoopOptions,
 ): Promise<ReadabilityLoopResult> {
     const candidates: { markdown: string; measurement: ReadabilityGradeResult }[] = [];
     let markdown = initialMarkdown;
     let attemptsUsed = 0;
     const title = blogPost.h1Title || blogPost.title;
+    const targetGradeMax = normalizeReadabilityTargetGrade(options?.targetGradeMax);
 
     const measure = async () => fetchReadabilityScore(markdown, undefined, { title });
 
@@ -282,7 +296,7 @@ export async function runPostHumanizeReadabilityLoop(
 
     const maxAttempts = options?.maxAttempts ?? POST_HUMANIZE_READABILITY_MAX_ATTEMPTS;
     if (maxAttempts <= 0) {
-        const readabilityGrade = toReadabilityGrade(measurement, 0, true);
+        const readabilityGrade = toReadabilityGrade(measurement, 0, true, targetGradeMax);
         return {
             contentMarkdown: markdown,
             readabilityGrade,
@@ -290,7 +304,7 @@ export async function runPostHumanizeReadabilityLoop(
         };
     }
 
-    while (attemptsUsed < maxAttempts && needsReadabilityImprovement(measurement)) {
+    while (attemptsUsed < maxAttempts && needsReadabilityImprovement(measurement, targetGradeMax)) {
         attemptsUsed++;
         markdown = await improveMarkdownPreservingHeadings(azure, markdown, blogPost, {
             measurement,
@@ -302,8 +316,8 @@ export async function runPostHumanizeReadabilityLoop(
         candidates.push({ markdown, measurement });
     }
 
-    const best = pickBestReadabilityCandidate(candidates);
-    const readabilityGrade = toReadabilityGrade(best.measurement, attemptsUsed, true);
+    const best = pickBestReadabilityCandidate(candidates, targetGradeMax);
+    const readabilityGrade = toReadabilityGrade(best.measurement, attemptsUsed, true, targetGradeMax);
 
     return {
         contentMarkdown: best.markdown,
@@ -316,7 +330,9 @@ export async function runPostHumanizeReadabilityLoop(
 export async function measureFinalReadability(
     markdown: string,
     title?: string,
+    options?: Pick<ReadabilityLoopOptions, "targetGradeMax">,
 ): Promise<ReadabilityLoopResult> {
+    const targetGradeMax = normalizeReadabilityTargetGrade(options?.targetGradeMax);
     const measurement = await fetchReadabilityScore(markdown, undefined, { title });
     if (!measurement) {
         return {
@@ -327,7 +343,7 @@ export async function measureFinalReadability(
         };
     }
 
-    const readabilityGrade = toReadabilityGrade(measurement, 0, true);
+    const readabilityGrade = toReadabilityGrade(measurement, 0, true, targetGradeMax);
 
     return {
         contentMarkdown: markdown,

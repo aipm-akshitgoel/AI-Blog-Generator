@@ -11,6 +11,7 @@ type ReadabilityApiResponse = {
     fleschScore: number;
     fleschLabel?: string;
     targetMet?: boolean;
+    targetGradeMax?: number;
     error?: string;
 };
 
@@ -20,15 +21,17 @@ type AiDetectionApiResponse = {
     targetMet: boolean;
     confidence?: string;
     error?: string;
+    disabled?: boolean;
 };
 
 export type RefreshOptimizerMetricsOptions = {
     post?: BlogPost;
     constraints?: ContentConstraints | null;
     strategyPrimary?: string;
+    readabilityTargetGradeMax?: number;
 };
 
-/** Re-verify readability (SEO Review Tools), AI % (ZeroGPT), and keyword density for the current draft. */
+/** Re-verify readability (SEO Review Tools), AI % (ZeroGPT when enabled), and keyword density for the current draft. */
 export async function refreshOptimizerMetrics(
     markdown: string,
     base: SeoScores,
@@ -54,7 +57,10 @@ export async function refreshOptimizerMetrics(
         fetch("/api/readability-score", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ markdown }),
+            body: JSON.stringify({
+                markdown,
+                readabilityTargetGradeMax: options?.readabilityTargetGradeMax,
+            }),
         }).catch(() => null),
         fetch("/api/ai-detection", {
             method: "POST",
@@ -74,6 +80,7 @@ export async function refreshOptimizerMetrics(
                 fleschScore: data.fleschScore,
                 fleschLabel: data.fleschLabel,
                 targetMet: Boolean(data.targetMet),
+                targetGradeMax: data.targetGradeMax ?? options?.readabilityTargetGradeMax,
                 attempts: base.readabilityGrade?.attempts ?? 0,
                 provider: "seo-review-tools",
                 isFinal: base.readabilityGrade?.isFinal,
@@ -90,6 +97,14 @@ export async function refreshOptimizerMetrics(
                 targetMet: data.targetMet,
                 confidence: data.confidence,
             }, next.aiDetection?.attempts ?? 0);
+            delete next.aiDetectionError;
+        } else if (data.error && !data.disabled) {
+            next = { ...next, aiDetectionError: data.error };
+        }
+    } else if (aiRes) {
+        const data = (await aiRes.json().catch(() => ({}))) as AiDetectionApiResponse;
+        if (data.error && !data.disabled) {
+            next = { ...next, aiDetectionError: data.error };
         }
     }
 
