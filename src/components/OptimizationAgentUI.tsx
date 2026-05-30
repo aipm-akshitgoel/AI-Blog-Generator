@@ -12,6 +12,7 @@ import {
 } from "@/lib/optimizeContentClient";
 import {
     OPTIMIZATION_LINKS_PHASE,
+    OPTIMIZATION_LOADING_STALE_HINT,
     OPTIMIZATION_LOADING_TITLE,
     OPTIMIZATION_TIMING_NOTE,
     OPTIMIZED_CONTENT_SUBTITLE,
@@ -682,6 +683,12 @@ export function OptimizationAgentUI({
                 )}
                 <p className="mt-4 text-[11px] text-neutral-600 max-w-md mx-auto">
                     {loadingPhase === "optimize" ? OPTIMIZATION_TIMING_NOTE : null}
+                    {loadingPhase === "optimize" &&
+                    optimizationLoadingStepIndex(loadingSeconds, optimizationLoadingSteps) ===
+                        optimizationLoadingSteps.length - 1 &&
+                    loadingSeconds >= (optimizationLoadingSteps.length - 1) * 12 ? (
+                        <span className="block mt-1 text-neutral-500">{OPTIMIZATION_LOADING_STALE_HINT}</span>
+                    ) : null}
                     {loadingSeconds > 0 && (
                         <span className={loadingPhase === "optimize" ? " block mt-1 font-mono" : " font-mono"}>
                             {loadingSeconds}s elapsed

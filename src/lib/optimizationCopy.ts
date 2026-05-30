@@ -15,8 +15,12 @@ export const OPTIMIZATION_LOADING_STEPS = [
     "Final humanize pass (keyword-safe)",
     "Improving readability (post-humanize)",
     "Checking AI detection with ZeroGPT",
-    "Polishing grammar and formatting",
+    "Finishing up…",
 ] as const;
+
+/** Shown after the loader reaches the last label (labels rotate every ~12s, not pipeline stages). */
+export const OPTIMIZATION_LOADING_STALE_HINT =
+    "Still working — labels advance on a timer; long drafts often stay on this step while humanize and scoring finish.";
 
 /** Loading steps shown while optimize runs (omit structure when TOC is already set). */
 export function getOptimizationLoadingSteps(skipStructureStep = false): string[] {
