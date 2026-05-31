@@ -3,7 +3,6 @@ import type { BlogPost } from "@/lib/types/content";
 import type { ContentConstraints } from "@/lib/types/contentSpec";
 import type { SeoScores } from "@/lib/types/optimization";
 import type { KeywordDensityVerification } from "@/lib/types/keywordPlan";
-import { applyZeroGptDetectionToScores } from "@/lib/zerogptAiDetection";
 
 type ReadabilityApiResponse = {
     gradeLevel: number;
@@ -15,14 +14,6 @@ type ReadabilityApiResponse = {
     error?: string;
 };
 
-type AiDetectionApiResponse = {
-    aiPercent: number;
-    humanPercent: number;
-    targetMet: boolean;
-    confidence?: string;
-    error?: string;
-};
-
 export type RefreshOptimizerMetricsOptions = {
     post?: BlogPost;
     constraints?: ContentConstraints | null;
@@ -30,7 +21,7 @@ export type RefreshOptimizerMetricsOptions = {
     readabilityTargetGradeMax?: number;
 };
 
-/** Re-verify readability (SEO Review Tools), AI % (ZeroGPT), and keyword density for the current draft. */
+/** Re-verify readability (SEO Review Tools) and keyword density for the current draft. */
 export async function refreshOptimizerMetrics(
     markdown: string,
     base: SeoScores,
@@ -52,7 +43,7 @@ export async function refreshOptimizerMetrics(
               }).catch(() => null)
             : Promise.resolve(null);
 
-    const [readRes, aiRes, densityRes] = await Promise.all([
+    const [readRes, densityRes] = await Promise.all([
         fetch("/api/readability-score", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -60,11 +51,6 @@ export async function refreshOptimizerMetrics(
                 markdown,
                 readabilityTargetGradeMax: options?.readabilityTargetGradeMax,
             }),
-        }).catch(() => null),
-        fetch("/api/ai-detection", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ markdown }),
         }).catch(() => null),
         densityPromise,
     ]);
@@ -84,26 +70,6 @@ export async function refreshOptimizerMetrics(
                 provider: "seo-review-tools",
                 isFinal: base.readabilityGrade?.isFinal,
             };
-        }
-    }
-
-    if (aiRes?.ok) {
-        const data = (await aiRes.json()) as AiDetectionApiResponse;
-        if (!data.error && typeof data.aiPercent === "number") {
-            next = applyZeroGptDetectionToScores(next, {
-                aiPercent: data.aiPercent,
-                humanPercent: data.humanPercent,
-                targetMet: data.targetMet,
-                confidence: data.confidence,
-            }, next.aiDetection?.attempts ?? 0);
-            delete next.aiDetectionError;
-        } else if (data.error) {
-            next = { ...next, aiDetectionError: data.error };
-        }
-    } else if (aiRes) {
-        const data = (await aiRes.json().catch(() => ({}))) as AiDetectionApiResponse;
-        if (data.error) {
-            next = { ...next, aiDetectionError: data.error };
         }
     }
 

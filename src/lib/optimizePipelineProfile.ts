@@ -5,11 +5,11 @@ import { READABILITY_MAX_ATTEMPTS } from "@/lib/seoReviewToolsReadability";
 
 /** Above this word count, use a shorter post-AI pipeline to finish within Vercel limits. */
 export const LONG_POST_BODY_WORDS = 1_500;
-/** Very long articles — minimal humanize/readability loops. */
+/** Very long articles — measure readability only (no Azure rewrite loops). */
 const VERY_LONG_POST_BODY_WORDS = 3_000;
 /** Reserve time for final scoring + response serialization. */
 const PIPELINE_BUFFER_MS = 25_000;
-/** Skip humanize/readability loops when less than this remains after the Azure draft. */
+/** Skip readability loops when less than this remains after the Azure draft. */
 const SKIP_POST_PIPELINE_REMAINING_MS = 50_000;
 
 export type OptimizePipelineProfile = {
@@ -17,13 +17,10 @@ export type OptimizePipelineProfile = {
     /** Azure draft timeout (ms) for this request. */
     modelTimeoutMs: number;
     readabilityMaxAttempts: number;
-    humanizePass1Max: number;
-    /** @deprecated Always 0 — humanize after keyword boost removed (exact phrases must not be rewritten). */
-    humanizePass2Max: number;
-    /** 0 = measure only (no Azure readability edits) */
-    postHumanizeReadabilityMax: number;
+    /** Azure readability edits after keyword placement (0 = measure only). */
+    postKeywordReadabilityMax: number;
     skipExtraAiPolish: boolean;
-    /** When true, only run final SEO Review Tools + ZeroGPT scoring. */
+    /** When true, skip readability loops after the Azure draft. */
     skipPostPipeline: boolean;
 };
 
@@ -44,11 +41,9 @@ export function getOptimizePipelineProfile(
     if (tightTime) {
         return {
             bodyWords,
-            modelTimeoutMs,
+            modelTimeoutMs: 60_000,
             readabilityMaxAttempts: 0,
-            humanizePass1Max: 0,
-            humanizePass2Max: 0,
-            postHumanizeReadabilityMax: 0,
+            postKeywordReadabilityMax: 0,
             skipExtraAiPolish: true,
             skipPostPipeline: true,
         };
@@ -59,9 +54,7 @@ export function getOptimizePipelineProfile(
             bodyWords,
             modelTimeoutMs,
             readabilityMaxAttempts: 0,
-            humanizePass1Max: 2,
-            humanizePass2Max: 0,
-            postHumanizeReadabilityMax: 0,
+            postKeywordReadabilityMax: 0,
             skipExtraAiPolish: true,
             skipPostPipeline: false,
         };
@@ -72,9 +65,7 @@ export function getOptimizePipelineProfile(
             bodyWords,
             modelTimeoutMs,
             readabilityMaxAttempts: 0,
-            humanizePass1Max: 3,
-            humanizePass2Max: 0,
-            postHumanizeReadabilityMax: 0,
+            postKeywordReadabilityMax: 0,
             skipExtraAiPolish: true,
             skipPostPipeline: false,
         };
@@ -84,9 +75,7 @@ export function getOptimizePipelineProfile(
         bodyWords,
         modelTimeoutMs,
         readabilityMaxAttempts: READABILITY_MAX_ATTEMPTS,
-        humanizePass1Max: 3,
-        humanizePass2Max: 0,
-        postHumanizeReadabilityMax: POST_HUMANIZE_READABILITY_MAX_ATTEMPTS,
+        postKeywordReadabilityMax: POST_HUMANIZE_READABILITY_MAX_ATTEMPTS,
         skipExtraAiPolish: true,
         skipPostPipeline: false,
     };

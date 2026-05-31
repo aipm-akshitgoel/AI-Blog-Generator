@@ -40,7 +40,6 @@ import {
 } from "@/lib/keywordPlanVerification";
 import type { KeywordDensityVerification } from "@/lib/types/keywordPlan";
 import type { SeoScores } from "@/lib/types/optimization";
-import { AI_DETECTION_TARGET_PERCENT_MAX } from "@/lib/zerogptAiDetection";
 import { fleschEaseToReadabilityPercent, formatReadabilityGradeNumber } from "@/lib/seoReviewToolsReadability";
 import {
     formatTargetGradeLabel,
@@ -85,15 +84,21 @@ function ReadabilityGradeBlock({
     readabilityResolved,
     targetGradeMax,
     delta,
+    highlighted,
 }: {
     scores: SeoScores;
     readabilityResolved: boolean;
     targetGradeMax: number;
     delta?: number;
+    highlighted?: boolean;
 }) {
     const readability = readabilityMetricDisplay(scores, readabilityResolved, targetGradeMax);
     return (
-        <div className="rounded-xl border border-neutral-200 bg-white px-6 py-4 shadow-sm">
+        <div
+            className={`rounded-xl border border-neutral-200 bg-white px-6 py-4 shadow-sm transition-all duration-500 ${
+                highlighted ? "ring-2 ring-emerald-300 ring-offset-1" : ""
+            }`}
+        >
             <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
                     <SeoReviewToolsBadge variant="light" size="md" logoOnly />
@@ -115,99 +120,6 @@ function ReadabilityGradeBlock({
 
 const METRIC_BAR_PENDING = "bg-neutral-300 animate-pulse";
 
-/** Lower AI % is better: green when below 20% target. */
-function aiContentBarClass(scores: SeoScores): string {
-    if (scores.aiDetection?.provider !== "zerogpt") return METRIC_BAR_AI_MID;
-    const pct = scores.aiDetection.aiPercent;
-    if (scores.aiDetection.targetMet === true) return METRIC_BAR_GOOD;
-    if (pct < AI_DETECTION_TARGET_PERCENT_MAX) return METRIC_BAR_GOOD;
-    if (pct < 50) return METRIC_BAR_WARN;
-    return METRIC_BAR_WARN;
-}
-
-function shortZeroGptErrorLabel(error: string): string {
-    const e = error.toLowerCase();
-    if (e.includes("not enough credit") || e.includes("insufficient credit")) return "ZeroGPT: no credits";
-    if (e.includes("not configured") || e.includes("api key")) return "ZeroGPT: no API key";
-    if (e.includes("too short")) return "ZeroGPT: draft too short";
-    if (e.includes("parse")) return "ZeroGPT: parse error";
-    return "ZeroGPT unavailable";
-}
-
-function formatHumanizeStatusNote(scores: SeoScores | null | undefined): string | undefined {
-    const attempts = scores?.aiDetection?.attempts ?? 0;
-    const skipped = scores?.humanizeSkippedReason?.trim();
-    const highAi =
-        scores?.aiDetection?.provider === "zerogpt" &&
-        scores.aiDetection.targetMet === false;
-
-    if (skipped) return skipped;
-    if (highAi && attempts === 0) {
-        return "AI Humanize did not run — set AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL on Vercel, then re-run optimize.";
-    }
-    if (attempts > 0 && highAi) {
-        return `${attempts} humanize pass(es) ran; AI % is still above 20%. Edit the draft or re-run optimize.`;
-    }
-    return undefined;
-}
-
-/** Show ZeroGPT when verified; otherwise optimizer estimate with reason. */
-function formatAiContentDisplay(
-    scores: SeoScores | null | undefined,
-    detectionResolved: boolean,
-    detectionError?: string | null,
-): { value: number; suffix: string; barClass: string; help: string; statusNote?: string } {
-    if (scores?.aiDetection?.provider === "zerogpt") {
-        const pct = scores.aiDetection.aiPercent;
-        const rounded = Math.round(pct * 10) / 10;
-        return {
-            value: rounded,
-            suffix: `${rounded}%`,
-            barClass: aiContentBarClass(scores),
-            help: "Verified with ZeroGPT on this draft. Lower is better. Green = below 20%.",
-        };
-    }
-    if (!detectionResolved) {
-        return {
-            value: 0,
-            suffix: "Checking…",
-            barClass: METRIC_BAR_PENDING,
-            help: "Running ZeroGPT on this draft. The score appears when verification finishes.",
-        };
-    }
-
-    const err =
-        detectionError?.trim() ||
-        scores?.aiDetectionError?.trim() ||
-        null;
-    const estimate = scores?.aiContentPercent;
-    const hasEstimate = typeof estimate === "number" && Number.isFinite(estimate);
-
-    if (hasEstimate) {
-        const rounded = Math.round(estimate);
-        return {
-            value: rounded,
-            suffix: err ? `${rounded}% est.` : `${rounded}%`,
-            barClass: METRIC_BAR_AI_MID,
-            help: err
-                ? `ZeroGPT unavailable (${err}). Showing optimizer estimate. Top up ZeroGPT credits or fix ZEROGPT_API_KEY on Vercel, then Refresh.`
-                : "Optimizer estimate. ZeroGPT verification did not run on this draft.",
-            statusNote: err ? shortZeroGptErrorLabel(err) : undefined,
-        };
-    }
-
-    return {
-        value: 0,
-        suffix: err ? shortZeroGptErrorLabel(err) : "Unavailable",
-        barClass: METRIC_BAR_AI_MID,
-        help: err
-            ? `ZeroGPT unavailable: ${err}. Add ZEROGPT_API_KEY and credits on Vercel, then Refresh.`
-            : "ZeroGPT could not score this draft. Check ZEROGPT_API_KEY and credits, then Refresh.",
-        statusNote: err ?? undefined,
-    };
-}
-
-import { ZeroGptBadge } from "@/components/ZeroGptBadge";
 import { SeoReviewToolsBadge } from "@/components/SeoReviewToolsBadge";
 import { refreshOptimizerMetrics } from "@/lib/refreshOptimizerMetricsClient";
 
@@ -224,7 +136,6 @@ interface OptimizationAgentProps {
 
 type SeoScoreDeltas = {
     readability: number;
-    aiContentPercent: number;
 };
 
 function SeoMetricBar({
@@ -440,7 +351,6 @@ export function OptimizationAgentUI({
     const [loadingSeconds, setLoadingSeconds] = useState(0);
     const [isRefreshingMetrics, setIsRefreshingMetrics] = useState(false);
     const [metricsRefreshError, setMetricsRefreshError] = useState<string | null>(null);
-    const [aiDetectionResolved, setAiDetectionResolved] = useState(false);
     const [readabilityResolved, setReadabilityResolved] = useState(false);
     const optimizeAbortRef = useRef<AbortController | null>(null);
     const resultsTopRef = useRef<HTMLDivElement>(null);
@@ -643,77 +553,6 @@ export function OptimizationAgentUI({
         readabilityTargetGradeMax,
     ]);
 
-    useEffect(() => {
-        if (!optimizedData || isEditing) return;
-        if (liveScores?.aiDetection?.provider === "zerogpt") {
-            setAiDetectionResolved(true);
-            return;
-        }
-
-        let cancelled = false;
-        void fetch("/api/ai-detection", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ markdown: optimizedData.contentMarkdown }),
-        })
-            .then(async (res) => {
-                const data = (await res.json().catch(() => ({}))) as {
-                    aiPercent?: number;
-                    humanPercent?: number;
-                    targetMet?: boolean;
-                    confidence?: string;
-                    error?: string;
-                };
-                if (cancelled) return;
-
-                if (res.ok && typeof data.aiPercent === "number" && !data.error) {
-                    const aiPct = data.aiPercent;
-                    setLiveScores((prev) => {
-                        const base =
-                            prev ??
-                            normalizeSeoScores(
-                                optimizedData.seoScores,
-                                optimizedData.plagiarismReport?.overallSimilarity ?? 0,
-                            );
-                        const next = {
-                            ...base,
-                            aiContentPercent: Math.round(aiPct),
-                            aiDetection: {
-                                aiPercent: aiPct,
-                                humanPercent: data.humanPercent ?? 100 - aiPct,
-                                targetMet: Boolean(data.targetMet),
-                                attempts: 0,
-                                provider: "zerogpt" as const,
-                                confidence: data.confidence,
-                            },
-                        };
-                        delete next.aiDetectionError;
-                        return next;
-                    });
-                    return;
-                }
-
-                if (data.error) {
-                    setLiveScores((prev) => ({
-                        ...(prev ??
-                            normalizeSeoScores(
-                                optimizedData.seoScores,
-                                optimizedData.plagiarismReport?.overallSimilarity ?? 0,
-                            )),
-                        aiDetectionError: data.error,
-                    }));
-                }
-            })
-            .catch(() => undefined)
-            .finally(() => {
-                if (!cancelled) setAiDetectionResolved(true);
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [optimizedData, isEditing, liveScores?.aiDetection?.provider]);
-
     const metricsRefreshOptions = {
         post: { ...post, contentMarkdown: optimizedData?.contentMarkdown ?? post.contentMarkdown },
         constraints: contentConstraints ?? null,
@@ -730,7 +569,6 @@ export function OptimizationAgentUI({
                 post: { ...metricsRefreshOptions.post, contentMarkdown: markdown },
             });
             setLiveScores(refreshed);
-            setAiDetectionResolved(refreshed.aiDetection?.provider === "zerogpt");
             setReadabilityResolved(Boolean(refreshed.readabilityGrade));
             setHighlightScores(true);
             return refreshed;
@@ -768,7 +606,6 @@ export function OptimizationAgentUI({
             });
             setLiveScores(scores);
             setFactSources(post.factSources ?? []);
-            setAiDetectionResolved(scores.aiDetection?.provider === "zerogpt");
             setReadabilityResolved(Boolean(scores.readabilityGrade));
             setLoading(false);
             setError(null);
@@ -783,7 +620,7 @@ export function OptimizationAgentUI({
             setLoading(true);
             setLoadingPhase("links");
             setError(null);
-            setAiDetectionResolved(false);
+            setReadabilityResolved(false);
             try {
                 setLoadingPhase("optimize");
                 const data = await requestContentOptimization(
@@ -805,7 +642,6 @@ export function OptimizationAgentUI({
                     data.optimized.plagiarismReport?.overallSimilarity ?? 0,
                 );
                 setLiveScores(scores);
-                setAiDetectionResolved(scores.aiDetection?.provider === "zerogpt");
                 setReadabilityResolved(Boolean(scores.readabilityGrade));
                 setScoreDeltas(null);
                 setError(null);
@@ -995,7 +831,6 @@ export function OptimizationAgentUI({
                                     fallback.plagiarismReport?.overallSimilarity ?? 0,
                                 ),
                             );
-                            setAiDetectionResolved(false);
                             setReadabilityResolved(false);
                             setError(null);
                             onComplete?.(fallback);
@@ -1073,49 +908,12 @@ export function OptimizationAgentUI({
                     </div>
 
                     <div className="flex flex-col gap-6">
-                        <div
-                            className={`rounded-xl border border-neutral-200 bg-white p-6 shadow-sm flex flex-col space-y-2 transition-all duration-500 ${
-                                highlightScores ? "ring-2 ring-emerald-300 ring-offset-1" : ""
-                            }`}
-                        >
-                            {(() => {
-                                const ai = formatAiContentDisplay(liveScores, aiDetectionResolved);
-                                const humanizeNote = formatHumanizeStatusNote(liveScores);
-                                return (
-                                    <>
-                                        <SeoMetricBar
-                                            label="AI Content%"
-                                            value={ai.value}
-                                            barClass={ai.barClass}
-                                            help={ai.help}
-                                            suffix={ai.suffix}
-                                            delta={
-                                                liveScores?.aiDetection?.provider === "zerogpt"
-                                                    ? scoreDeltas?.aiContentPercent
-                                                    : undefined
-                                            }
-                                            brand={<ZeroGptBadge variant="light" size="md" logoOnly />}
-                                        />
-                                        {ai.statusNote ? (
-                                            <p className="text-[11px] text-amber-700 leading-snug">
-                                                {ai.statusNote}. Top up credits at zerogpt.org or use Refresh
-                                                after fixing <span className="font-mono">ZEROGPT_API_KEY</span>.
-                                            </p>
-                                        ) : humanizeNote ? (
-                                            <p className="text-[11px] text-amber-700 leading-snug">
-                                                {humanizeNote}
-                                            </p>
-                                        ) : null}
-                                    </>
-                                );
-                            })()}
-                        </div>
-
                         <ReadabilityGradeBlock
                             scores={liveScores}
                             readabilityResolved={readabilityResolved}
                             targetGradeMax={readabilityTargetGradeMax}
                             delta={scoreDeltas?.readability}
+                            highlighted={highlightScores}
                         />
 
                         {keywordDensityRows.length > 0 ? (
@@ -1250,16 +1048,6 @@ export function OptimizationAgentUI({
                                 >
                                     <div className="flex flex-1 items-center gap-3 overflow-x-auto px-3 py-2 sm:gap-4 sm:px-4 custom-scrollbar">
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                            <ZeroGptBadge size="sm" logoOnly />
-                                            <EditContentMetric
-                                                label="AI Content%"
-                                                value={
-                                                    formatAiContentDisplay(liveScores, aiDetectionResolved)
-                                                        .suffix
-                                                }
-                                            />
-                                        </div>
-                                        <div className="flex items-center gap-1.5 shrink-0">
                                             <SeoReviewToolsBadge size="sm" logoOnly />
                                             <EditContentMetric
                                                 label="Readability"
@@ -1304,7 +1092,7 @@ export function OptimizationAgentUI({
                                     <p className="mt-2 text-xs text-amber-400/90 px-1">{metricsRefreshError}</p>
                                 ) : (
                                     <p className="mt-2 text-[11px] text-neutral-500 px-1">
-                                        Refresh re-runs readability (SEO Review Tools), keyword density, and ZeroGPT
+                                        Refresh re-runs readability (SEO Review Tools) and keyword density
                                         on your current draft.
                                     </p>
                                 )}

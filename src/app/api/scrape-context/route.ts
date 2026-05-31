@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { extractInternalLinksFromHtml } from "@/lib/domainLinks";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
+import { websiteFetchHeaders } from "@/lib/websiteFetch";
 
 export async function POST(req: Request) {
     const azure = getAzureConfig();
@@ -22,9 +23,8 @@ export async function POST(req: Request) {
         let pageResponse: Response;
         try {
             pageResponse = await fetch(url, {
-                headers: {
-                    "User-Agent": "Mozilla/5.0 (compatible; BloggieBot/1.0; +http://bloggieai.com)",
-                },
+                headers: websiteFetchHeaders(),
+                redirect: "follow",
             });
         } catch (fetchErr: any) {
             const causeCode = fetchErr?.cause?.code;
@@ -36,7 +36,16 @@ export async function POST(req: Request) {
         }
 
         if (!pageResponse.ok) {
-            return NextResponse.json({ error: `Failed to fetch URL. Status: ${pageResponse.status}` }, { status: 400 });
+            const blocked =
+                pageResponse.status === 403 || pageResponse.status === 401;
+            return NextResponse.json(
+                {
+                    error: blocked
+                        ? `This site blocked our scanner (HTTP ${pageResponse.status}). Use "Continue without scanning" to save the domain and fill in your profile manually.`
+                        : `Failed to fetch URL. Status: ${pageResponse.status}`,
+                },
+                { status: 400 },
+            );
         }
 
         const html = await pageResponse.text();

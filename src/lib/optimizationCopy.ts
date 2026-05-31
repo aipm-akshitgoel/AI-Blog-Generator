@@ -10,17 +10,14 @@ export const OPTIMIZATION_LOADING_STEPS = [
     "Adding internal links",
     "Improving readability",
     "Verifying readability with SEO Review Tools",
-    "Humanizing with AI Humanize (enhanced)",
-    "Restoring headings",
-    "Improving readability (post-humanize)",
     "Placing exact keywords",
-    "Checking AI detection with ZeroGPT",
+    "Polishing readability after keywords",
     "Finishing up…",
 ] as const;
 
 /** Shown after the loader reaches the last label (labels rotate every ~12s, not pipeline stages). */
 export const OPTIMIZATION_LOADING_STALE_HINT =
-    "Still working. Labels advance on a timer; long drafts often stay on this step while humanize and scoring finish.";
+    "Still working. Labels advance on a timer; long drafts often stay on this step while readability and keyword placement finish.";
 
 /** Loading steps shown while optimize runs (omit structure when TOC is already set). */
 export function getOptimizationLoadingSteps(skipStructureStep = false): string[] {
@@ -37,7 +34,7 @@ export const OPTIMIZATION_TIMING_NOTE =
 export const REFINE_LOADING_TITLE = "Applying SEO fixes…";
 
 export const REFINE_LOADING_DETAIL =
-    "Re-running readability, tone, and keyword placement based on your insights.";
+    "Re-running readability and keyword placement based on your insights.";
 
 export const REFINE_LOADING_DETAIL_TOC_LOCKED =
     "Re-running readability and keyword placement. Your finalized outline is unchanged.";

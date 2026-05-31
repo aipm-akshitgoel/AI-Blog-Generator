@@ -1,5 +1,6 @@
 import type { ApprovedLink } from "@/lib/interlinking";
 import { normalizeDomain } from "@/lib/strategyInputs";
+import { websiteFetchHeaders } from "@/lib/websiteFetch";
 
 /** Turn a site-relative or absolute href into a full https URL for display. */
 export function toAbsoluteSiteHref(href: string, domain?: string): string {
@@ -140,7 +141,8 @@ export async function discoverDomainLinks(siteUrl: string): Promise<ApprovedLink
 
     try {
         const res = await fetch(parsed.toString(), {
-            headers: { "User-Agent": "Mozilla/5.0 (compatible; BloggieBot/1.0)" },
+            headers: websiteFetchHeaders(),
+            redirect: "follow",
             signal: AbortSignal.timeout(12_000),
         });
         if (res.ok) {

@@ -32,18 +32,13 @@ import { sanitizeJsonString } from "@/lib/sanitizeJson";
 import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConfig, stripOuterMarkdownFence } from "@/lib/azureOpenAI";
 import { jsonrepair } from "jsonrepair";
 import { LONG_POST_BODY_WORDS } from "@/lib/optimizePipelineProfile";
-import { runAiHumanizationLoop } from "@/lib/aiHumanizationLoop";
-import { applyZeroGptDetectionToScores, detectAiContentPercentWithStatus } from "@/lib/zerogptAiDetection";
 import {
     measureFinalReadability,
     runPostHumanizeReadabilityLoop,
     runReadabilityImprovementLoop,
 } from "@/lib/readabilityImprovement";
 import { resolveKeywordPlanForPost, verifyKeywordPlanForPost } from "@/lib/keywordPlanVerification";
-import {
-    boostMarkdownForKeywordPlan,
-    restoreHeadingsAfterHumanize,
-} from "@/lib/restoreSeoAfterHumanize";
+import { boostMarkdownForKeywordPlan } from "@/lib/restoreSeoAfterHumanize";
 import { buildContentGuidelinesPrompt } from "@/lib/contentGuidelines";
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 import { normalizeMarkdownTables } from "@/lib/markdownStructure";
@@ -254,7 +249,7 @@ export async function POST(req: Request) {
         const systemPrompt = `You are an expert content optimizer. Take the provided blog post JSON and:
 ${flowBlock}
 ${internalLinksBlock}
-- ZERO-GPT HUMANIZE: Ensure the text reads as 100% human-written to pass plagiarism/AI checkers. You must strictly ABANDON all em-dashes (—). DO NOT use fluff words like "elevate", "delve", "moreover", or "in today's landscape". Use varied sentence length.
+- Write in plain professional English. Strictly avoid em-dashes (—). DO NOT use fluff words like "elevate", "delve", "moreover", or "in today's landscape". Use varied sentence length.
 - Provide seoScores: readability (0-100), grammar (0-100), aiContentPercent (0-100, estimated share of text that reads AI-generated — lower is better), originality (0-100, inverse of plagiarism risk). actionableInsights: 2-3 tips when any score is below 90, else []. Do NOT include overall, contentStructure, or targetKeywords.
 - JSON ESCAPING: You MUST escape all newlines within string values as \\n. NEVER output raw, unescaped newlines or tabs inside the JSON string values.
 - JSON ESCAPING: You MUST escape all double quotes inside string values as \\".
@@ -432,12 +427,11 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
         try {
             if (pipelineProfile.skipPostPipeline) {
                 console.warn(
-                    "[optimize-content] Skipping humanize/readability loops — low time budget after Azure draft",
+                    "[optimize-content] Skipping readability loops — low time budget after Azure draft",
                 );
                 throw new Error("SKIP_POST_PIPELINE");
             }
 
-            // 1–4: Readability improvement (keep lowest grade across up to 3 attempts)
             const readability = await runReadabilityImprovementLoop(
                 azure,
                 blogPost,
@@ -449,46 +443,10 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             );
             optimized.contentMarkdown = readability.contentMarkdown;
 
-            const markdownBeforeHumanize = optimized.contentMarkdown;
             const keywordPlanForRestore =
                 resolveKeywordPlanForPost(blogPost, contentConstraints ?? null, contentConstraints?.domainPrimaryKeyword?.trim()) ??
                 blogPost.keywordPlan ??
                 null;
-            const seoRestoreOptions = {
-                contentConstraints: contentConstraints ?? null,
-                h2Suggestions: blogPost.h2Suggestions,
-            };
-
-            // Humanize readable draft (before exact keyword placement — no humanize after keywords).
-            const humanizeOpts = { preserveHeadings: true as const };
-            const humanized = await runAiHumanizationLoop(markdownBeforeHumanize, {
-                ...humanizeOpts,
-                maxAttempts: pipelineProfile.humanizePass1Max,
-            });
-
-            optimized.contentMarkdown = restoreHeadingsAfterHumanize(
-                humanized.contentMarkdown,
-                markdownBeforeHumanize,
-                seoRestoreOptions,
-            );
-
-            let totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
-            let humanizeSkippedReason = humanized.skippedReason;
-
-            const postReadability = await runPostHumanizeReadabilityLoop(
-                azure,
-                {
-                    ...blogPost,
-                    title: optimized.title,
-                    h1Title: blogPost.h1Title || optimized.title,
-                },
-                optimized.contentMarkdown,
-                {
-                    maxAttempts: pipelineProfile.postHumanizeReadabilityMax,
-                    targetGradeMax: readabilityTargetGradeMax,
-                },
-            );
-            optimized.contentMarkdown = postReadability.contentMarkdown;
 
             if (keywordPlanForRestore) {
                 optimized.contentMarkdown = boostMarkdownForKeywordPlan(
@@ -497,10 +455,25 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 );
             }
 
+            const postKeywordReadability = await runPostHumanizeReadabilityLoop(
+                azure,
+                {
+                    ...blogPost,
+                    title: optimized.title,
+                    h1Title: blogPost.h1Title || optimized.title,
+                },
+                optimized.contentMarkdown,
+                {
+                    maxAttempts: pipelineProfile.postKeywordReadabilityMax,
+                    targetGradeMax: readabilityTargetGradeMax,
+                },
+            );
+            optimized.contentMarkdown = postKeywordReadability.contentMarkdown;
+
             const insights = [...optimized.seoScores.actionableInsights];
 
-            let finalReadability = postReadability;
-            if (!postReadability.readabilityGrade) {
+            let finalReadability = postKeywordReadability;
+            if (!postKeywordReadability.readabilityGrade) {
                 finalReadability = await measureFinalReadability(
                     optimized.contentMarkdown,
                     blogPost.h1Title || optimized.title || blogPost.title,
@@ -526,59 +499,6 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     "Readability could not be measured";
                 console.warn("[optimize-content]", reason);
                 insights.push(reason);
-            }
-
-            // Always re-score final markdown with ZeroGPT (matches zerogpt.com on published body).
-            let aiStatus = await detectAiContentPercentWithStatus(optimized.contentMarkdown);
-            let finalAiDetection = aiStatus.result;
-            if (finalAiDetection) {
-                optimized.seoScores = applyZeroGptDetectionToScores(
-                    optimized.seoScores,
-                    finalAiDetection,
-                    totalHumanizeAttempts,
-                );
-                if (humanizeSkippedReason) {
-                    optimized.seoScores = {
-                        ...optimized.seoScores,
-                        humanizeSkippedReason,
-                    };
-                    insights.push(humanizeSkippedReason);
-                }
-                if (!finalAiDetection.targetMet) {
-                    if (totalHumanizeAttempts === 0) {
-                        insights.push(
-                            "No AI Humanize passes ran on this draft. Add AI_HUMANIZE_API_KEY and AI_HUMANIZE_EMAIL on the server, then re-run optimize.",
-                        );
-                    } else {
-                        insights.push(
-                            `AI detection is ${finalAiDetection.aiPercent}% (ZeroGPT) after keyword placement. Humanize runs before keywords only (up to ${pipelineProfile.humanizePass1Max} pass(es)); exact phrases are not rewritten. Target is below ${20}%.`,
-                        );
-                    }
-                }
-            } else if (humanized.aiDetection) {
-                optimized.seoScores = applyZeroGptDetectionToScores(
-                    optimized.seoScores,
-                    {
-                        aiPercent: humanized.aiDetection.aiPercent,
-                        humanPercent: humanized.aiDetection.humanPercent,
-                        targetMet: humanized.aiDetection.targetMet,
-                        confidence: humanized.aiDetection.confidence,
-                    },
-                    humanized.aiDetection.attempts,
-                );
-            } else {
-                const zgError =
-                    aiStatus.error ??
-                    humanized.skippedReason ??
-                    "ZeroGPT detection unavailable";
-                optimized.seoScores = {
-                    ...optimized.seoScores,
-                    aiDetectionError: zgError,
-                };
-                console.warn("[optimize-content]", zgError);
-                insights.push(
-                    `ZeroGPT could not verify AI % (${zgError}). Showing optimizer estimate until credits or API key are fixed.`,
-                );
             }
 
             const postForKeywords: BlogPost = {
@@ -629,11 +549,9 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             } else {
                 optimized.seoScores = {
                     ...optimized.seoScores,
-                    humanizeSkippedReason:
-                        "Optimization ran out of time after the draft pass — humanize and readability loops were skipped.",
                     actionableInsights: [
                         ...optimized.seoScores.actionableInsights,
-                        "Humanize was skipped (time budget). Re-run optimize or use Refresh after editing.",
+                        "Readability loops were skipped (time budget). Re-run optimize or use Refresh after editing.",
                     ].slice(0, 5),
                 };
             }
@@ -656,21 +574,6 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                         };
                     }
                 }
-                if (optimized.seoScores.aiDetection?.provider !== "zerogpt") {
-                    const recovered = await detectAiContentPercentWithStatus(optimized.contentMarkdown);
-                    if (recovered.result) {
-                        optimized.seoScores = applyZeroGptDetectionToScores(
-                            optimized.seoScores,
-                            recovered.result,
-                            optimized.seoScores.aiDetection?.attempts ?? 0,
-                        );
-                    } else if (recovered.error) {
-                        optimized.seoScores = {
-                            ...optimized.seoScores,
-                            aiDetectionError: recovered.error,
-                        };
-                    }
-                }
             } catch (recoverErr) {
                 console.warn("[optimize-content] Post-pipeline score recovery failed:", recoverErr);
             }
@@ -680,12 +583,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             normalizeMarkdownBodyParagraphs(optimized.contentMarkdown),
         );
 
-        await applyFinalOptimizerScores(
-            optimized,
-            blogPost,
-            optimized.seoScores.aiDetection?.attempts ?? 0,
-            readabilityTargetGradeMax,
-        );
+        await applyFinalOptimizerScores(optimized, blogPost, readabilityTargetGradeMax);
 
         return NextResponse.json({ optimized }, { status: 200 });
     } catch (err) {

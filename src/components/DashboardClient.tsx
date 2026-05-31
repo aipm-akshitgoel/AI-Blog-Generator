@@ -7,7 +7,6 @@ import type { SavedBlog } from "@/lib/blogDb";
 import { formatDistanceToNow, isValid } from "date-fns";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AiDetectionBadge } from "@/components/ZeroGptBadge";
 import { ReadabilityGradeBadge } from "@/components/SeoReviewToolsBadge";
 
 function formatCreatedRelative(createdAt: string | undefined): string {
@@ -266,13 +265,6 @@ export function DashboardClient({
                                                 fleschScore={
                                                     blog.payload.content.seoScores.readabilityGrade.fleschScore
                                                 }
-                                            />
-                                        ) : null}
-                                        {blog.payload.content.seoScores.aiDetection ? (
-                                            <AiDetectionBadge
-                                                aiPercent={blog.payload.content.seoScores.aiDetection.aiPercent}
-                                                targetMet={blog.payload.content.seoScores.aiDetection.targetMet}
-                                                attempts={blog.payload.content.seoScores.aiDetection.attempts}
                                             />
                                         ) : null}
                                     </div>

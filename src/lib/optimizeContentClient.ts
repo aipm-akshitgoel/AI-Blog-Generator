@@ -7,7 +7,7 @@ import { applyInterlinkingToContent, deriveApprovedLinks } from "@/lib/interlink
 /** Server `maxDuration` for `/api/optimize-content` (seconds). */
 export const OPTIMIZE_SERVER_MAX_DURATION_SEC = 300;
 
-/** Azure draft pass only — leave room for readability, humanize, and scoring (see maxDuration). */
+/** Azure draft pass only — leave room for readability loops and scoring (see maxDuration). */
 export const OPTIMIZE_MODEL_TIMEOUT_MS = 120_000;
 
 /** Browser fetch — match server maxDuration so the client does not abort before Vercel finishes. */
@@ -228,7 +228,7 @@ export function optimizationErrorMessage(err: unknown): string {
             return `Optimization took longer than ${Math.round(OPTIMIZE_SERVER_MAX_DURATION_SEC / 60)} minutes. Use Continue with draft, then Refresh metrics in the editor.`;
         }
         if (/\b504\b/.test(err.message)) {
-            return "Optimization timed out on the server (504). Long posts skip some humanize passes to finish faster — use Continue with draft, then Refresh metrics in the editor.";
+            return "Optimization timed out on the server (504). Long posts may skip readability rewrite loops — use Continue with draft, then Refresh metrics in the editor.";
         }
         return err.message;
     }

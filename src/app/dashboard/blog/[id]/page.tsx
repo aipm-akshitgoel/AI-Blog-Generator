@@ -3,7 +3,6 @@ import { getBlogById } from "@/lib/blogDb";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { AnalyticsDashboardClient } from "@/components/AnalyticsDashboardClient";
-import { AiDetectionBadge } from "@/components/ZeroGptBadge";
 import { ReadabilityGradeBadge } from "@/components/SeoReviewToolsBadge";
 import { RawPayloadViewer } from "@/components/RawPayloadViewer";
 import { listBusinessContexts } from "@/lib/businessContextDb";
@@ -85,21 +84,6 @@ export default async function BlogDetailPage({ params }: { params: Promise<{ id:
                                     {blog.payload.content.seoScores.readabilityGrade.isFinal
                                         ? "Final score after humanization (SEO Review Tools)."
                                         : "Verified during optimization."}
-                                </p>
-                            </div>
-                        ) : null}
-                        {blog.payload.content.seoScores.aiDetection ? (
-                            <div>
-                                <h2 className="text-sm font-black uppercase tracking-widest text-neutral-400 mb-3">
-                                    AI detection
-                                </h2>
-                                <AiDetectionBadge
-                                    aiPercent={blog.payload.content.seoScores.aiDetection.aiPercent}
-                                    targetMet={blog.payload.content.seoScores.aiDetection.targetMet}
-                                    attempts={blog.payload.content.seoScores.aiDetection.attempts}
-                                />
-                                <p className="mt-3 text-sm text-neutral-500">
-                                    Verified with ZeroGPT during optimization. Target: below 20% AI.
                                 </p>
                             </div>
                         ) : null}
