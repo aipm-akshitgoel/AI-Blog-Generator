@@ -46,6 +46,8 @@ export interface SeoScores {
     aiDetectionError?: string;
     /** Why AI Humanize did not rewrite (missing API key, time budget, etc.). */
     humanizeSkippedReason?: string;
+    /** Humanize passes completed on the server (survives client ZeroGPT refresh). */
+    humanizePassCount?: number;
     /** Writer-finalized keyword plan + SEO Review Tools density verification. */
     keywordDensity?: KeywordDensityVerification;
     keywordPlan?: KeywordPlan;

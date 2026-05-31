@@ -95,7 +95,13 @@ export async function refreshOptimizerMetrics(
                 humanPercent: data.humanPercent,
                 targetMet: data.targetMet,
                 confidence: data.confidence,
-            }, next.aiDetection?.attempts ?? 0);
+            }, next.aiDetection?.attempts ?? next.humanizePassCount ?? 0);
+            if (next.humanizePassCount != null) {
+                next.humanizePassCount = Math.max(
+                    next.humanizePassCount,
+                    next.aiDetection?.attempts ?? 0,
+                );
+            }
             delete next.aiDetectionError;
         } else if (data.error) {
             next = { ...next, aiDetectionError: data.error };

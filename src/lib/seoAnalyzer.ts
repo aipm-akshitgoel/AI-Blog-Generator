@@ -409,6 +409,10 @@ export function normalizeSeoScores(
         aiDetection: raw?.aiDetection,
         aiDetectionError: raw?.aiDetectionError,
         humanizeSkippedReason: raw?.humanizeSkippedReason,
+        humanizePassCount:
+            typeof raw?.humanizePassCount === "number" && Number.isFinite(raw.humanizePassCount)
+                ? raw.humanizePassCount
+                : raw?.aiDetection?.attempts,
         keywordDensity: raw?.keywordDensity,
         keywordPlan: raw?.keywordPlan,
     };

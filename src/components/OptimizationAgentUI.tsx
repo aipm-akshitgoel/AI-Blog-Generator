@@ -138,18 +138,21 @@ function formatHumanizeStatusNote(
     scores: SeoScores | null | undefined,
     fallbackSkippedReason?: string | null,
 ): string | undefined {
-    const attempts = scores?.aiDetection?.attempts ?? 0;
+    const attempts = Math.max(
+        scores?.humanizePassCount ?? 0,
+        scores?.aiDetection?.attempts ?? 0,
+    );
     const skipped = scores?.humanizeSkippedReason?.trim() || fallbackSkippedReason?.trim();
     const highAi =
         scores?.aiDetection?.provider === "zerogpt" &&
         scores.aiDetection.targetMet === false;
 
     if (skipped) return skipped;
-    if (highAi && attempts === 0) {
-        return "AI Humanize did not run on this draft (0 passes). Re-run Optimize — if it persists, check AI Humanize word credits on aihumanize.io and confirm AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL are set on Vercel Production with a redeploy.";
-    }
     if (attempts > 0 && highAi) {
         return `${attempts} humanize pass(es) ran; AI % is still above 20%. Edit the draft or re-run optimize.`;
+    }
+    if (highAi && attempts === 0) {
+        return "AI Humanize did not run on this draft (0 passes). Re-run Optimize. If it persists, open /api/humanize-status on production to confirm server config.";
     }
     return undefined;
 }
@@ -648,7 +651,27 @@ export function OptimizationAgentUI({
 
     useEffect(() => {
         if (!optimizedData || isEditing) return;
-        if (liveScores?.aiDetection?.provider === "zerogpt") {
+        if (
+            liveScores?.aiDetection?.provider === "zerogpt" ||
+            optimizedData.seoScores?.aiDetection?.provider === "zerogpt"
+        ) {
+            if (optimizedData.seoScores?.aiDetection?.provider === "zerogpt") {
+                setLiveScores((prev) => {
+                    const base =
+                        prev ??
+                        normalizeSeoScores(
+                            optimizedData.seoScores,
+                            optimizedData.plagiarismReport?.overallSimilarity ?? 0,
+                        );
+                    if (base.aiDetection?.provider === "zerogpt") return base;
+                    return {
+                        ...base,
+                        aiDetection: optimizedData.seoScores?.aiDetection,
+                        humanizePassCount: optimizedData.seoScores?.humanizePassCount,
+                        humanizeSkippedReason: optimizedData.seoScores?.humanizeSkippedReason,
+                    };
+                });
+            }
             setAiDetectionResolved(true);
             return;
         }
@@ -686,12 +709,23 @@ export function OptimizationAgentUI({
                                 humanPercent: data.humanPercent ?? 100 - aiPct,
                                 targetMet: Boolean(data.targetMet),
                                 attempts:
+                                    base.humanizePassCount ??
                                     base.aiDetection?.attempts ??
+                                    optimizedData.seoScores?.humanizePassCount ??
                                     optimizedData.seoScores?.aiDetection?.attempts ??
                                     0,
                                 provider: "zerogpt" as const,
                                 confidence: data.confidence,
                             },
+                            humanizePassCount:
+                                base.humanizePassCount ??
+                                optimizedData.seoScores?.humanizePassCount ??
+                                base.aiDetection?.attempts ??
+                                optimizedData.seoScores?.aiDetection?.attempts ??
+                                0,
+                            humanizeSkippedReason:
+                                base.humanizeSkippedReason ??
+                                optimizedData.seoScores?.humanizeSkippedReason,
                         };
                         delete next.aiDetectionError;
                         return next;

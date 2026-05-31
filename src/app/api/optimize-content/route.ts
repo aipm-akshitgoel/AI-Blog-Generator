@@ -428,6 +428,9 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             requestStartedAt,
         );
 
+        let totalHumanizeAttempts = 0;
+        let humanizeSkippedReason: string | undefined;
+
         try {
             if (pipelineProfile.skipPostPipeline) {
                 console.warn(
@@ -469,15 +472,14 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 seoRestoreOptions,
             );
 
-            let totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
-            let humanizeSkippedReason = humanized.skippedReason;
+            totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
+            humanizeSkippedReason = humanized.skippedReason;
 
-            if (humanizeSkippedReason) {
-                optimized.seoScores = {
-                    ...optimized.seoScores,
-                    humanizeSkippedReason,
-                };
-            }
+            optimized.seoScores = {
+                ...optimized.seoScores,
+                humanizePassCount: totalHumanizeAttempts,
+                ...(humanizeSkippedReason ? { humanizeSkippedReason } : {}),
+            };
             console.info(
                 `[optimize-content] Humanize: ${totalHumanizeAttempts} pass(es)`,
                 humanizeSkippedReason ?? "ok",
@@ -622,12 +624,14 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 optimized.seoScores = {
                     ...optimized.seoScores,
                     humanizeSkippedReason: `Humanize did not finish (${errMsg}). Re-run optimize.`,
+                    humanizePassCount: 0,
                 };
             } else {
                 optimized.seoScores = {
                     ...optimized.seoScores,
                     humanizeSkippedReason:
                         "Optimization ran out of time after the draft pass — humanize and readability loops were skipped.",
+                    humanizePassCount: 0,
                     actionableInsights: [
                         ...optimized.seoScores.actionableInsights,
                         "Humanize was skipped (time budget). Re-run optimize or use Refresh after editing.",
@@ -680,9 +684,19 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
         await applyFinalOptimizerScores(
             optimized,
             blogPost,
-            optimized.seoScores.aiDetection?.attempts ?? 0,
+            optimized.seoScores.humanizePassCount ??
+                optimized.seoScores.aiDetection?.attempts ??
+                totalHumanizeAttempts,
             readabilityTargetGradeMax,
         );
+
+        if (optimized.seoScores.humanizePassCount == null) {
+            optimized.seoScores = {
+                ...optimized.seoScores,
+                humanizePassCount:
+                    optimized.seoScores.aiDetection?.attempts ?? totalHumanizeAttempts,
+            };
+        }
 
         return NextResponse.json({ optimized }, { status: 200 });
     } catch (err) {
