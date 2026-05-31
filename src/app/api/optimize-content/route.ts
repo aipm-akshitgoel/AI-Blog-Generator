@@ -33,6 +33,7 @@ import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConf
 import { jsonrepair } from "jsonrepair";
 import { LONG_POST_BODY_WORDS } from "@/lib/optimizePipelineProfile";
 import { runAiHumanizationLoop } from "@/lib/aiHumanizationLoop";
+import { getAiHumanizeConfig } from "@/lib/aiHumanize";
 import { applyZeroGptDetectionToScores, detectAiContentPercentWithStatus } from "@/lib/zerogptAiDetection";
 import {
     measureFinalReadability,
@@ -475,10 +476,16 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
             humanizeSkippedReason = humanized.skippedReason;
 
+            if (totalHumanizeAttempts === 0 && !humanizeSkippedReason) {
+                humanizeSkippedReason = getAiHumanizeConfig()
+                    ? "Humanize did not run on this optimize pass. Re-run Optimize (Refresh does not humanize)."
+                    : "AI Humanize not configured (AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL).";
+            }
+
             optimized.seoScores = {
                 ...optimized.seoScores,
                 humanizePassCount: totalHumanizeAttempts,
-                ...(humanizeSkippedReason ? { humanizeSkippedReason } : {}),
+                humanizeSkippedReason,
             };
             console.info(
                 `[optimize-content] Humanize: ${totalHumanizeAttempts} pass(es)`,

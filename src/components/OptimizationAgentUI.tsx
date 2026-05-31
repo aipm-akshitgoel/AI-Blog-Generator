@@ -152,7 +152,7 @@ function formatHumanizeStatusNote(
         return `${attempts} humanize pass(es) ran; AI % is still above 20%. Edit the draft or re-run optimize.`;
     }
     if (highAi && attempts === 0) {
-        return "AI Humanize did not run on this draft (0 passes). Re-run Optimize. If it persists, open /api/humanize-status on production to confirm server config.";
+        return "AI Humanize did not run (0 passes). Re-run full Optimize — Refresh only re-scores and does not humanize.";
     }
     return undefined;
 }

@@ -41,7 +41,7 @@ export type AiHumanizationLoopOptions = {
 /**
  * Humanize up to maxAttempts times, each pass rewriting the **original** draft (not chained).
  * Keeps whichever version (original or any pass) has the lowest ZeroGPT AI % pre-keywords.
- * Does not skip when the baseline is already below target — keyword boost runs after this step.
+ * Runs humanize even when the pre-key ZeroGPT check fails — final ZeroGPT runs after keywords.
  */
 export async function runAiHumanizationLoop(
     initialMarkdown: string,
@@ -53,20 +53,14 @@ export async function runAiHumanizationLoop(
 
     const initialStatus = await detectAiContentPercentWithStatus(initialMarkdown);
     const baselineDetection = initialStatus.result;
-    if (!baselineDetection) {
-        return {
-            contentMarkdown: initialMarkdown,
-            aiDetection: null,
-            skippedReason:
-                initialStatus.error ??
-                "ZeroGPT not configured (ZEROGPT_API_KEY) or detection API unavailable",
-        };
-    }
+    const preHumanizeZeroGptError = initialStatus.error;
 
     if (!getAiHumanizeConfig()) {
         return {
             contentMarkdown: initialMarkdown,
-            aiDetection: toAiDetectionScore(baselineDetection, 0),
+            aiDetection: baselineDetection
+                ? toAiDetectionScore(baselineDetection, 0)
+                : null,
             skippedReason:
                 "AI Humanize not configured (AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL) — showing ZeroGPT score only",
         };
@@ -75,29 +69,43 @@ export async function runAiHumanizationLoop(
     if (maxAttempts <= 0) {
         return {
             contentMarkdown: initialMarkdown,
-            aiDetection: toAiDetectionScore(baselineDetection, 0),
+            aiDetection: baselineDetection
+                ? toAiDetectionScore(baselineDetection, 0)
+                : null,
             skippedReason:
                 "Humanize skipped for this run (time budget). Re-run optimize on a shorter draft or try again.",
         };
+    }
+
+    if (!baselineDetection && preHumanizeZeroGptError) {
+        console.warn(
+            "[ai-humanize] Pre-humanize ZeroGPT unavailable; running humanize anyway:",
+            preHumanizeZeroGptError,
+        );
     }
 
     let bestMarkdown = initialMarkdown;
     let bestDetection = baselineDetection;
     let attemptsUsed = 0;
     let skippedReason: string | undefined;
+    let lastHumanizedMarkdown: string | null = null;
 
     while (attemptsUsed < maxAttempts) {
         attemptsUsed++;
         try {
             const candidate = await humanize(initialMarkdown);
+            lastHumanizedMarkdown = candidate;
             const next = await detectAiContentPercent(candidate);
-            if (!next) break;
-            if (next.aiPercent < bestDetection.aiPercent) {
+            if (next) {
+                if (!bestDetection || next.aiPercent < bestDetection.aiPercent) {
+                    bestMarkdown = candidate;
+                    bestDetection = next;
+                }
+                if (meetsAiDetectionTarget(bestDetection.aiPercent)) {
+                    break;
+                }
+            } else if (candidate.trim()) {
                 bestMarkdown = candidate;
-                bestDetection = next;
-            }
-            if (meetsAiDetectionTarget(bestDetection.aiPercent)) {
-                break;
             }
         } catch (err) {
             const msg = err instanceof Error ? err.message : "AI Humanize rewrite failed";
@@ -109,9 +117,34 @@ export async function runAiHumanizationLoop(
         }
     }
 
+    if (attemptsUsed > 0 && lastHumanizedMarkdown && bestMarkdown === initialMarkdown) {
+        bestMarkdown = lastHumanizedMarkdown;
+    }
+
+    const detectionForScore = bestDetection ?? {
+        aiPercent: baselineDetection?.aiPercent ?? 100,
+        humanPercent: baselineDetection?.humanPercent ?? 0,
+        confidence: baselineDetection?.confidence,
+    };
+
+    if (attemptsUsed > 0 && !bestDetection && preHumanizeZeroGptError) {
+        skippedReason =
+            skippedReason ??
+            `Pre-humanize ZeroGPT check failed (${preHumanizeZeroGptError}). Humanize ran ${attemptsUsed} pass(es); final AI % is measured after keywords.`;
+    } else if (attemptsUsed > 0 && !bestDetection) {
+        skippedReason =
+            skippedReason ??
+            `Humanize ran ${attemptsUsed} pass(es) but ZeroGPT could not verify pre-keyword scores.`;
+    } else if (attemptsUsed === 0 && preHumanizeZeroGptError && !skippedReason) {
+        skippedReason = `Pre-humanize ZeroGPT check failed (${preHumanizeZeroGptError}). Humanize did not run.`;
+    }
+
     return {
         contentMarkdown: bestMarkdown,
-        aiDetection: toAiDetectionScore(bestDetection, attemptsUsed),
+        aiDetection:
+            attemptsUsed > 0 || baselineDetection
+                ? toAiDetectionScore(detectionForScore, attemptsUsed)
+                : null,
         skippedReason,
     };
 }
