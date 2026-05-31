@@ -147,10 +147,13 @@ function formatHumanizeStatusNote(
         scores?.aiDetection?.provider === "zerogpt" &&
         scores.aiDetection.targetMet === false;
 
-    if (skipped) return skipped;
     if (attempts > 0 && highAi) {
+        if (skipped && !/did not run|not configured|time budget/i.test(skipped)) {
+            return `${attempts} humanize pass(es) ran; AI % is still above 20%. ${skipped}`;
+        }
         return `${attempts} humanize pass(es) ran; AI % is still above 20%. Edit the draft or re-run optimize.`;
     }
+    if (skipped) return skipped;
     if (highAi && attempts === 0) {
         return "AI Humanize did not run (0 passes). Re-run full Optimize — Refresh only re-scores and does not humanize.";
     }

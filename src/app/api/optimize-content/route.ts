@@ -473,20 +473,28 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 seoRestoreOptions,
             );
 
-            totalHumanizeAttempts = humanized.aiDetection?.attempts ?? 0;
+            totalHumanizeAttempts = humanized.passCount ?? humanized.aiDetection?.attempts ?? 0;
             humanizeSkippedReason = humanized.skippedReason;
 
             if (totalHumanizeAttempts === 0 && !humanizeSkippedReason) {
                 humanizeSkippedReason = getAiHumanizeConfig()
                     ? "Humanize did not run on this optimize pass. Re-run Optimize (Refresh does not humanize)."
                     : "AI Humanize not configured (AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL).";
+            } else if (totalHumanizeAttempts > 0 && humanizeSkippedReason) {
+                // Informational note — humanize ran; don't treat as a hard failure in the UI.
+                console.info("[optimize-content] Humanize note:", humanizeSkippedReason);
             }
 
             optimized.seoScores = {
                 ...optimized.seoScores,
                 humanizePassCount: totalHumanizeAttempts,
-                humanizeSkippedReason,
+                ...(totalHumanizeAttempts === 0 && humanizeSkippedReason
+                    ? { humanizeSkippedReason }
+                    : {}),
             };
+            if (totalHumanizeAttempts > 0) {
+                delete optimized.seoScores.humanizeSkippedReason;
+            }
             console.info(
                 `[optimize-content] Humanize: ${totalHumanizeAttempts} pass(es)`,
                 humanizeSkippedReason ?? "ok",
@@ -536,7 +544,7 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     finalAiDetection,
                     totalHumanizeAttempts,
                 );
-                if (humanizeSkippedReason) {
+                if (humanizeSkippedReason && totalHumanizeAttempts === 0) {
                     optimized.seoScores = {
                         ...optimized.seoScores,
                         humanizeSkippedReason,

@@ -27,6 +27,8 @@ function toAiDetectionScore(
 export type AiHumanizationLoopResult = {
     contentMarkdown: string;
     aiDetection: AiDetectionScore | null;
+    /** Humanize API passes completed (independent of ZeroGPT scoring). */
+    passCount: number;
     skippedReason?: string;
 };
 
@@ -39,8 +41,8 @@ export type AiHumanizationLoopOptions = {
 
 /**
  * Humanize up to maxAttempts times, each pass rewriting the **original** draft (not chained).
- * ZeroGPT runs after each pass only (not before the first pass) to pick the best version
- * and stop early below 20%. Final ZeroGPT on the published draft runs after keywords.
+ * No ZeroGPT before the first pass. Optional ZeroGPT after each pass to pick the best version.
+ * Final ZeroGPT on the published draft runs after keywords in optimize-content.
  */
 export async function runAiHumanizationLoop(
     initialMarkdown: string,
@@ -54,6 +56,7 @@ export async function runAiHumanizationLoop(
         return {
             contentMarkdown: initialMarkdown,
             aiDetection: null,
+            passCount: 0,
             skippedReason:
                 "AI Humanize not configured (AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL) — showing ZeroGPT score only",
         };
@@ -63,6 +66,7 @@ export async function runAiHumanizationLoop(
         return {
             contentMarkdown: initialMarkdown,
             aiDetection: null,
+            passCount: 0,
             skippedReason:
                 "Humanize skipped for this run (time budget). Re-run optimize on a shorter draft or try again.",
         };
@@ -106,15 +110,14 @@ export async function runAiHumanizationLoop(
         bestMarkdown = lastHumanizedMarkdown;
     }
 
-    if (attemptsUsed > 0 && !bestDetection) {
-        skippedReason =
-            skippedReason ??
-            `Humanize ran ${attemptsUsed} pass(es) but ZeroGPT could not verify pre-keyword scores. Final AI % is measured after keywords.`;
+    if (attemptsUsed > 0 && !bestDetection && !skippedReason) {
+        skippedReason = `Humanize ran ${attemptsUsed} pass(es). ZeroGPT scoring between passes was unavailable — final AI % is measured after keywords.`;
     }
 
     return {
         contentMarkdown: bestMarkdown,
         aiDetection: bestDetection ? toAiDetectionScore(bestDetection, attemptsUsed) : null,
+        passCount: attemptsUsed,
         skippedReason,
     };
 }
