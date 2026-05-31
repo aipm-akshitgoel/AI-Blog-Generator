@@ -7,7 +7,6 @@ import {
 import {
     AI_DETECTION_MAX_HUMANIZE_ATTEMPTS,
     detectAiContentPercent,
-    detectAiContentPercentWithStatus,
     meetsAiDetectionTarget,
 } from "@/lib/zerogptAiDetection";
 
@@ -40,8 +39,8 @@ export type AiHumanizationLoopOptions = {
 
 /**
  * Humanize up to maxAttempts times, each pass rewriting the **original** draft (not chained).
- * Keeps whichever version (original or any pass) has the lowest ZeroGPT AI % pre-keywords.
- * Runs humanize even when the pre-key ZeroGPT check fails — final ZeroGPT runs after keywords.
+ * ZeroGPT runs after each pass only (not before the first pass) to pick the best version
+ * and stop early below 20%. Final ZeroGPT on the published draft runs after keywords.
  */
 export async function runAiHumanizationLoop(
     initialMarkdown: string,
@@ -51,16 +50,10 @@ export async function runAiHumanizationLoop(
     const preserveHeadings = options?.preserveHeadings !== false;
     const humanize = preserveHeadings ? humanizeMarkdownPreservingHeadings : humanizeMarkdown;
 
-    const initialStatus = await detectAiContentPercentWithStatus(initialMarkdown);
-    const baselineDetection = initialStatus.result;
-    const preHumanizeZeroGptError = initialStatus.error;
-
     if (!getAiHumanizeConfig()) {
         return {
             contentMarkdown: initialMarkdown,
-            aiDetection: baselineDetection
-                ? toAiDetectionScore(baselineDetection, 0)
-                : null,
+            aiDetection: null,
             skippedReason:
                 "AI Humanize not configured (AI_HUMANIZE_API_KEY + AI_HUMANIZE_EMAIL) — showing ZeroGPT score only",
         };
@@ -69,23 +62,15 @@ export async function runAiHumanizationLoop(
     if (maxAttempts <= 0) {
         return {
             contentMarkdown: initialMarkdown,
-            aiDetection: baselineDetection
-                ? toAiDetectionScore(baselineDetection, 0)
-                : null,
+            aiDetection: null,
             skippedReason:
                 "Humanize skipped for this run (time budget). Re-run optimize on a shorter draft or try again.",
         };
     }
 
-    if (!baselineDetection && preHumanizeZeroGptError) {
-        console.warn(
-            "[ai-humanize] Pre-humanize ZeroGPT unavailable; running humanize anyway:",
-            preHumanizeZeroGptError,
-        );
-    }
-
     let bestMarkdown = initialMarkdown;
-    let bestDetection = baselineDetection;
+    let bestDetection: { aiPercent: number; humanPercent: number; confidence?: string } | null =
+        null;
     let attemptsUsed = 0;
     let skippedReason: string | undefined;
     let lastHumanizedMarkdown: string | null = null;
@@ -101,7 +86,7 @@ export async function runAiHumanizationLoop(
                     bestMarkdown = candidate;
                     bestDetection = next;
                 }
-                if (meetsAiDetectionTarget(bestDetection.aiPercent)) {
+                if (meetsAiDetectionTarget(next.aiPercent)) {
                     break;
                 }
             } else if (candidate.trim()) {
@@ -121,30 +106,15 @@ export async function runAiHumanizationLoop(
         bestMarkdown = lastHumanizedMarkdown;
     }
 
-    const detectionForScore = bestDetection ?? {
-        aiPercent: baselineDetection?.aiPercent ?? 100,
-        humanPercent: baselineDetection?.humanPercent ?? 0,
-        confidence: baselineDetection?.confidence,
-    };
-
-    if (attemptsUsed > 0 && !bestDetection && preHumanizeZeroGptError) {
+    if (attemptsUsed > 0 && !bestDetection) {
         skippedReason =
             skippedReason ??
-            `Pre-humanize ZeroGPT check failed (${preHumanizeZeroGptError}). Humanize ran ${attemptsUsed} pass(es); final AI % is measured after keywords.`;
-    } else if (attemptsUsed > 0 && !bestDetection) {
-        skippedReason =
-            skippedReason ??
-            `Humanize ran ${attemptsUsed} pass(es) but ZeroGPT could not verify pre-keyword scores.`;
-    } else if (attemptsUsed === 0 && preHumanizeZeroGptError && !skippedReason) {
-        skippedReason = `Pre-humanize ZeroGPT check failed (${preHumanizeZeroGptError}). Humanize did not run.`;
+            `Humanize ran ${attemptsUsed} pass(es) but ZeroGPT could not verify pre-keyword scores. Final AI % is measured after keywords.`;
     }
 
     return {
         contentMarkdown: bestMarkdown,
-        aiDetection:
-            attemptsUsed > 0 || baselineDetection
-                ? toAiDetectionScore(detectionForScore, attemptsUsed)
-                : null,
+        aiDetection: bestDetection ? toAiDetectionScore(bestDetection, attemptsUsed) : null,
         skippedReason,
     };
 }
