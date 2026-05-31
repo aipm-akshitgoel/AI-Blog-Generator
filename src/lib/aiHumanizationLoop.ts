@@ -1,8 +1,10 @@
 import type { AiDetectionScore } from "@/lib/types/optimization";
 import {
+    AI_HUMANIZE_MIN_BODY_CHARS,
     getAiHumanizeConfig,
     humanizeMarkdown,
     humanizeMarkdownPreservingHeadings,
+    summarizeHumanizeMarkdown,
 } from "@/lib/aiHumanize";
 import {
     AI_DETECTION_MAX_HUMANIZE_ATTEMPTS,
@@ -69,6 +71,23 @@ export async function runAiHumanizationLoop(
             passCount: 0,
             skippedReason:
                 "Humanize skipped for this run (time budget). Re-run optimize on a shorter draft or try again.",
+        };
+    }
+
+    const targets = summarizeHumanizeMarkdown(initialMarkdown);
+    const humanizableChars = targets.bodyCharCount + targets.tableCellCharCount;
+    if (humanizableChars < AI_HUMANIZE_MIN_BODY_CHARS) {
+        const detail =
+            targets.tablePartCount > 0 && targets.bodyPartCount === 0
+                ? "Table cell text is too short for AI Humanize (need 100+ characters total)."
+                : targets.bodyCharCount === 0 && targets.tableCellCharCount === 0
+                  ? "No prose or table copy found to rewrite."
+                  : `Only ${humanizableChars} characters to rewrite (minimum ${AI_HUMANIZE_MIN_BODY_CHARS}).`;
+        return {
+            contentMarkdown: initialMarkdown,
+            aiDetection: null,
+            passCount: 0,
+            skippedReason: `Humanize skipped — ${detail} Add intro/section copy or re-run after editing.`,
         };
     }
 

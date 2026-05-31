@@ -1,6 +1,8 @@
 import { normalizeMarkdownBodyParagraphs } from "@/lib/markdownParagraphs";
 import {
+    isMarkdownTableBlock,
     normalizeMarkdownTables,
+    repairMarkdownTableBlock,
     splitMarkdownPreservingStructure,
 } from "@/lib/markdownStructure";
 
@@ -19,10 +21,71 @@ const REWRITE_URL = "https://aihumanize.io/api/v1/rewrite";
 const MIN_CHARS = 100;
 const MAX_CHARS = 10_000;
 
+/** Minimum prose characters before the humanize loop runs (matches API chunk floor). */
+export const AI_HUMANIZE_MIN_BODY_CHARS = MIN_CHARS;
+
 /** 0 = quality, 1 = balance, 2 = enhanced (best for bypassing ZeroGPT / AI detectors). */
 export const AI_HUMANIZE_MODEL_ENHANCED = "2";
 
 export type AiHumanizeConfig = { apiKey: string; email: string; model: string };
+
+/** How much copy AI Humanize can rewrite (headings stay verbatim). */
+export type HumanizeMarkdownSummary = {
+    bodyPartCount: number;
+    bodyCharCount: number;
+    tablePartCount: number;
+    /** Cell text inside GFM tables (also sent to AI Humanize advanced). */
+    tableCellCharCount: number;
+    headingPartCount: number;
+    /** Estimated rewrite API calls (body + table chunks). */
+    estimatedApiCalls: number;
+};
+
+function tableCellTextCharCount(tableMarkdown: string): number {
+    const repaired = repairMarkdownTableBlock(String(tableMarkdown || "").trim());
+    if (!repaired || !isMarkdownTableBlock(repaired)) return 0;
+    return repaired
+        .split("\n")
+        .filter((line) => line.trim() && !/^\|?\s*[-:| ]+\|?\s*$/.test(line.trim()))
+        .join("")
+        .replace(/\|/g, "")
+        .replace(/\s+/g, " ")
+        .trim().length;
+}
+
+export function summarizeHumanizeMarkdown(markdown: string): HumanizeMarkdownSummary {
+    const parts = splitMarkdownPreservingStructure(normalizeMarkdownTables(markdown));
+    let bodyPartCount = 0;
+    let bodyCharCount = 0;
+    let tableCellCharCount = 0;
+    let estimatedApiCalls = 0;
+
+    for (const part of parts) {
+        if (part.type === "heading") continue;
+        if (part.type === "table") {
+            const cells = tableCellTextCharCount(part.text);
+            tableCellCharCount += cells;
+            if (cells >= MIN_CHARS) {
+                estimatedApiCalls += chunkMarkdownForHumanize(part.text).length;
+            }
+            continue;
+        }
+        const text = part.text.trim();
+        if (!text) continue;
+        bodyPartCount++;
+        bodyCharCount += text.length;
+        estimatedApiCalls += chunkMarkdownForHumanize(text).length;
+    }
+
+    return {
+        bodyPartCount,
+        bodyCharCount,
+        tablePartCount: parts.filter((p) => p.type === "table").length,
+        tableCellCharCount,
+        headingPartCount: parts.filter((p) => p.type === "heading").length,
+        estimatedApiCalls,
+    };
+}
 
 export function getAiHumanizeConfig(): AiHumanizeConfig | null {
     const apiKey = process.env.AI_HUMANIZE_API_KEY?.trim();
@@ -145,7 +208,23 @@ export async function humanizeMarkdown(
 }
 
 /**
- * Humanize body copy only — headings and GFM tables stay verbatim.
+ * Humanize GFM table block (advanced model). Keeps original table if rewrite breaks structure.
+ */
+async function humanizeMarkdownTable(
+    tableMarkdown: string,
+    cfg: AiHumanizeConfig,
+): Promise<string> {
+    const text = repairMarkdownTableBlock(String(tableMarkdown || "").trim());
+    if (!text || !isMarkdownTableBlock(text)) return tableMarkdown;
+    if (tableCellTextCharCount(text) < MIN_CHARS) return tableMarkdown;
+
+    const rewritten = await humanizeMarkdown(text, cfg);
+    const repaired = repairMarkdownTableBlock(rewritten.trim());
+    return isMarkdownTableBlock(repaired) ? repaired : tableMarkdown;
+}
+
+/**
+ * Humanize body copy and GFM tables — markdown headings stay verbatim.
  */
 export async function humanizeMarkdownPreservingHeadings(
     markdown: string,
@@ -160,8 +239,12 @@ export async function humanizeMarkdownPreservingHeadings(
     const out: string[] = [];
 
     for (const part of parts) {
-        if (part.type === "heading" || part.type === "table") {
+        if (part.type === "heading") {
             out.push(part.text);
+            continue;
+        }
+        if (part.type === "table") {
+            out.push(await humanizeMarkdownTable(part.text, cfg));
             continue;
         }
         const rewritten = await humanizeMarkdown(part.text, cfg);

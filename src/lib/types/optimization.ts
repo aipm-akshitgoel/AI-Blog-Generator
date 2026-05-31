@@ -40,7 +40,9 @@ export interface SeoScores {
     actionableInsights: string[];
     /** Verified grade from SEO Review Tools readability API (optimize step). */
     readabilityGrade?: ReadabilityGrade;
-    /** Verified AI % from ZeroGPT (optimize step). */
+    /** Verified AI % from ZeroGPT after humanize, before keyword boost. */
+    aiDetectionPreKeywords?: AiDetectionScore;
+    /** Verified AI % from ZeroGPT on the published draft (after keywords). */
     aiDetection?: AiDetectionScore;
     /** Why ZeroGPT could not verify AI % (e.g. credits exhausted). */
     aiDetectionError?: string;
@@ -48,6 +50,14 @@ export interface SeoScores {
     humanizeSkippedReason?: string;
     /** Humanize passes completed on the server (survives client ZeroGPT refresh). */
     humanizePassCount?: number;
+    /** Server-side preflight: how much prose humanize could rewrite (no extra API cost). */
+    humanizeDiagnostics?: {
+        bodyCharCount: number;
+        bodyPartCount: number;
+        tablePartCount: number;
+        tableCellCharCount: number;
+        estimatedApiCalls: number;
+    };
     /** Writer-finalized keyword plan + SEO Review Tools density verification. */
     keywordDensity?: KeywordDensityVerification;
     keywordPlan?: KeywordPlan;

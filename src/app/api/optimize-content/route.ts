@@ -33,7 +33,7 @@ import { assistantMessageText, azureConfigDebug, createAzureClient, getAzureConf
 import { jsonrepair } from "jsonrepair";
 import { LONG_POST_BODY_WORDS } from "@/lib/optimizePipelineProfile";
 import { runAiHumanizationLoop } from "@/lib/aiHumanizationLoop";
-import { getAiHumanizeConfig } from "@/lib/aiHumanize";
+import { getAiHumanizeConfig, summarizeHumanizeMarkdown } from "@/lib/aiHumanize";
 import { applyZeroGptDetectionToScores, detectAiContentPercentWithStatus } from "@/lib/zerogptAiDetection";
 import {
     measureFinalReadability,
@@ -452,6 +452,19 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             optimized.contentMarkdown = readability.contentMarkdown;
 
             const markdownBeforeHumanize = optimized.contentMarkdown;
+            const humanizeTargets = summarizeHumanizeMarkdown(markdownBeforeHumanize);
+            console.info("[optimize-content] Humanize preflight:", humanizeTargets);
+            optimized.seoScores = {
+                ...optimized.seoScores,
+                humanizeDiagnostics: {
+                    bodyCharCount: humanizeTargets.bodyCharCount,
+                    bodyPartCount: humanizeTargets.bodyPartCount,
+                    tablePartCount: humanizeTargets.tablePartCount,
+                    tableCellCharCount: humanizeTargets.tableCellCharCount,
+                    estimatedApiCalls: humanizeTargets.estimatedApiCalls,
+                },
+            };
+
             const keywordPlanForRestore =
                 resolveKeywordPlanForPost(blogPost, contentConstraints ?? null, contentConstraints?.domainPrimaryKeyword?.trim()) ??
                 blogPost.keywordPlan ??
@@ -475,6 +488,16 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
 
             totalHumanizeAttempts = humanized.passCount ?? humanized.aiDetection?.attempts ?? 0;
             humanizeSkippedReason = humanized.skippedReason;
+
+            if (humanized.aiDetection) {
+                optimized.seoScores = {
+                    ...optimized.seoScores,
+                    aiDetectionPreKeywords: {
+                        ...humanized.aiDetection,
+                        attempts: totalHumanizeAttempts,
+                    },
+                };
+            }
 
             if (totalHumanizeAttempts === 0 && !humanizeSkippedReason) {
                 humanizeSkippedReason = getAiHumanizeConfig()
@@ -552,7 +575,15 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                     insights.push(humanizeSkippedReason);
                 }
                 if (!finalAiDetection.targetMet) {
-                    if (totalHumanizeAttempts === 0) {
+                    const preKeywordAi = optimized.seoScores.aiDetectionPreKeywords?.aiPercent;
+                    if (
+                        typeof preKeywordAi === "number" &&
+                        finalAiDetection.aiPercent - preKeywordAi >= 15
+                    ) {
+                        insights.push(
+                            `AI Humanize (advanced) measured ${preKeywordAi}% before keywords; final draft is ${finalAiDetection.aiPercent}% after keyword placement. Templated keyword sentences often raise ZeroGPT scores.`,
+                        );
+                    } else if (totalHumanizeAttempts === 0) {
                         insights.push(
                             humanizeSkippedReason ??
                                 "No AI Humanize passes ran on this draft. Re-run optimize; check AI Humanize credits and server env vars if it persists.",
@@ -636,10 +667,13 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                 console.warn("[optimize-content] Post-optimize pipeline failed:", postErr);
                 const errMsg =
                     postErr instanceof Error ? postErr.message : "Post-optimize pipeline failed";
+                const humanizeCompleted = totalHumanizeAttempts > 0;
                 optimized.seoScores = {
                     ...optimized.seoScores,
-                    humanizeSkippedReason: `Humanize did not finish (${errMsg}). Re-run optimize.`,
-                    humanizePassCount: 0,
+                    humanizePassCount: humanizeCompleted ? totalHumanizeAttempts : 0,
+                    humanizeSkippedReason: humanizeCompleted
+                        ? `Humanize finished (${totalHumanizeAttempts} pass(es)) but a later step failed: ${errMsg}. Re-run optimize if scores look incomplete.`
+                        : `Optimize stopped before humanize finished (${errMsg}). Re-run optimize.`,
                 };
             } else {
                 optimized.seoScores = {
@@ -678,7 +712,11 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
                         optimized.seoScores = applyZeroGptDetectionToScores(
                             optimized.seoScores,
                             recovered.result,
-                            optimized.seoScores.aiDetection?.attempts ?? 0,
+                            Math.max(
+                                totalHumanizeAttempts,
+                                optimized.seoScores.humanizePassCount ?? 0,
+                                optimized.seoScores.aiDetection?.attempts ?? 0,
+                            ),
                         );
                     } else if (recovered.error) {
                         optimized.seoScores = {
@@ -696,20 +734,31 @@ ${guidelinesBlock ? `\n${guidelinesBlock}\n` : ""}${tocBlock}`;
             normalizeMarkdownBodyParagraphs(optimized.contentMarkdown),
         );
 
+        const effectiveHumanizeAttempts = Math.max(
+            totalHumanizeAttempts,
+            optimized.seoScores.humanizePassCount ?? 0,
+            optimized.seoScores.aiDetection?.attempts ?? 0,
+        );
+
         await applyFinalOptimizerScores(
             optimized,
             blogPost,
-            optimized.seoScores.humanizePassCount ??
-                optimized.seoScores.aiDetection?.attempts ??
-                totalHumanizeAttempts,
+            effectiveHumanizeAttempts,
             readabilityTargetGradeMax,
         );
 
         if (optimized.seoScores.humanizePassCount == null) {
             optimized.seoScores = {
                 ...optimized.seoScores,
-                humanizePassCount:
-                    optimized.seoScores.aiDetection?.attempts ?? totalHumanizeAttempts,
+                humanizePassCount: effectiveHumanizeAttempts,
+            };
+        } else if (
+            totalHumanizeAttempts > 0 &&
+            (optimized.seoScores.humanizePassCount ?? 0) < totalHumanizeAttempts
+        ) {
+            optimized.seoScores = {
+                ...optimized.seoScores,
+                humanizePassCount: totalHumanizeAttempts,
             };
         }
 

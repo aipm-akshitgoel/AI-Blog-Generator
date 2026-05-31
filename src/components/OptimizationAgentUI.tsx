@@ -148,6 +148,17 @@ function formatHumanizeStatusNote(
         scores.aiDetection.targetMet === false;
 
     if (attempts > 0 && highAi) {
+        const pre = scores?.aiDetectionPreKeywords;
+        if (pre?.provider === "zerogpt" && scores?.aiDetection?.provider === "zerogpt") {
+            const prePct = Math.round(pre.aiPercent * 10) / 10;
+            const finalPct = Math.round(scores.aiDetection.aiPercent * 10) / 10;
+            if (finalPct - prePct >= 15) {
+                return `${attempts} humanize pass(es) with advanced model → ${prePct}% AI before keywords, ${finalPct}% after keyword placement (published draft).`;
+            }
+            if (pre.targetMet && !scores.aiDetection.targetMet) {
+                return `${attempts} humanize pass(es) reached ${prePct}% AI, but keyword placement raised the published score to ${finalPct}%.`;
+            }
+        }
         if (skipped && !/did not run|not configured|time budget/i.test(skipped)) {
             return `${attempts} humanize pass(es) ran; AI % is still above 20%. ${skipped}`;
         }
@@ -155,6 +166,13 @@ function formatHumanizeStatusNote(
     }
     if (skipped) return skipped;
     if (highAi && attempts === 0) {
+        const diag = scores?.humanizeDiagnostics;
+        if (diag && diag.bodyPartCount === 0 && diag.tablePartCount > 0) {
+            return "AI Humanize skipped — table text is too short (need 100+ characters across cells). Add prose or longer table copy, then re-run Optimize.";
+        }
+        if (diag && diag.bodyCharCount > 0 && diag.bodyCharCount < 100) {
+            return `AI Humanize skipped — only ${diag.bodyCharCount} characters of prose (need 100+). Expand section copy, then re-run Optimize.`;
+        }
         return "AI Humanize did not run (0 passes). Re-run full Optimize — Refresh only re-scores and does not humanize.";
     }
     return undefined;
@@ -173,7 +191,9 @@ function formatAiContentDisplay(
             value: rounded,
             suffix: `${rounded}%`,
             barClass: aiContentBarClass(scores),
-            help: "Verified with ZeroGPT on this draft. Lower is better. Green = below 20%.",
+            help: scores?.aiDetectionPreKeywords?.provider === "zerogpt"
+                ? `Verified with ZeroGPT on the published draft (after keywords). Before keywords, humanize scored ${Math.round(scores.aiDetectionPreKeywords.aiPercent * 10) / 10}%. Lower is better. Green = below 20%.`
+                : "Verified with ZeroGPT on this draft. Lower is better. Green = below 20%.",
         };
     }
     if (!detectionResolved) {

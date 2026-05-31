@@ -407,12 +407,14 @@ export function normalizeSeoScores(
         actionableInsights: Array.isArray(raw?.actionableInsights) ? raw!.actionableInsights : [],
         readabilityGrade: raw?.readabilityGrade,
         aiDetection: raw?.aiDetection,
+        aiDetectionPreKeywords: raw?.aiDetectionPreKeywords,
         aiDetectionError: raw?.aiDetectionError,
         humanizeSkippedReason: raw?.humanizeSkippedReason,
         humanizePassCount:
             typeof raw?.humanizePassCount === "number" && Number.isFinite(raw.humanizePassCount)
                 ? raw.humanizePassCount
                 : raw?.aiDetection?.attempts,
+        humanizeDiagnostics: raw?.humanizeDiagnostics,
         keywordDensity: raw?.keywordDensity,
         keywordPlan: raw?.keywordPlan,
     };

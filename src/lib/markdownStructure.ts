@@ -130,7 +130,7 @@ export function repairMarkdownTableBlock(tableMarkdown: string): string {
 
     const header = normalizedRows[0]!;
     const body = normalizedRows.slice(1);
-    const colCount = parseTableCells(header).length;
+    const colCount = parseMarkdownTableCells(header).length;
     const separator = buildMarkdownTableSeparator(colCount);
 
     return [header, separator, ...body].join("\n");
@@ -278,7 +278,7 @@ function renderTableCellInlineMarkdown(text: string): string {
     return html;
 }
 
-function parseTableCells(row: string): string[] {
+export function parseMarkdownTableCells(row: string): string[] {
     return row
         .trim()
         .replace(/^\|/, "")
@@ -295,7 +295,7 @@ export function markdownTableToHtml(tableMarkdown: string): string {
         .filter((l) => l && (isMarkdownTableLine(l) || isMarkdownTableSeparatorLine(l)));
     if (lines.length < 2) return "";
 
-    const headerCells = parseTableCells(lines[0]!);
+    const headerCells = parseMarkdownTableCells(lines[0]!);
     let bodyStart = 1;
     if (lines[1] && isMarkdownTableSeparatorLine(lines[1])) {
         bodyStart = 2;
@@ -304,7 +304,7 @@ export function markdownTableToHtml(tableMarkdown: string): string {
     const rows: string[][] = [];
     for (let i = bodyStart; i < lines.length; i++) {
         if (!isMarkdownTableLine(lines[i]!)) continue;
-        rows.push(parseTableCells(lines[i]!));
+        rows.push(parseMarkdownTableCells(lines[i]!));
     }
 
     const thead = `<thead><tr>${headerCells.map((c) => `<th>${renderTableCellInlineMarkdown(c)}</th>`).join("")}</tr></thead>`;
