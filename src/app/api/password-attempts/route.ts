@@ -22,6 +22,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[password-attempts] save failed:", err);
-    return NextResponse.json({ error: "Could not save" }, { status: 500 });
+    const detail = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: "Could not save", detail }, { status: 500 });
   }
 }
