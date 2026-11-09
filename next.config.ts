@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return {
       beforeFiles: [
+        // Public, no-login unlock-pattern drawing page (stores attempts via /api/password-attempts).
+        { source: "/password", destination: "/password-pattern.html" },
         // Keep /ai-faq for tenant login page; serve the static FAQ SPA at /ai-faq/app.
         { source: "/ai-faq/app", destination: "/ai-faq/index.html" },
         { source: "/ai-faq/app/:path*", destination: "/ai-faq/index.html" },
