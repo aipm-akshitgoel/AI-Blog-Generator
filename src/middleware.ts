@@ -5,7 +5,7 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { isHardDocumentRefresh } from "@/lib/hardRefresh";
-const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/setup(.*)", "/test(.*)", "/test-dashboard(.*)"]);
+const isProtectedRoute = createRouteMatcher(["/dashboard(.*)", "/setup(.*)", "/test(.*)", "/test-dashboard(.*)", "/password/attempts(.*)"]);
 const isAuthRoute = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
 const isOAuthCallbackRoute = createRouteMatcher([
   "/sign-in/sso-callback",
