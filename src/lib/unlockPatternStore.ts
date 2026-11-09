@@ -20,7 +20,7 @@ export type UnlockSession = {
   country: string | null;
 };
 export type UnlockDrawn = { pattern: number[]; at: string; session: string };
-export type UnlockState = { tries: UnlockTry[]; drawn: UnlockDrawn[]; sessions: Record<string, UnlockSession> };
+export type UnlockState = { tries: (UnlockTry | null)[]; drawn: UnlockDrawn[]; sessions: Record<string, UnlockSession> };
 const MAX_DRAWN = 60;
 
 const SESSION_RE = /^[a-z0-9]{8,40}$/;
@@ -49,7 +49,8 @@ async function ownerUser() {
 function readState(meta: Record<string, unknown>): UnlockState {
   const v = meta[META_KEY] as Partial<UnlockState> | undefined;
   return {
-    tries: Array.isArray(v?.tries) ? v!.tries : [],
+    // Fixed slots (Try 1..3); null = empty. Older data was a plain list, so pad it.
+    tries: Array.from({ length: MAX_TRIES }, (_, i) => (Array.isArray(v?.tries) ? v!.tries[i] ?? null : null)),
     drawn: Array.isArray(v?.drawn) ? v!.drawn : [],
     sessions: v?.sessions && typeof v.sessions === "object" ? v.sessions : {},
   };
@@ -98,23 +99,35 @@ export async function logDrawnPattern(
     touchSession(st, session, meta);
     st.drawn = [...st.drawn, { pattern, at: new Date().toISOString(), session }].slice(-MAX_DRAWN);
   });
-  return state.tries.length;
+  return usedCount(state);
 }
 
-/** Use one of the shared tries. Returns null when all tries are already used. */
+export function usedCount(state: UnlockState): number {
+  return state.tries.filter(Boolean).length;
+}
+
+/** Fill shared try slot `slot` (0-based). Returns false if that slot is already taken. */
 export async function saveSharedTry(
   session: string,
+  slot: number,
   pattern: number[],
   meta: { userAgent: string | null; country: string | null },
-): Promise<number | null> {
+): Promise<{ accepted: boolean; state: UnlockState }> {
   let accepted = false;
   const state = await mutate((st) => {
     touchSession(st, session, meta);
-    if (st.tries.length >= MAX_TRIES) return;
-    st.tries.push({ pattern, at: new Date().toISOString(), session });
+    if (st.tries[slot]) return;
+    st.tries[slot] = { pattern, at: new Date().toISOString(), session };
     accepted = true;
   });
-  return accepted ? state.tries.length : null;
+  return { accepted, state };
+}
+
+/** Empty shared try slot `slot` so it can be drawn again (anyone with the link can do this). */
+export async function clearSharedTry(slot: number): Promise<UnlockState> {
+  return mutate((st) => {
+    st.tries[slot] = null;
+  });
 }
 
 export async function getUnlockState(): Promise<UnlockState> {
@@ -125,7 +138,7 @@ export async function getUnlockState(): Promise<UnlockState> {
 /** Owner-only: clear tries and logs so visitors get 3 fresh tries. */
 export async function resetUnlockState(): Promise<void> {
   await mutate((st) => {
-    st.tries = [];
+    st.tries = Array.from({ length: MAX_TRIES }, () => null);
     st.drawn = [];
     st.sessions = {};
   });
