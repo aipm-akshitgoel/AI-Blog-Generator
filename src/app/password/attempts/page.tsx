@@ -1,7 +1,7 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { getUnlockState, passwordViewerEmails, resetUnlockState } from "@/lib/unlockPatternStore";
+import { getUnlockState, passwordViewerEmails, resetUnlockState, usedCount } from "@/lib/unlockPatternStore";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Unlock pattern admin", robots: { index: false, follow: false } };
@@ -34,7 +34,7 @@ export default async function PasswordAdminPage() {
       <div style={{ maxWidth: 560, margin: "0 auto" }}>
         <h1 style={{ fontSize: 22, margin: "0 0 8px" }}>Unlock pattern admin</h1>
         <p style={{ color: "#a6abb8" }}>
-          Tries used: {state.tries.length} of 3 · patterns drawn: {state.drawn.length}. The live view is at{" "}
+          Tries used: {usedCount(state)} of 3 · patterns drawn: {state.drawn.length}. The live view is at{" "}
           <a href="/password" style={{ color: "#6aa8ff" }}>/password</a>.
         </p>
         <form action={resetAction}>
