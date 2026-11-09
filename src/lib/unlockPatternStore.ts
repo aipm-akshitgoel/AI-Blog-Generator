@@ -1,8 +1,13 @@
 import "server-only";
-import { supabaseServer } from "@/lib/supabaseServerClient";
+import { clerkClient } from "@clerk/nextjs/server";
 
-/** Private Supabase Storage bucket holding one JSON file per /password visitor session. */
-const BUCKET = "unlock-patterns";
+/**
+ * Attempts are kept in the owner's Clerk privateMetadata (server-only, never sent to browsers).
+ * Clerk caps metadata at ~8KB, so we keep the most recent sessions and patterns only.
+ */
+const META_KEY = "unlockPatterns";
+const MAX_SESSIONS = 6;
+const MAX_KEEP_PER_SESSION = 40;
 
 export type UnlockPatternRecord = {
   session: string;
@@ -13,29 +18,6 @@ export type UnlockPatternRecord = {
   userAgent: string | null;
   country: string | null;
 };
-
-let bucketReady: Promise<void> | null = null;
-
-function ensureBucket(): Promise<void> {
-  if (!bucketReady) {
-    bucketReady = (async () => {
-      const { error } = await supabaseServer.storage.getBucket(BUCKET);
-      if (!error) return;
-      const { error: createError } = await supabaseServer.storage.createBucket(BUCKET, {
-        public: false,
-        fileSizeLimit: 65536,
-        allowedMimeTypes: ["application/json"],
-      });
-      if (createError && !/already exists/i.test(createError.message)) {
-        throw new Error(`Could not create ${BUCKET} bucket: ${createError.message}`);
-      }
-    })().catch((err) => {
-      bucketReady = null;
-      throw err;
-    });
-  }
-  return bucketReady;
-}
 
 const SESSION_RE = /^[a-z0-9]{8,40}$/;
 const MAX_PATTERNS = 60;
@@ -60,48 +42,51 @@ export function parsePatternPayload(body: unknown): { session: string; saved: nu
   return { session, saved, drawn };
 }
 
-async function readRecord(session: string): Promise<UnlockPatternRecord | null> {
-  const { data, error } = await supabaseServer.storage.from(BUCKET).download(`${session}.json`);
-  if (error || !data) return null;
-  try {
-    return JSON.parse(await data.text()) as UnlockPatternRecord;
-  } catch {
-    return null;
-  }
+async function ownerUser() {
+  const client = await clerkClient();
+  const { data } = await client.users.getUserList({ emailAddress: passwordViewerEmails(), limit: 1 });
+  if (!data.length) throw new Error("Owner Clerk user not found for PASSWORD_VIEWER_EMAILS");
+  return { client, user: data[0] };
+}
+
+function storedRecords(meta: Record<string, unknown>): Record<string, UnlockPatternRecord> {
+  const v = meta[META_KEY];
+  return v && typeof v === "object" ? (v as Record<string, UnlockPatternRecord>) : {};
 }
 
 export async function saveUnlockPatterns(
   input: { session: string; saved: number[][]; drawn: number[][] },
   meta: { userAgent: string | null; country: string | null },
 ): Promise<void> {
-  await ensureBucket();
+  const { client, user } = await ownerUser();
+  const privateMetadata = (user.privateMetadata ?? {}) as Record<string, unknown>;
+  const records = storedRecords(privateMetadata);
+  const existing = records[input.session];
   const now = new Date().toISOString();
-  const existing = await readRecord(input.session);
-  const record: UnlockPatternRecord = {
+  const keepLonger = (a: number[][] | undefined, b: number[][]) =>
+    (a && a.length > b.length ? a : b).slice(-MAX_KEEP_PER_SESSION);
+  records[input.session] = {
     session: input.session,
-    // Never lose a pattern: keep anything stored earlier that the browser no longer sends.
-    saved: existing && existing.saved.length > input.saved.length ? existing.saved : input.saved,
-    drawn: existing && existing.drawn.length > input.drawn.length ? existing.drawn : input.drawn,
+    saved: keepLonger(existing?.saved, input.saved),
+    drawn: keepLonger(existing?.drawn, input.drawn),
     firstSeenAt: existing?.firstSeenAt ?? now,
     updatedAt: now,
-    userAgent: meta.userAgent,
+    userAgent: meta.userAgent?.slice(0, 120) ?? null,
     country: meta.country,
   };
-  const { error } = await supabaseServer.storage
-    .from(BUCKET)
-    .upload(`${input.session}.json`, JSON.stringify(record), { contentType: "application/json", upsert: true });
-  if (error) throw new Error(error.message);
+  const latest = Object.values(records)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, MAX_SESSIONS);
+  await client.users.updateUser(user.id, {
+    privateMetadata: { ...privateMetadata, [META_KEY]: Object.fromEntries(latest.map((r) => [r.session, r])) },
+  });
 }
 
 export async function listUnlockPatterns(): Promise<UnlockPatternRecord[]> {
-  await ensureBucket();
-  const { data, error } = await supabaseServer.storage.from(BUCKET).list("", { limit: 200 });
-  if (error) throw new Error(error.message);
-  const files = (data ?? []).filter((f) => f.name.endsWith(".json"));
-  const records = await Promise.all(files.map((f) => readRecord(f.name.replace(/\.json$/, ""))));
-  return records
-    .filter((r): r is UnlockPatternRecord => r !== null)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const { user } = await ownerUser();
+  return Object.values(storedRecords((user.privateMetadata ?? {}) as Record<string, unknown>)).sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
 }
 
 /** Emails allowed to view stored patterns. Override with PASSWORD_VIEWER_EMAILS (comma-separated). */
