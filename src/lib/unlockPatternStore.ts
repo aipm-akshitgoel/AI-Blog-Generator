@@ -2,27 +2,30 @@ import "server-only";
 import { clerkClient } from "@clerk/nextjs/server";
 
 /**
- * Attempts are kept in the owner's Clerk privateMetadata (server-only, never sent to browsers).
- * Clerk caps metadata at ~8KB, so we keep the most recent sessions and patterns only.
+ * /password state lives in the owner's Clerk privateMetadata (server-only, never sent to browsers).
+ * The 3 saved tries and the log of drawn patterns are shared by every visitor and shown on /password.
+ * Clerk caps metadata at ~8KB, so per-session logs are trimmed.
  */
-const META_KEY = "unlockPatterns";
+const META_KEY = "unlockPatternsV2";
+const LEGACY_KEYS = ["unlockPatterns"];
+export const MAX_TRIES = 3;
 const MAX_SESSIONS = 6;
-const MAX_KEEP_PER_SESSION = 40;
 
-export type UnlockPatternRecord = {
+export type UnlockTry = { pattern: number[]; at: string; session: string };
+export type UnlockSession = {
   session: string;
-  saved: number[][];
-  drawn: number[][];
   firstSeenAt: string;
   updatedAt: string;
   userAgent: string | null;
   country: string | null;
 };
+export type UnlockDrawn = { pattern: number[]; at: string; session: string };
+export type UnlockState = { tries: UnlockTry[]; drawn: UnlockDrawn[]; sessions: Record<string, UnlockSession> };
+const MAX_DRAWN = 60;
 
 const SESSION_RE = /^[a-z0-9]{8,40}$/;
-const MAX_PATTERNS = 60;
 
-function isPattern(p: unknown): p is number[] {
+export function isPattern(p: unknown): p is number[] {
   return (
     Array.isArray(p) &&
     p.length >= 2 &&
@@ -32,14 +35,8 @@ function isPattern(p: unknown): p is number[] {
   );
 }
 
-export function parsePatternPayload(body: unknown): { session: string; saved: number[][]; drawn: number[][] } | null {
-  if (!body || typeof body !== "object") return null;
-  const { session, saved, drawn } = body as Record<string, unknown>;
-  if (typeof session !== "string" || !SESSION_RE.test(session)) return null;
-  if (!Array.isArray(saved) || !Array.isArray(drawn)) return null;
-  if (saved.length > MAX_PATTERNS || drawn.length > MAX_PATTERNS) return null;
-  if (!saved.every(isPattern) || !drawn.every(isPattern)) return null;
-  return { session, saved, drawn };
+export function isSession(s: unknown): s is string {
+  return typeof s === "string" && SESSION_RE.test(s);
 }
 
 async function ownerUser() {
@@ -49,44 +46,89 @@ async function ownerUser() {
   return { client, user: data[0] };
 }
 
-function storedRecords(meta: Record<string, unknown>): Record<string, UnlockPatternRecord> {
-  const v = meta[META_KEY];
-  return v && typeof v === "object" ? (v as Record<string, UnlockPatternRecord>) : {};
+function readState(meta: Record<string, unknown>): UnlockState {
+  const v = meta[META_KEY] as Partial<UnlockState> | undefined;
+  return {
+    tries: Array.isArray(v?.tries) ? v!.tries : [],
+    drawn: Array.isArray(v?.drawn) ? v!.drawn : [],
+    sessions: v?.sessions && typeof v.sessions === "object" ? v.sessions : {},
+  };
 }
 
-export async function saveUnlockPatterns(
-  input: { session: string; saved: number[][]; drawn: number[][] },
-  meta: { userAgent: string | null; country: string | null },
-): Promise<void> {
+async function mutate(fn: (state: UnlockState) => void): Promise<UnlockState> {
   const { client, user } = await ownerUser();
-  const privateMetadata = (user.privateMetadata ?? {}) as Record<string, unknown>;
-  const records = storedRecords(privateMetadata);
-  const existing = records[input.session];
-  const now = new Date().toISOString();
-  const keepLonger = (a: number[][] | undefined, b: number[][]) =>
-    (a && a.length > b.length ? a : b).slice(-MAX_KEEP_PER_SESSION);
-  records[input.session] = {
-    session: input.session,
-    saved: keepLonger(existing?.saved, input.saved),
-    drawn: keepLonger(existing?.drawn, input.drawn),
-    firstSeenAt: existing?.firstSeenAt ?? now,
-    updatedAt: now,
-    userAgent: meta.userAgent?.slice(0, 120) ?? null,
-    country: meta.country,
-  };
-  const latest = Object.values(records)
+  const meta = { ...((user.privateMetadata ?? {}) as Record<string, unknown>) };
+  const state = readState(meta);
+  fn(state);
+  const latest = Object.values(state.sessions)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .slice(0, MAX_SESSIONS);
-  await client.users.updateUser(user.id, {
-    privateMetadata: { ...privateMetadata, [META_KEY]: Object.fromEntries(latest.map((r) => [r.session, r])) },
-  });
+  state.sessions = Object.fromEntries(latest.map((s) => [s.session, s]));
+  for (const k of LEGACY_KEYS) delete meta[k];
+  await client.users.updateUser(user.id, { privateMetadata: { ...meta, [META_KEY]: state } });
+  return state;
 }
 
-export async function listUnlockPatterns(): Promise<UnlockPatternRecord[]> {
+function touchSession(
+  state: UnlockState,
+  session: string,
+  meta: { userAgent: string | null; country: string | null },
+): UnlockSession {
+  const now = new Date().toISOString();
+  const s = (state.sessions[session] ??= {
+    session,
+    firstSeenAt: now,
+    updatedAt: now,
+    userAgent: null,
+    country: null,
+  });
+  s.updatedAt = now;
+  s.userAgent = meta.userAgent?.slice(0, 120) ?? null;
+  s.country = meta.country;
+  return s;
+}
+
+/** Log one completed drawing (shared log, newest last). */
+export async function logDrawnPattern(
+  session: string,
+  pattern: number[],
+  meta: { userAgent: string | null; country: string | null },
+): Promise<number> {
+  const state = await mutate((st) => {
+    touchSession(st, session, meta);
+    st.drawn = [...st.drawn, { pattern, at: new Date().toISOString(), session }].slice(-MAX_DRAWN);
+  });
+  return state.tries.length;
+}
+
+/** Use one of the shared tries. Returns null when all tries are already used. */
+export async function saveSharedTry(
+  session: string,
+  pattern: number[],
+  meta: { userAgent: string | null; country: string | null },
+): Promise<number | null> {
+  let accepted = false;
+  const state = await mutate((st) => {
+    touchSession(st, session, meta);
+    if (st.tries.length >= MAX_TRIES) return;
+    st.tries.push({ pattern, at: new Date().toISOString(), session });
+    accepted = true;
+  });
+  return accepted ? state.tries.length : null;
+}
+
+export async function getUnlockState(): Promise<UnlockState> {
   const { user } = await ownerUser();
-  return Object.values(storedRecords((user.privateMetadata ?? {}) as Record<string, unknown>)).sort((a, b) =>
-    b.updatedAt.localeCompare(a.updatedAt),
-  );
+  return readState((user.privateMetadata ?? {}) as Record<string, unknown>);
+}
+
+/** Owner-only: clear tries and logs so visitors get 3 fresh tries. */
+export async function resetUnlockState(): Promise<void> {
+  await mutate((st) => {
+    st.tries = [];
+    st.drawn = [];
+    st.sessions = {};
+  });
 }
 
 /** Emails allowed to view stored patterns. Override with PASSWORD_VIEWER_EMAILS (comma-separated). */
