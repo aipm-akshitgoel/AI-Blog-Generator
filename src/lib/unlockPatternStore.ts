@@ -92,6 +92,6 @@ export async function listUnlockPatterns(): Promise<UnlockPatternRecord[]> {
 /** Emails allowed to view stored patterns. Override with PASSWORD_VIEWER_EMAILS (comma-separated). */
 export function passwordViewerEmails(): string[] {
   const raw = process.env.PASSWORD_VIEWER_EMAILS?.trim();
-  const list = raw ? raw.split(",") : ["contact.akshitgoel@gmail.com"];
+  const list = raw ? raw.split(",") : ["akshitgoel089@gmail.com"];
   return list.map((e) => e.trim().toLowerCase()).filter(Boolean);
 }
